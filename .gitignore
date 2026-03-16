@@ -10,7 +10,8 @@ venv/
 .conda/
 
 
-data/
+data/*
+!data/.gitkeep
 results/
 checkpoints/
 *.h5
