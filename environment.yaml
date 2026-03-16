@@ -1,5 +1,7 @@
 name: tleio
+
 channels:
+  - pytorch
   - conda-forge
 
 dependencies:
@@ -9,6 +11,11 @@ dependencies:
   - wheel
 
 
+  - pytorch
+  - torchvision
+  - torchaudio
+
+  
   - numpy
   - scipy
   - pandas
@@ -27,7 +34,7 @@ dependencies:
   - tqdm
   - natsort
 
- 
+
   - opencv
   - pillow
   - imageio
@@ -52,28 +59,12 @@ dependencies:
   - flake8
   - pre-commit
 
- 
   - pip:
-     
-      - torch
-      - torchvision
-      - torchaudio
       - lightning
-
-    
       - hydra-core
       - omegaconf
-
-    
       - tensorboard
       - wandb
       - rich
-
-    
       - evo
-
-     
       - pydantic
-
-   
-      - -e .
