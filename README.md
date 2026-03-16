@@ -6,7 +6,7 @@ Create and activate the conda environment to ensure all dependencies are met:
 
 ```bash
 conda env create -f environment.yaml
-conda activate tleio
+conda activate tleio```
 
 ## 2. Data Generation
 Download the "00_peanuts_dark" sequence from the Event Camera Dataset (EDS):
