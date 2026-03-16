@@ -1,0 +1,79 @@
+name: tleio
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.10
+  - pip
+  - setuptools
+  - wheel
+
+
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - scikit-image
+  - numba
+
+ 
+  - h5py
+  - hdf5
+  - pyyaml
+  - ruamel.yaml
+  - toml
+  - tqdm
+  - natsort
+
+ 
+  - opencv
+  - pillow
+  - imageio
+  - imageio-ffmpeg
+
+
+  - einops
+  - tabulate
+  - colorama
+
+
+  - jupyterlab
+  - ipykernel
+  - notebook
+  - ipywidgets
+
+
+  - pytest
+  - pytest-cov
+  - black
+  - isort
+  - flake8
+  - pre-commit
+
+ 
+  - pip:
+     
+      - torch
+      - torchvision
+      - torchaudio
+      - lightning
+
+    
+      - hydra-core
+      - omegaconf
+
+    
+      - tensorboard
+      - wandb
+      - rich
+
+    
+      - evo
+
+     
+      - pydantic
+
+   
+      - -e .
