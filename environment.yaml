@@ -10,11 +10,6 @@ dependencies:
   - setuptools
   - wheel
 
-
-  - pytorch
-  - torchvision
-  - torchaudio
-
   
   - numpy
   - scipy
