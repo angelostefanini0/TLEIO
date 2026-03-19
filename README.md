@@ -29,5 +29,5 @@ tar -xzf 00_peanuts_dark.tgz
 Run the viewer to inspect the event stream and verify the correctness of data:
 
 ```bash
-python scripts/view_events.py --h5 data/eds/peanuts/events.h5
+python scripts/view_events.py --h5 data/eds/00_peanuts_dark/events.h5
 ```
