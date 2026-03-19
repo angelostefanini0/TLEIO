@@ -1,0 +1,3 @@
+[submodule "evaluation/rpg_trajectory_evaluation"]
+	path = evaluation/rpg_trajectory_evaluation
+	url = https://github.com/uzh-rpg/rpg_trajectory_evaluation
