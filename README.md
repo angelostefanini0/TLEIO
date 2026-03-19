@@ -9,7 +9,7 @@ conda env create -f environment.yaml
 conda activate tleio
 ```
 
-To properly activate the rpg_trajectory_evaluation toolbox, imported in this repo as a git submodule, run the followingo command:
+To properly activate the rpg_trajectory_evaluation toolbox, imported in this repo as a git submodule, run the following command:
 
 ```bash
 git submodule update --init --recursive
