@@ -10,7 +10,6 @@ dependencies:
   - setuptools
   - wheel
 
-  
   - numpy
   - scipy
   - pandas
@@ -20,7 +19,7 @@ dependencies:
   - scikit-image
   - numba
 
- 
+
   - h5py
   - hdf5
   - pyyaml
