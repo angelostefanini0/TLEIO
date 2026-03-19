@@ -9,6 +9,12 @@ conda env create -f environment.yaml
 conda activate tleio
 ```
 
+To properly activate the rpg_trajectory_evaluation toolbox, imported in this repo as a git submodule, run the following command:
+
+```bash
+git submodule update --init --recursive
+```
+
 ## 2. Data Generation
 
 Download the "00_peanuts_dark" sequence from the Event Camera Dataset (EDS):
@@ -29,5 +35,5 @@ tar -xzf 00_peanuts_dark.tgz
 Run the viewer to inspect the event stream and verify the correctness of data:
 
 ```bash
-python scripts/view_events.py --h5 data/eds/peanuts/events.h5
+python scripts/view_events.py --h5 data/eds/00_peanuts_dark/events.h5
 ```
