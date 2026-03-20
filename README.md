@@ -24,7 +24,7 @@ cd data/eds
 python -c "import urllib.request; urllib.request.urlretrieve('https://download.ifi.uzh.ch/rpg/eds/dataset/00_peanuts_dark/00_peanuts_dark.tgz', '00_peanuts_dark.tgz')"
 ```
 
-Extract the archive into a new directory:
+Extract the archive into data/eds/raw/00_peanuts_dark directory:
 
 ```bash
 tar -xzf 00_peanuts_dark.tgz
