@@ -10,7 +10,9 @@ import numpy as np
 
 """This script processes an event-based dataset stored in an HDF5 file and augments it with a temporal lookup table called `ms_to_idx`.
 
-The input file is expected to contain event data (timestamps, pixel coordinates, and polarity), either in the root or under an `events/` group. The script reads the event timestamps, verifies that they are sorted, and computes a mapping from each millisecond to the index of the first event occurring at or after that time.
+The input file is expected to contain event data (timestamps, pixel coordinates, and polarity), either in the root or under an `events/` group. 
+The script reads the event timestamps, verifies that they are sorted, and computes a mapping from each millisecond to the index of the first 
+event occurring at or after that time.
 
 The resulting `ms_to_idx` array enables fast temporal slicing of events without repeatedly searching through the full timestamp array.
 
