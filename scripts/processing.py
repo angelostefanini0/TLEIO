@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
-import hdf5plugin 
+
 import h5py
 import numpy as np
 
@@ -19,7 +19,7 @@ A new HDF5 file is created as output. This file contains:
 - The computed `ms_to_idx` dataset stored at the root level
 Additionally, supplementary files such as `imu.csv` and `stamped_groundtruth.txt` are copied to the output directory if they exist.
 Command to run:
-python scripts/processing.py data/eds/raw/peanuts/events.h5 --save-path data/eds/processed/peanuts/ms_to_idx.h5 --overwrite --timestamps-key t"""
+python scripts/processing.py data/eds/raw/peanuts/events.h5 --save-path data/eds/processed/peanuts/events.h5 --overwrite --timestamps-key t"""
 
 
 
