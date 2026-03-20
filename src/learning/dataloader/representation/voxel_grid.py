@@ -8,7 +8,7 @@ The primary implementation is the 'Voxel Grid', which aggregates events over
 time into a fixed number of temporal bins using trilinear interpolation 
 across spatial and temporal dimensions.
 
-Kindly inspired by DSEC implementation
+Kindly inspired by DSEC implementation.
 """
 
 
