@@ -60,17 +60,16 @@ class Sequence(Dataset):
         self.timestamps = load_timestamps_from_gt(self.gt)
 
     def events_to_voxel_grid(self, x, y, p, t, device: str='cpu'):
-        t = (t - t[0]).astype('float32')
-        t = (t/t[-1])
-        x = x.astype('float32')
-        y = y.astype('float32')
-        pol = p.astype('float32')
-        return self.voxel_grid.convert(
-                torch.from_numpy(x),
-                torch.from_numpy(y),
-                torch.from_numpy(pol),
-                torch.from_numpy(t))
+       
+        event_data = {
+            'x': x,
+            'y': y,
+            'p': p,
+            't': t
+        }
 
+        return self.voxel_grid.convert_events(event_data)
+    
     def getHeightAndWidth(self):
         return self.height, self.width
 
@@ -102,27 +101,28 @@ class Sequence(Dataset):
         # ts_start should be fine (within the window as we removed the first disparity map)
         ts_start = ts_end - self.delta_t_us
 
+        #here we have to get the ground truth for supervision 
+
         disp_gt_path = Path(self.disp_gt_pathstrings[index])
         file_index = int(disp_gt_path.stem)
         output = {
-            'disparity_gt': self.get_disparity_map(disp_gt_path),
+            'displacement_gt': self.get_disparity_map(disp_gt_path),
             'file_index': file_index,
         }
-        for location in self.locations:
-            event_data = self.event_slicers[location].get_events(ts_start, ts_end)
+       
+        event_data = self.event_slicers.get_events(ts_start, ts_end)
 
-            p = event_data['p']
-            t = event_data['t']
-            x = event_data['x']
-            y = event_data['y']
+        p = event_data['p']
+        t = event_data['t']
+        x = event_data['x']
+        y = event_data['y']
 
-            xy_rect = self.rectify_events(x, y, location)
-            x_rect = xy_rect[:, 0]
-            y_rect = xy_rect[:, 1]
+        #xy_rect = self.rectify_events(x, y, location)
+        #x_rect = xy_rect[:, 0]
+        #y_rect = xy_rect[:, 1]
 
-            event_representation = self.events_to_voxel_grid(x_rect, y_rect, p, t)
-            if 'representation' not in output:
-                output['representation'] = dict()
-            output['representation'][location] = event_representation
+        event_representation = self.events_to_voxel_grid(x, y, p, t)
+       
+        output['representation'] = event_representation
 
         return output
