@@ -30,8 +30,9 @@ class EventSlicer:
             self.t_offset = 0
         
         # ms_to_idx mapping expects times starting from 0 in ms
-        # EDS dataset has a common timestamp framework, with large values. 
-        # We process IMU and groundtruth data so that it's relative to the first event timestamp and in ms
+        # EDS dataset has a common time "frame", with large values. 
+        # We process IMU and groundtruth data so that it's relative to the first event 
+        # timestamp and in ms Event file is also processed so that the first timestamp is 0
         self.t_final = int(self.events['t'][-1]) + self.t_offset
 
     def get_start_time_us(self):
@@ -52,7 +53,9 @@ class EventSlicer:
         """
         assert t_start_us < t_end_us
 
-        # We assume that the times are top-off-day, hence subtract offset:
+        # The times in EDS are all at the same "order of magnitude", so there is no offset
+        # However we keep it for completeness
+        # The inputs for the function are the starting and ending times in us  
         t_start_us -= self.t_offset
         t_end_us -= self.t_offset
 
@@ -69,7 +72,7 @@ class EventSlicer:
         idx_start_offset, idx_end_offset = self.get_time_indices_offsets(time_array_conservative, t_start_us, t_end_us)
         t_start_us_idx = t_start_ms_idx + idx_start_offset
         t_end_us_idx = t_start_ms_idx + idx_end_offset
-        # Again add t_offset to get gps time
+        # Again add t_offset 
         events['t'] = time_array_conservative[idx_start_offset:idx_end_offset] + self.t_offset
         for dset_str in ['p', 'x', 'y']:
             events[dset_str] = np.asarray(self.events[dset_str][t_start_us_idx:t_end_us_idx])
@@ -103,6 +106,8 @@ class EventSlicer:
             time_start_us: int,
             time_end_us: int) -> Tuple[int, int]:
         """Compute index offset of start and end timestamps in microseconds
+        This is the step to go from coarse to fine indexing: with ms_to_idx 
+        we only have millisecond accuracy
         Parameters
         ----------
         time_array:     timestamps (in us) of the events
