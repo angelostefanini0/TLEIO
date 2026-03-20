@@ -32,7 +32,7 @@ def load_timestamps_from_gt(gt: np.ndarray) -> np.ndarray:
     Returns:
         timestamps_us: np.ndarray of shape (N,), dtype=float64
     """
-    timestamps = gt[:, 0]
+    timestamps = gt[:, 0].astype(np.int64)
 
     return timestamps
 

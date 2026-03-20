@@ -48,7 +48,6 @@ class EDSReader:
         return self.slicer.get_final_time_us()
 
 
-
     def close(self):
         if self.h5f is not None:
             self.h5f.close()
