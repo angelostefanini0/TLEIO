@@ -12,15 +12,11 @@ def floor_to_step(x: int, step: int) -> int:
     return (x // step) * step
 
 
-def load_gt(gt_path: Path):
+def load_gt(data: np.ndarray):
     """
     Expected format per row:
     timestamp_us px py pz qx qy qz qw
     """
-    data = np.loadtxt(gt_path, dtype=np.float64)
-    if data.ndim == 1:
-        data = data[None, :]
-
     if data.shape[1] != 8:
         raise ValueError(
             f"Expected 8 columns [t px py pz qx qy qz qw], got {data.shape[1]}"
@@ -237,61 +233,4 @@ def save_relative_motions(out_path: Path, rel: np.ndarray):
         header=header,
         comments="",
     )
-
-
-def main():
-    """
-    Generates the processed ground truth files for supervision
-    Example usage: 
-    python scripts/gt_training.py \
-    --gt path/to/stamped_groundtruth.txt \
-    --out_dir path/to/preprocessed_supervision \
-    --delta_t_ms 50 \
-    --anchor_hz 20
-    """
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--gt", type=Path, required=True, help="Path to stamped_groundtruth.txt")
-    parser.add_argument("--out_dir", type=Path, required=True, help="Output directory")
-    parser.add_argument("--delta_t_ms", type=float, default=50.0, help="Voxel duration in ms")
-    parser.add_argument("--anchor_hz", type=float, default=20.0, help="Anchor frequency in Hz")
-    args = parser.parse_args()
-
-    delta_t_us = int(round(args.delta_t_ms * 1000.0))
-    anchor_step_us = int(round(1e6 / args.anchor_hz))
-
-    ts_gt, pos_gt, quat_gt = load_gt(args.gt)
-
-    anchors_us = get_anchor_grid(
-        gt_timestamps_us=ts_gt,
-        delta_t_us=delta_t_us,
-        anchor_step_us=anchor_step_us,
-    )
-
-    anchor_pos, anchor_quat = interpolate_gt_to_anchors(
-        gt_timestamps_us=ts_gt,
-        gt_pos=pos_gt,
-        gt_quat=quat_gt,
-        anchors_us=anchors_us,
-    )
-
-    rel = compute_relative_motions(
-        anchor_ts=anchors_us,
-        anchor_pos=anchor_pos,
-        anchor_quat=anchor_quat,
-    )
-
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    save_anchor_poses(args.out_dir / "anchor_poses.txt", anchors_us, anchor_pos, anchor_quat)
-    save_relative_motions(args.out_dir / "relative_motions.txt", rel)
-
-    print(f"GT poses:           {len(ts_gt)}")
-    print(f"Anchors generated:  {len(anchors_us)}")
-    print(f"Relative motions:   {len(rel)}")
-    if len(anchors_us) > 0:
-        print(f"First anchor [us]:  {anchors_us[0]}")
-        print(f"Last anchor  [us]:  {anchors_us[-1]}")
-        print(f"Step         [us]:  {anchor_step_us}")
-
-
-if __name__ == "__main__":
-    main()
+    

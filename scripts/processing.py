@@ -7,6 +7,7 @@ from typing import Optional
 
 import h5py
 import numpy as np
+from gt_training import *
 
 """This script processes an event-based dataset stored in an HDF5 file and augments it with a temporal lookup table called `ms_to_idx`.
 
@@ -25,7 +26,9 @@ python scripts/processing.py data/eds/raw/sequence_name/events.h5   \
 --save-path data/eds/processed/sequence_name/events.h5   \
 --overwrite  \
 --timestamps-key t \
---copy-files imu.csv stamped_groundtruth.txt
+--process_gt imu.csv stamped_groundtruth.txt\
+--delta_t_ms 50 \
+--anchor_hz 20
 """
 
 def parse_args() -> argparse.Namespace:
@@ -61,14 +64,27 @@ def parse_args() -> argparse.Namespace:
         help="Overwrite the output file if it exists.",
     )
     parser.add_argument(
-        "--copy-files",
+        "--process_gt",
         nargs="*",
         default=[],
         help=(
-            "Optional list of supplementary files to copy from the source file directory "
-            "to the output file directory. Example: --copy-files imu.csv stamped_groundtruth.txt"
-    ),
-)
+            "Optional list of supplementary files to process from the source file directory "
+            "to the output file directory. Example: --process_gt imu.csv stamped_groundtruth.txt"
+        ),
+    )
+    parser.add_argument(
+        "--delta_t_ms", 
+        type=float, default=50.0, 
+        help="Voxel duration in ms"
+    )
+    
+    parser.add_argument(
+        "--anchor_hz", 
+        type=float, 
+        default=20.0, 
+        help="Anchor frequency in Hz"
+    )
+
     return parser.parse_args()
 
 
@@ -156,11 +172,13 @@ def write_to_new_file(
         f_out.create_dataset(dataset_name, data=data, dtype=data.dtype)
 
 
-def copy_supplementary_files(
+def process_gt(
     source_h5: Path,
     dest_h5: Path,
     files_to_copy: list[str],
-    t0: int
+    t0: int, 
+    delta_t_ms: float, 
+    anchor_hz: float
 ) -> None:
     
     source_dir = source_h5.parent
@@ -174,21 +192,29 @@ def copy_supplementary_files(
             raise FileNotFoundError(f"Supplementary file not found: {s_file}")
 
         print(f"Processing: {filename} -> {dest_dir}")
-        offset_timestamps(s_file, d_file, t0)
+        offset_timestamps(s_file, dest_dir, d_file, t0, delta_t_ms, anchor_hz)
+        
 
-    
-def offset_timestamps(s_file: Path, d_file: Path, t0:int) -> np.ndarray: 
+def offset_timestamps(s_file: Path,
+                      d_folder: Path, 
+                      d_file: Path, 
+                      t0:int, 
+                      delta_t_ms: float, 
+                      anchor_hz: float
+                      ) -> np.ndarray: 
 
     if s_file.suffix.lower() == ".csv":
         #the imu file is in [ns]
         load_delimiter = ","
         save_delimiter = ","
         scale = 1e-3
+        gt = False
     elif s_file.suffix.lower() == ".txt":
         #the groundtruth file is in [s]
         load_delimiter = None   # any whitespace
         save_delimiter = " "   
         scale = 1e6
+        gt = True
     else:
         raise ValueError(f"Unsupported file type: {s_file.suffix}. Use .csv or .txt")
 
@@ -197,14 +223,61 @@ def offset_timestamps(s_file: Path, d_file: Path, t0:int) -> np.ndarray:
     if data.shape[1] < 1:
         raise ValueError("Input file must contain at least one column.")
 
+    #Offset the timestamps
     converted_first_col = data[:, 0] * scale - t0
     keep_mask = converted_first_col >= 0
 
     filtered = data[keep_mask].copy()
     filtered[:, 0] = converted_first_col[keep_mask].astype(np.int64)
     fmt = ["%d"] + ["%.10f"] * (filtered.shape[1] - 1)
-
+    
     np.savetxt(d_file, filtered, delimiter=save_delimiter, fmt=fmt)
+    
+    #Actually process the gt 
+    if gt: 
+        generate_supervision(delta_t_ms, anchor_hz, filtered, d_folder)
+
+def generate_supervision(
+        delta_t_ms: float = 50.0,
+        anchor_hz: float = 20.0, 
+        gt_data: np.ndarray = None, 
+        out_dir : Path = None,
+        ): 
+    delta_t_us = int(round(delta_t_ms * 1000.0))
+    anchor_step_us = int(round(1e6 / anchor_hz))
+    
+    ts_gt, pos_gt, quat_gt = load_gt(gt_data)
+
+    anchors_us = get_anchor_grid(
+        gt_timestamps_us=ts_gt,
+        delta_t_us=delta_t_us,
+        anchor_step_us=anchor_step_us,
+    )
+
+    anchor_pos, anchor_quat = interpolate_gt_to_anchors(
+        gt_timestamps_us=ts_gt,
+        gt_pos=pos_gt,
+        gt_quat=quat_gt,
+        anchors_us=anchors_us,
+    )
+
+    rel = compute_relative_motions(
+        anchor_ts=anchors_us,
+        anchor_pos=anchor_pos,
+        anchor_quat=anchor_quat,
+    )
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    save_anchor_poses(out_dir / "anchor_poses.txt", anchors_us, anchor_pos, anchor_quat)
+    save_relative_motions(out_dir / "relative_motions.txt", rel)
+
+    print(f"GT poses:           {len(ts_gt)}")
+    print(f"Anchors generated:  {len(anchors_us)}")
+    print(f"Relative motions:   {len(rel)}")
+    if len(anchors_us) > 0:
+        print(f"First anchor [us]:  {anchors_us[0]}")
+        print(f"Last anchor  [us]:  {anchors_us[-1]}")
+        print(f"Step         [us]:  {anchor_step_us}")
 
 def main() -> None:
     """
@@ -254,8 +327,9 @@ def main() -> None:
         )
         print(f"Wrote dataset '{args.dataset_name}' into: {args.save_path}")
         
-        if args.copy_files:
-            copy_supplementary_files(input_path, args.save_path, args.copy_files, t0)
+        if args.process_gt:
+            process_gt(input_path, args.save_path, args.process_gt, t0, args.delta_t_ms, args.anchor_hz)
+            
         
 
 if __name__ == "__main__":
