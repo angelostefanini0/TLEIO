@@ -1,8 +1,5 @@
 from pathlib import Path
-import weakref
 
-import cv2
-import h5py
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -32,7 +29,7 @@ class EventVoxelClipDataset(Dataset):
                  seq_path: Path, 
                  mode: str='train', 
                  delta_t_ms: int=50,
-                 anchor_step_us : int =50000, 
+                 anchor_step_us : int = 50000, 
                  num_bins: int=15, 
                  clip_len: int = 3):
         
@@ -48,8 +45,7 @@ class EventVoxelClipDataset(Dataset):
         self.width = 640
         self.num_bins = num_bins
         self.clip_len = clip_len
-        # Save delta timestamp in ms
-        #the time step between voxels: could be different from the delta if we want overlap 
+        #The time step in between voxels: could be different from the delta if we want overlap 
         self.anchor_step_us = anchor_step_us 
         #the duration of a voxel
         self.delta_t_us = delta_t_ms * 1000
@@ -69,7 +65,7 @@ class EventVoxelClipDataset(Dataset):
             self.reader = EDSReader(self.events_file)
 
     def __len__(self):
-        # The number of samples of the dataset: 
+        # TODO: The number of samples of the dataset: 
         # Need to think how we're gonna act on this
         # Our supervision are transforms in between voxels
         return len(self.timestamps)
