@@ -19,10 +19,13 @@ class EDSReader:
 
     def __init__(self, events_file: str | Path):
         self.events_file = Path(events_file)
-    
-        self.h5f = h5py.File(self.events_file, "r")
+        self.h5f = None
+        self.slicer = None
 
-        self.slicer = EventSlicer(self.h5f)
+    def _ensure_open(self):
+        if self.h5f is None:
+            self.h5f = h5py.File(self.events_file, "r")
+            self.slicer = EventSlicer(self.h5f)
 
 
     def get_events(
@@ -37,7 +40,7 @@ class EDSReader:
             dict with keys: x, y, t, p
             or None if window is invalid
         """
-
+        self._ensure_open()
         return self.slicer.get_events(t_start_us, t_end_us)
 
 
@@ -52,9 +55,10 @@ class EDSReader:
         if self.h5f is not None:
             self.h5f.close()
             self.h5f = None
+            self.slicer = None
 
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self):
         self.close()
