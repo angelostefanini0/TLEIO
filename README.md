@@ -43,8 +43,8 @@ python scripts/view_events.py --h5 data/eds/00_peanuts_dark/events.h5
 Run the processing.py script to process the event stream and the ground truth data to get supervision for the network. The script generates a ms_to_idx mapping fro efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency. Remember to change sequence_name to the actual sequence name (ex. 01_peanuts_light) in the raw folder
 
 ```bash
-python scripts/processing.py data/eds/raw/sequence_name/events.h5   \
---save-path data/eds/processed/sequence_name/events.h5   \
+python scripts/processing.py data/eds/raw   \
+--save-path data/eds/processed   \
 --overwrite  \
 --timestamps-key t \
 --process_gt imu.csv stamped_groundtruth.txt\

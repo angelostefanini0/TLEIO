@@ -9,21 +9,21 @@ import h5py
 import numpy as np
 from gt_training import *
 
-"""This script processes an event-based dataset stored in an HDF5 file and augments it with a temporal lookup table called `ms_to_idx`.
+"""This script processes event-based datasets stored in HDF5 files and augments it with a temporal lookup table called `ms_to_idx`.
 
-The input file is expected to contain event data (timestamps, pixel coordinates, and polarity), either in the root or under an `events/` group. 
+The input folder is expected to contain raw event data (timestamps, pixel coordinates, and polarity), either in the root or under an `events/` group. 
 The script reads the event timestamps, verifies that they are sorted, and computes a mapping from each millisecond to the index of the first 
 event occurring at or after that time.
 
 The resulting `ms_to_idx` array enables fast temporal slicing of events without repeatedly searching through the full timestamp array.
 
-A new HDF5 file is created as output. This file contains:
+A new HDF5 file is created as output for each input sequence. This file contains:
 - An `events/` group with the datasets `p`, `t`, `x`, and `y`
 - The computed `ms_to_idx` dataset stored at the root level
 Additionally, supplementary files such as `imu.csv` and `stamped_groundtruth.txt` are copied to the output directory if they exist.
 Command to run:
-python scripts/processing.py data/eds/raw/sequence_name/events.h5   \
---save-path data/eds/processed/sequence_name/events.h5   \
+python scripts/processing.py data/eds/raw   \
+--save-path data/eds/processed   \
 --overwrite  \
 --timestamps-key t \
 --process_gt imu.csv stamped_groundtruth.txt\
@@ -38,7 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "file",
         type=Path,
-        help="Path to the input HDF5 file containing event timestamps.",
+        help="Path to the folder with the raw dataset",
     )
     parser.add_argument(
         "--timestamps-key",
@@ -50,7 +50,7 @@ def parse_args() -> argparse.Namespace:
         "--save-path",
         type=Path,
         default=None,
-        help="Path where the output HDF5 file will be saved.",
+        help="Path where the output files will be saved.",
     )
     parser.add_argument(
         "--dataset-name",
@@ -307,28 +307,32 @@ def main() -> None:
     """
     args = parse_args()
     input_path = ensure_file_exists(args.file)
+    sequence_dirs = sorted([p for p in input_path.iterdir() if p.is_dir()])
+    sequence_names = sorted([p.name for p in input_path.iterdir() if p.is_dir()])
 
-   
-    t_us = load_timestamps(input_path, args.timestamps_key)
-    print(f"Loaded timestamps from: {input_path}")
-    
-    ms_to_idx, t0 = build_ms_to_idx(t_us)
-    print(f"Recording duration: {len(ms_to_idx) - 1} ms")
-
-   
-    if args.save_path:
-        write_to_new_file(
-            input_path=input_path,
-            output_path=args.save_path,
-            dataset_name=args.dataset_name,
-            data=ms_to_idx,
-            overwrite=args.overwrite,
-            t_us=t_us
-        )
-        print(f"Wrote dataset '{args.dataset_name}' into: {args.save_path}")
+    for seq, seq_name in zip(sequence_dirs, sequence_names): 
+        event_path = seq / "events.h5"
+        t_us = load_timestamps(event_path, args.timestamps_key)
+        print(f"Loaded timestamps from: {event_path}")
         
-        if args.process_gt:
-            process_gt(input_path, args.save_path, args.process_gt, t0, args.delta_t_ms, args.anchor_hz)
+        ms_to_idx, t0 = build_ms_to_idx(t_us)
+        print(f"Recording duration: {len(ms_to_idx) - 1} ms")
+
+    
+        if args.save_path:
+            output_path = args.save_path / seq_name / "events.h5"
+            write_to_new_file(
+                input_path=event_path,
+                output_path=output_path,
+                dataset_name=args.dataset_name,
+                data=ms_to_idx,
+                overwrite=args.overwrite,
+                t_us=t_us
+            )
+            print(f"Wrote dataset '{args.dataset_name}' into: {output_path}")
+            
+            if args.process_gt:
+                process_gt(event_path, output_path, args.process_gt, t0, args.delta_t_ms, args.anchor_hz)
             
         
 
