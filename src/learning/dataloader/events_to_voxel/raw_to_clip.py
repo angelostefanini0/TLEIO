@@ -3,30 +3,34 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+import bisect
 
 from representation.voxel_grid import VoxelGrid
 from representation.event_slicer import EventSlicer
 from reader import EDSReader
 from utils.io import *
 
-class EventVoxelClipDataset(Dataset):
+class MultiEventVoxelClipDataset(Dataset):
     # We use the voxel grid representation + clipping for TSformer-VO
     #
     # This class assumes the following structure in a sequence directory:
     #
-    # seq_name (e.g. 01_peanuts_light)
-    # ├── events.h5
-    # | └── events/y
-    # | └── events/t
-    # | └── events/p
-    # | ├── events/x
-    # | └── ms_to_idx
-    # ├── imu.csv
-    # ├── stamped_groundtruth.csv
+    # processed
+    # ├──seq_name (e.g. 01_peanuts_light)
+    # ├     ├── events.h5
+    # ├     | └── events/y
+    # ├     | └── events/t
+    # ├     | └── events/p
+    # ├     | ├── events/x
+    # ├     | └── ms_to_idx
+    # ├     ├── imu.csv
+    # ├     ├── stamped_groundtruth.csv
+    # ├──seq_name (e.g. 02_rocket_earth_light)
+    # ...
 
 
     def __init__(self, 
-                 seq_path: Path, 
+                 root_path: Path, 
                  mode: str='train', 
                  delta_t_ms: int=50, 
                  num_bins: int=15, 
@@ -35,10 +39,10 @@ class EventVoxelClipDataset(Dataset):
         assert num_bins >= 1
         assert clip_len >= 1
         assert delta_t_ms <= 100, 'if duration is higher than 100 ms'
-        assert seq_path.is_dir()
+        assert root_path.is_dir()
 
         # Set constants
-        self.seq_path = seq_path
+        self.root_path = root_path
         self.mode = mode
         self.height = 480
         self.width = 640
@@ -49,47 +53,75 @@ class EventVoxelClipDataset(Dataset):
 
         # Set event representation
         self.voxel_grid = VoxelGrid(self.num_bins, self.height, self.width, normalize=True)
-        
-        # Set reader lazily
-        self.events_file = self.seq_path / "events.h5"
-        self.reader = None
-    
-        # TODO: load supervision data
-        gt_poses_fn = self.seq_path / "anchor_poses.txt"
-        anchor_poses = np.loadtxt(gt_poses_fn, dtype=np.float64)
-        gt_rel_transf_fn = self.seq_path / "relative_motions.txt"
-        rel_transf = np.loadtxt(gt_rel_transf_fn, dtype=np.float64)
 
-        if anchor_poses.shape[1] != 8:
-            raise ValueError(
-                f"Expected 8 columns for anchor poses [t px py pz qx qy qz qw], got {anchor_poses.shape[1]}"
-            )
-        self.anchors_us = anchor_poses[:, 0]
-        
-        if anchor_poses.shape[1] != 8:
-            raise ValueError(
-                f"Expected 14 columns [t0_us t1_us r11 r12 r13 px r21 r22 r23 py r31 r32 r33 pz], got {anchor_poses.shape[1]}"
-            )
-        self.rel_transf = rel_transf
+        #Load lightweight metadata
+        self.seq_infos = []
+        self.cum_lengths = []
+        total = 0
+        sequence_dirs = sorted([p for p in self.root_path.iterdir() if p.is_dir()])
+        for seq_path in sequence_dirs:
+            gt_poses_fn = seq_path / "anchor_poses.txt"
+            gt_rel_transf_fn = seq_path / "relative_motions.txt"
+            events_file = seq_path / "events.h5"
+
+            # skip folders that do not contain a valid processed sequence
+            if not (gt_poses_fn.exists() and gt_rel_transf_fn.exists() and events_file.exists()):
+                continue
+
+            anchor_poses = np.loadtxt(gt_poses_fn, dtype=np.float64)
+            rel_transf = np.loadtxt(gt_rel_transf_fn, dtype=np.float64)
+
+            if anchor_poses.shape[1] != 8:
+                raise ValueError(
+                    f"{seq_path}: expected 8 columns in anchor_poses.txt, got {anchor_poses.shape[1]}"
+                )
+
+            if rel_transf.shape[1] != 14:
+                raise ValueError(
+                    f"{seq_path}: expected 14 columns in relative_motions.txt, got {rel_transf.shape[1]}"
+                )
+
+            anchors_us = anchor_poses[:, 0]
+            num_samples = max(0, len(anchors_us) - self.clip_len + 1)
+            self.seq_infos.append({
+                "seq_path": seq_path,
+                "events_file": events_file,
+                "anchors_us": anchors_us,
+                "rel_transf": rel_transf,
+                "num_samples": num_samples,
+            })
+
+            total += num_samples
+            self.cum_lengths.append(total)
+
+        self._readers = [None] * len(self.seq_infos)
 
     
-    def _ensure_reader(self):
-        if self.reader is None:
-            self.reader = EDSReader(self.events_file)
+    def _ensure_reader(self, seq_idx):
+        if self._readers[seq_idx] is None:
+            events_file = self.seq_infos[seq_idx]["events_file"]
+            self._readers[seq_idx] = EDSReader(events_file)
     
-    def close(self):
-        if self.reader is not None:
-            self.reader.close()
-            self.reader = None
+    def close(self, seq_idx):
+        for i, reader in enumerate(self._readers):
+            if reader is not None:
+                reader.close()
+                self._readers[i] = None
 
-    def __del__(self):
-        self.close()
+    def __del__(self, seq_idx):
+        self.close(seq_idx)
 
     def __len__(self):
         # The number of samples of the dataset: 
         #Our supervision is made up of transforms in between voxels
-        return self.anchors_us.shape - self.clip_len + 1
-
+        return self.cum_lengths[-1] if self.cum_lengths else 0
+    
+    def locate_index(self, idx, cum_lengths):
+        seq_idx = bisect.bisect_right(cum_lengths, idx)
+        prev_cum = 0 if seq_idx == 0 else cum_lengths[seq_idx - 1]
+        local_idx = idx - prev_cum
+        return seq_idx, local_idx
+    
     def _empty_voxel(self):
         return torch.zeros(
             (self.num_bins, self.height, self.width),
@@ -117,19 +149,21 @@ class EventVoxelClipDataset(Dataset):
 
         return self.voxel_grid.convert_events(event_data)
     
-    def get_relative_motion(self, t0_idx, t0, t1):
+    def get_relative_motion(self, rel_transf, t0_idx, t0, t1):
         
         #Check also the timestamps match
-        assert (t0 == self.rel_transf[t0_idx, 0]) and (t1 == self.rel_transf[t0_idx, 1])
+        assert (t0 == rel_transf[t0_idx, 0]) and (t1 == rel_transf[t0_idx, 1])
         #Get the actual supervision data
-        return self.rel_transf[t0_idx, 2: ]
+        return rel_transf[t0_idx, 2: ]
 
 
     def __getitem__(self, index):
-        self._ensure_reader()
+        seq_idx, local_idx = self.locate_index(index, self.cum_lengths)
+        self._ensure_reader(seq_idx)
 
         #Get the anchor timestamps and build a voxel for each anchor
-        anchors = self.anchors_us[index : index + self.clip_len]
+        seq_anchors = self.seq_infos[seq_idx]["anchors_us"]
+        anchors = seq_anchors[local_idx : local_idx + self.clip_len]
         clip_voxels = []
         clip_targets = []
 
@@ -137,7 +171,8 @@ class EventVoxelClipDataset(Dataset):
             ts_end_us = int(anchor)
             ts_start_us = ts_end_us - self.delta_t_us
 
-            event_data = self.reader.get_events(ts_start_us, ts_end_us)
+            reader = self._readers[seq_idx]
+            event_data = reader.get_events(ts_start_us, ts_end_us)
 
             if event_data is None:
                 voxel = self._empty_voxel()
@@ -153,10 +188,11 @@ class EventVoxelClipDataset(Dataset):
 
             # target for pairwise motion: one target per transition
             if j < len(anchors) - 1:
-                t0_idx = index + j
+                t0_idx = local_idx + j
                 t0 = int(anchors[j])
                 t1 = int(anchors[j + 1])
-                rel_target = self.get_relative_motion(t0_idx, t0, t1)   # shape [target_dim - 12]
+                rel_transf = self.seq_infos[seq_idx]["rel_transf"]
+                rel_target = self.get_relative_motion(rel_transf, t0_idx, t0, t1)   # shape [target_dim (12)]
                 clip_targets.append(torch.as_tensor(rel_target, dtype=torch.float32))
 
         # stack voxels: list of [num_bins, H, W] -> [num_bins, clip_len, H, W]
