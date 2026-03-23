@@ -117,7 +117,7 @@ class MultiEventVoxelClipDataset(Dataset):
 
     def __del__(self):
         self.close()
-        
+
     def __len__(self):
         # The number of samples of the dataset: 
         #Our supervision is made up of transforms in between voxels
@@ -158,7 +158,7 @@ class MultiEventVoxelClipDataset(Dataset):
     
     def get_relative_motion(self, rel_transf, t0_idx, t0, t1):
         
-        #Check also the timestamps match
+        #Check also the timestamps matches
         assert (t0 == rel_transf[t0_idx, 0]) and (t1 == rel_transf[t0_idx, 1])
         #Get the actual supervision data
         return rel_transf[t0_idx, 2: ]
