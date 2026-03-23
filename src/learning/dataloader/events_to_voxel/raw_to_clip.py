@@ -5,10 +5,10 @@ import torch
 from torch.utils.data import Dataset
 import bisect
 
-from representation.voxel_grid import VoxelGrid
-from representation.event_slicer import EventSlicer
-from reader import EDSReader
-from utils.io import *
+from ..representation.voxel_grid import VoxelGrid
+from .reader import EDSReader
+
+from ..utils.io import *
 
 class MultiEventVoxelClipDataset(Dataset):
     # We use the voxel grid representation + clipping for TSformer-VO
@@ -41,6 +41,12 @@ class MultiEventVoxelClipDataset(Dataset):
         assert delta_t_ms <= 100, 'if duration is higher than 100 ms'
         assert root_path.is_dir()
 
+
+        self.seq_infos = []
+        self.cum_lengths = []
+        self._readers = []
+        total = 0
+
         # Set constants
         self.root_path = root_path
         self.mode = mode
@@ -55,8 +61,7 @@ class MultiEventVoxelClipDataset(Dataset):
         self.voxel_grid = VoxelGrid(self.num_bins, self.height, self.width, normalize=True)
 
         #Load lightweight metadata
-        self.seq_infos = []
-        self.cum_lengths = []
+    
         total = 0
         sequence_dirs = sorted([p for p in self.root_path.iterdir() if p.is_dir()])
         for seq_path in sequence_dirs:
@@ -68,8 +73,8 @@ class MultiEventVoxelClipDataset(Dataset):
             if not (gt_poses_fn.exists() and gt_rel_transf_fn.exists() and events_file.exists()):
                 continue
 
-            anchor_poses = np.loadtxt(gt_poses_fn, dtype=np.float64)
-            rel_transf = np.loadtxt(gt_rel_transf_fn, dtype=np.float64)
+            anchor_poses = np.atleast_2d(np.loadtxt(gt_poses_fn, dtype=np.float64, skiprows=1))
+            rel_transf = np.atleast_2d(np.loadtxt(gt_rel_transf_fn, dtype=np.float64, skiprows=1))
 
             if anchor_poses.shape[1] != 8:
                 raise ValueError(
@@ -102,15 +107,17 @@ class MultiEventVoxelClipDataset(Dataset):
             events_file = self.seq_infos[seq_idx]["events_file"]
             self._readers[seq_idx] = EDSReader(events_file)
     
-    def close(self, seq_idx):
+    def close(self):
+        if not hasattr(self, "_readers"):
+            return
         for i, reader in enumerate(self._readers):
             if reader is not None:
                 reader.close()
                 self._readers[i] = None
 
-    def __del__(self, seq_idx):
-        self.close(seq_idx)
-
+    def __del__(self):
+        self.close()
+        
     def __len__(self):
         # The number of samples of the dataset: 
         #Our supervision is made up of transforms in between voxels
