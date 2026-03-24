@@ -16,6 +16,7 @@ git submodule update --init --recursive
 ```
 
 ## 2. Data Generation
+### 2.1 EDS 
 
 Download the "00_peanuts_dark" sequence from the Event Camera Dataset (EDS):
 
@@ -29,15 +30,7 @@ Extract the archive into data/eds/raw/00_peanuts_dark directory:
 ```bash
 tar -xzf 00_peanuts_dark.tgz
 ```
-
-## 3. Event Visualization
-
-Run the viewer to inspect the event stream and verify the correctness of data:
-
-```bash
-python scripts/view_events.py --h5 data/eds/00_peanuts_dark/events.h5
-```
-## 4. Dataset downloading - TartanAir + TartanEvent
+### 2.2 TartanAir + TartanEvent
 
 Run the `download_tartanair.py` script to download sequences from a specified environment in the TartanAir dataset. TartanAir is downloaded using an API, but does not come with events (or doesn't look to come with it by default), and TartanEvent is taken from UZH RPG resources found in the RAMPVO github repo. Argument  `env-event` asks for the environment of TartanEvent (see list here: https://download.ifi.uzh.ch/rpg/web/data/iros24_rampvo/datasets/TartanEvent/), while `env-air` asks for the environment of TartanAir (see list at: https://github.com/castacks/tartanair_tools/blob/master/download_training_zipfiles.txt). All environments have two difficulties: easy and hard, which must be passed as an argument. 
 The python API installed by `pip install` is not updated with the code from the current github repo of the official dataset, so to make the script work do the following: 
@@ -63,6 +56,16 @@ python scripts/download_tartanair.py \
 --env-air Office \
 --difficulty easy hard
 ```
+
+## 3. Event Visualization
+
+Run the viewer to inspect the event stream and verify the correctness of data:
+
+```bash
+python scripts/view_events.py --h5 data/eds/00_peanuts_dark/events.h5
+```
+
+
 
 ## 4. Data pre-processing
 
