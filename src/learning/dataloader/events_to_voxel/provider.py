@@ -7,7 +7,7 @@ from ..representation.voxel_grid import VoxelGrid
 from .reader import EDSReader
 
 
-def build_train_loader(
+def build_loader(
     root_path: Path,
     batch_size=4,
     num_workers=0,
@@ -18,7 +18,6 @@ def build_train_loader(
     
     dataset = MultiEventVoxelClipDataset(
         root_path=root_path,
-        mode="train",
         delta_t_ms=delta_t_ms,
         num_bins=num_bins,
         clip_len=clip_len,

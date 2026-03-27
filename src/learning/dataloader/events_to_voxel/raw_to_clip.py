@@ -31,7 +31,6 @@ class MultiEventVoxelClipDataset(Dataset):
 
     def __init__(self, 
                  root_path: Path, 
-                 mode: str='train', 
                  delta_t_ms: int=50, 
                  num_bins: int=15, 
                  clip_len: int = 3):
@@ -49,7 +48,6 @@ class MultiEventVoxelClipDataset(Dataset):
 
         # Set constants
         self.root_path = root_path
-        self.mode = mode
         self.height = 480
         self.width = 640
         self.num_bins = num_bins
@@ -209,9 +207,9 @@ class MultiEventVoxelClipDataset(Dataset):
         target = torch.stack(clip_targets, dim=0)
 
         output = {
-            "representation": clip,                              # [num_bins, clip_len, H, W]
+            "representation": clip,                              # [C, T, H, W]
             "anchors_us": torch.as_tensor(anchors, dtype=torch.int64),
-            "target": target,                                    # [clip_len - 1, target_dim]
+            "target": target,                                    # [T-1, target_dim]
         }
 
         return output
