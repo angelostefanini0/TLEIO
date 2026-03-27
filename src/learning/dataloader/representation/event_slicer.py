@@ -8,37 +8,31 @@ import numpy as np
 #Taken kindly from DSEC dataloader 
 class EventSlicer:
     def __init__(self, h5f: h5py.File):
-        #event.h5 file contains all the event information in h5 format
-        #This file is stored in variable passed to the class h5f
+        """
+        h5f is a file that contains all the event information in h5 format
+        It is the already processed h5 file with event information as well as the mapping ms_to_idx
+        """
         self.h5f = h5f
 
         self.events = dict()
+
         #Going through sections of the h5file
         for dset_str in ['p', 't', 'x', 'y']:
-            #Filling in the dictionary of events
             self.events[dset_str] = self.h5f['events/{}'.format(dset_str)]
 
-        # This is the mapping from milliseconds to event index:
-        # It is defined such that
-        # (1) t[ms_to_idx[ms]] >= ms*1000, for ms > 0
-        # (2) t[ms_to_idx[ms] - 1] < ms*1000, for ms > 0
-        # (3) ms_to_idx[0] == 0
-        # , where 'ms' is the time in milliseconds and 't' the event timestamps in microseconds.
-        #
-        # As an example, given 't' and 'ms':
-        # t:    0     500    2100    5000    5000    7100    7200    7200    8100    9000
-        # ms:   0       1       2       3       4       5       6       7       8       9
-        #
-        # we get
-        #
-        # ms_to_idx:
-        #       0       2       2       3       3       3       5       5       8       9
+        #The mapping from milliseconds to event index can be found in scripts/processing.py:
+
         self.ms_to_idx = np.asarray(self.h5f['ms_to_idx'], dtype='int64')
 
         if "t_offset" in list(h5f.keys()):
             self.t_offset = int(h5f['t_offset'][()])
         else:
             self.t_offset = 0
+        
+        # ms_to_idx mapping expects times starting from 0 in ms
+        # EDS dataset has a common time "frame", with large values. 
+        # We process IMU and groundtruth data so that it's relative to the first event 
+        # timestamp and in ms Event file is also processed so that the first timestamp is 0
         self.t_final = int(self.events['t'][-1]) + self.t_offset
 
     def get_start_time_us(self):
@@ -59,7 +53,9 @@ class EventSlicer:
         """
         assert t_start_us < t_end_us
 
-        # We assume that the times are top-off-day, hence subtract offset:
+        # The times in EDS are all at the same "order of magnitude", so there is no offset
+        # However we keep it for completeness
+        # The inputs for the function are the starting and ending times in us  
         t_start_us -= self.t_offset
         t_end_us -= self.t_offset
 
@@ -76,7 +72,7 @@ class EventSlicer:
         idx_start_offset, idx_end_offset = self.get_time_indices_offsets(time_array_conservative, t_start_us, t_end_us)
         t_start_us_idx = t_start_ms_idx + idx_start_offset
         t_end_us_idx = t_start_ms_idx + idx_end_offset
-        # Again add t_offset to get gps time
+        # Again add t_offset 
         events['t'] = time_array_conservative[idx_start_offset:idx_end_offset] + self.t_offset
         for dset_str in ['p', 'x', 'y']:
             events[dset_str] = np.asarray(self.events[dset_str][t_start_us_idx:t_end_us_idx])
@@ -110,6 +106,8 @@ class EventSlicer:
             time_start_us: int,
             time_end_us: int) -> Tuple[int, int]:
         """Compute index offset of start and end timestamps in microseconds
+        This is the step to go from coarse to fine indexing: with ms_to_idx 
+        we only have millisecond accuracy
         Parameters
         ----------
         time_array:     timestamps (in us) of the events

@@ -7,23 +7,29 @@ from typing import Optional
 
 import h5py
 import numpy as np
+from gt_training import *
 
-"""This script processes an event-based dataset stored in an HDF5 file and augments it with a temporal lookup table called `ms_to_idx`.
+"""This script processes event-based datasets stored in HDF5 files and augments it with a temporal lookup table called `ms_to_idx`.
 
-The input file is expected to contain event data (timestamps, pixel coordinates, and polarity), either in the root or under an `events/` group. 
+The input folder is expected to contain raw event data (timestamps, pixel coordinates, and polarity), either in the root or under an `events/` group. 
 The script reads the event timestamps, verifies that they are sorted, and computes a mapping from each millisecond to the index of the first 
 event occurring at or after that time.
 
 The resulting `ms_to_idx` array enables fast temporal slicing of events without repeatedly searching through the full timestamp array.
 
-A new HDF5 file is created as output. This file contains:
+A new HDF5 file is created as output for each input sequence. This file contains:
 - An `events/` group with the datasets `p`, `t`, `x`, and `y`
 - The computed `ms_to_idx` dataset stored at the root level
 Additionally, supplementary files such as `imu.csv` and `stamped_groundtruth.txt` are copied to the output directory if they exist.
 Command to run:
-python scripts/processing.py data/eds/raw/peanuts/events.h5 --save-path data/eds/processed/peanuts/events.h5 --overwrite --timestamps-key t"""
-
-
+python scripts/processing.py data/eds/raw   \
+--save-path data/eds/processed   \
+--overwrite  \
+--timestamps-key t \
+--process_gt imu.csv stamped_groundtruth.txt\
+--delta_t_ms 50 \
+--anchor_hz 20
+"""
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -32,7 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "file",
         type=Path,
-        help="Path to the input HDF5 file containing event timestamps.",
+        help="Path to the folder with the raw dataset",
     )
     parser.add_argument(
         "--timestamps-key",
@@ -44,7 +50,7 @@ def parse_args() -> argparse.Namespace:
         "--save-path",
         type=Path,
         default=None,
-        help="Path where the output HDF5 file will be saved.",
+        help="Path where the output files will be saved.",
     )
     parser.add_argument(
         "--dataset-name",
@@ -58,14 +64,27 @@ def parse_args() -> argparse.Namespace:
         help="Overwrite the output file if it exists.",
     )
     parser.add_argument(
-        "--copy-files",
+        "--process_gt",
         nargs="*",
         default=[],
         help=(
-            "Optional list of supplementary files to copy from the source file directory "
-            "to the output file directory. Example: --copy-files imu.csv stamped_groundtruth.txt"
-    ),
-)
+            "Optional list of supplementary files to process from the source file directory "
+            "to the output file directory. Example: --process_gt imu.csv stamped_groundtruth.txt"
+        ),
+    )
+    parser.add_argument(
+        "--delta_t_ms", 
+        type=float, default=50.0, 
+        help="Voxel duration in ms"
+    )
+    
+    parser.add_argument(
+        "--anchor_hz", 
+        type=float, 
+        default=20.0, 
+        help="Anchor frequency in Hz"
+    )
+
     return parser.parse_args()
 
 
@@ -88,24 +107,44 @@ def validate_sorted_non_decreasing(t: np.ndarray) -> None:
         raise ValueError("Timestamps must be sorted in non-decreasing order.")
 
 
-def build_ms_to_idx(t_us: np.ndarray) -> np.ndarray:
+def build_ms_to_idx(t_us: np.ndarray) -> tuple[np.ndarray, int]:
+    """
+    Builds the mapping from milliseconds to indices using the following rule: 
+    # This is the mapping from milliseconds to event index:
+    It is defined such that
+    (1) t[ms_to_idx[ms]] >= ms*1000, for ms > 0
+    (2) t[ms_to_idx[ms] - 1] < ms*1000, for ms > 0
+    (3) ms_to_idx[0] == 0
+    , where 'ms' is the time in milliseconds and 't' the event timestamps in microseconds.
+    
+    As an example, given 't' and 'ms':
+    t:    0     500    2100    5000    5000    7100    7200    7200    8100    9000
+    ms:   0       1       2       3       4       5       6       7       8       9
+    
+    we get
+    
+    ms_to_idx:
+          0       2       2       3       3       3       5       5       8       9
+    """
     validate_sorted_non_decreasing(t_us)
     
     t0 = t_us[0]
+    print(f"Initial time:{t0}")
     t_relative = t_us - t0
     
     max_ms = int(np.ceil(t_relative[-1] / 1000.0))
     ms_grid_us = np.arange(max_ms + 1, dtype=np.int64) * 1000
     
     ms_to_idx = np.searchsorted(t_relative, ms_grid_us, side="left").astype(np.int64)
-    return ms_to_idx
+    return ms_to_idx, int(t0)
 
 def write_to_new_file(
     input_path: Path,
     output_path: Path,
     dataset_name: str,
     data: np.ndarray,
-    overwrite: bool
+    overwrite: bool, 
+    t_us: np.ndarray
 ) -> None:
     
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -114,21 +153,32 @@ def write_to_new_file(
     with h5py.File(input_path, "r") as f_in, h5py.File(output_path, mode) as f_out:
         events_out = f_out.create_group("events")
         for key in ["p", "t", "x", "y"]:
-            if f"events/{key}" in f_in:
-                src = f_in[f"events/{key}"]
-            elif key in f_in:
-                src = f_in[key]
+            if key == "t":
+                src_data = (t_us - t_us[0]).astype(t_us.dtype)
+                src_dtype = src_data.dtype
             else:
-                raise KeyError(f"Dataset '{key}' not found in root or in events/")
-            events_out.create_dataset(key, data=src[...], dtype=src.dtype)
+                if f"events/{key}" in f_in:
+                    src = f_in[f"events/{key}"]
+                elif key in f_in:
+                    src = f_in[key]
+                else:
+                    raise KeyError(f"Dataset '{key}' not found in root or in events/")
+
+                src_data = src[...]
+                src_dtype = src.dtype
+
+            events_out.create_dataset(key, data=src_data, dtype=src_dtype)
 
         f_out.create_dataset(dataset_name, data=data, dtype=data.dtype)
 
 
-def copy_supplementary_files(
+def process_gt(
     source_h5: Path,
     dest_h5: Path,
     files_to_copy: list[str],
+    t0: int, 
+    delta_t_ms: float, 
+    anchor_hz: float
 ) -> None:
     
     source_dir = source_h5.parent
@@ -141,10 +191,93 @@ def copy_supplementary_files(
         if not s_file.exists():
             raise FileNotFoundError(f"Supplementary file not found: {s_file}")
 
-        print(f"Copying: {filename} -> {dest_dir}")
-        shutil.copy2(s_file, d_file)
-     
-         
+        print(f"Processing: {filename} -> {dest_dir}")
+        offset_timestamps(s_file, dest_dir, d_file, t0, delta_t_ms, anchor_hz)
+        
+
+def offset_timestamps(s_file: Path,
+                      d_folder: Path, 
+                      d_file: Path, 
+                      t0:int, 
+                      delta_t_ms: float, 
+                      anchor_hz: float
+                      ) -> np.ndarray: 
+
+    if s_file.suffix.lower() == ".csv":
+        #the imu file is in [ns]
+        load_delimiter = ","
+        save_delimiter = ","
+        scale = 1e-3
+        gt = False
+    elif s_file.suffix.lower() == ".txt":
+        #the groundtruth file is in [s]
+        load_delimiter = None   # any whitespace
+        save_delimiter = " "   
+        scale = 1e6
+        gt = True
+    else:
+        raise ValueError(f"Unsupported file type: {s_file.suffix}. Use .csv or .txt")
+
+    data = np.loadtxt(s_file, delimiter=load_delimiter, ndmin=2)
+
+    if data.shape[1] < 1:
+        raise ValueError("Input file must contain at least one column.")
+
+    #Offset the timestamps
+    converted_first_col = data[:, 0] * scale - t0
+    keep_mask = converted_first_col >= 0
+
+    filtered = data[keep_mask].copy()
+    filtered[:, 0] = converted_first_col[keep_mask].astype(np.int64)
+    fmt = ["%d"] + ["%.10f"] * (filtered.shape[1] - 1)
+    
+    np.savetxt(d_file, filtered, delimiter=save_delimiter, fmt=fmt)
+    
+    #Actually process the gt 
+    if gt: 
+        generate_supervision(delta_t_ms, anchor_hz, filtered, d_folder)
+
+def generate_supervision(
+        delta_t_ms: float = 50.0,
+        anchor_hz: float = 20.0, 
+        gt_data: np.ndarray = None, 
+        out_dir : Path = None,
+        ): 
+    delta_t_us = int(round(delta_t_ms * 1000.0))
+    anchor_step_us = int(round(1e6 / anchor_hz))
+    
+    ts_gt, pos_gt, quat_gt = load_gt(gt_data)
+
+    anchors_us = get_anchor_grid(
+        gt_timestamps_us=ts_gt,
+        delta_t_us=delta_t_us,
+        anchor_step_us=anchor_step_us,
+    )
+
+    anchor_pos, anchor_quat = interpolate_gt_to_anchors(
+        gt_timestamps_us=ts_gt,
+        gt_pos=pos_gt,
+        gt_quat=quat_gt,
+        anchors_us=anchors_us,
+    )
+
+    rel = compute_relative_motions(
+        anchor_ts=anchors_us,
+        anchor_pos=anchor_pos,
+        anchor_quat=anchor_quat,
+    )
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    save_anchor_poses(out_dir / "anchor_poses.txt", anchors_us, anchor_pos, anchor_quat)
+    save_relative_motions(out_dir / "relative_motions.txt", rel)
+
+    print(f"GT poses:           {len(ts_gt)}")
+    print(f"Anchors generated:  {len(anchors_us)}")
+    print(f"Relative motions:   {len(rel)}")
+    if len(anchors_us) > 0:
+        print(f"First anchor [us]:  {anchors_us[0]}")
+        print(f"Last anchor  [us]:  {anchors_us[-1]}")
+        print(f"Step         [us]:  {anchor_step_us}")
 
 def main() -> None:
     """
@@ -174,27 +307,33 @@ def main() -> None:
     """
     args = parse_args()
     input_path = ensure_file_exists(args.file)
+    sequence_dirs = sorted([p for p in input_path.iterdir() if p.is_dir()])
+    sequence_names = sorted([p.name for p in input_path.iterdir() if p.is_dir()])
 
-   
-    t_us = load_timestamps(input_path, args.timestamps_key)
-    print(f"Loaded timestamps from: {input_path}")
-    
-    ms_to_idx = build_ms_to_idx(t_us)
-    print(f"Recording duration: {len(ms_to_idx) - 1} ms")
-
-   
-    if args.save_path:
-        write_to_new_file(
-            input_path=input_path,
-            output_path=args.save_path,
-            dataset_name=args.dataset_name,
-            data=ms_to_idx,
-            overwrite=args.overwrite,
-        )
-        print(f"Wrote dataset '{args.dataset_name}' into: {args.save_path}")
+    for seq, seq_name in zip(sequence_dirs, sequence_names): 
+        event_path = seq / "events.h5"
+        t_us = load_timestamps(event_path, args.timestamps_key)
+        print(f"Loaded timestamps from: {event_path}")
         
-        if args.copy_files:
-            copy_supplementary_files(input_path, args.save_path, args.copy_files)
+        ms_to_idx, t0 = build_ms_to_idx(t_us)
+        print(f"Recording duration: {len(ms_to_idx) - 1} ms")
+
+    
+        if args.save_path:
+            output_path = args.save_path / seq_name / "events.h5"
+            write_to_new_file(
+                input_path=event_path,
+                output_path=output_path,
+                dataset_name=args.dataset_name,
+                data=ms_to_idx,
+                overwrite=args.overwrite,
+                t_us=t_us
+            )
+            print(f"Wrote dataset '{args.dataset_name}' into: {output_path}")
+            
+            if args.process_gt:
+                process_gt(event_path, output_path, args.process_gt, t0, args.delta_t_ms, args.anchor_hz)
+            
         
 
 if __name__ == "__main__":

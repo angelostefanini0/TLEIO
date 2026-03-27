@@ -42,3 +42,4 @@ sdist/
 var/
 wheels/
 *.egg-info/
+tartanairpy/*
