@@ -81,7 +81,7 @@ def parse_args():
         "patch_size": args["patch_size"],
         "attention_type": args["attention_type"],
         "num_frames": args["clip_len"],
-        "num_classes": 12 * (args["clip_len"] - 1),
+        "num_classes": 7 * (args["clip_len"] - 1),
         "depth": args["depth"],
         "heads": args["heads"],
         "dim_head": args["dim_head"],

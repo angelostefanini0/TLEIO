@@ -69,7 +69,7 @@ python scripts/view_events.py --h5 data/eds/00_peanuts_dark/events.h5
 
 ## 4. Data pre-processing
 
-Run the `processing.py` script to process the event stream and the ground truth data to get supervision for the network. The script generates a ms_to_idx mapping for efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency. Remember to change sequence_name to the actual sequence name (ex. 01_peanuts_light) in the raw folder. 
+Run the `processing.py` script to process the event stream and the ground truth data to get supervision for the network. The script generates a ms_to_idx mapping for efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency. 
 
 CURRENTLY WORKING FOR EDS ONLY, NEEDS MINOR FIXES TO WORK WITH THE TARTAN AIR DATASET AS WELL
 
@@ -78,7 +78,7 @@ python scripts/processing.py data/eds/raw   \
 --save-path data/eds/processed   \
 --overwrite  \
 --timestamps-key t \
---process_gt imu.csv stamped_groundtruth.txt\
+--process_gt imu.csv stamped_groundtruth.txt \
 --delta_t_ms 50 \
 --anchor_hz 20
 ```

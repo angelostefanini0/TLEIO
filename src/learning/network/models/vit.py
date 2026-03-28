@@ -4,17 +4,13 @@
 
 import torch
 import torch.nn as nn
-from functools import partial
-import math
-import warnings
+
 import torch.nn.functional as F
 import numpy as np
 
-from .vit_utils import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from .vit_utils import DropPath, to_2tuple, trunc_normal_
 
-from torch import einsum
-from einops import rearrange, reduce, repeat
+from einops import rearrange
 
 
 class Mlp(nn.Module):
@@ -289,14 +285,4 @@ class VisionTransformer(nn.Module):
         x = self.head(x)
         return x
 
-def _conv_filter(state_dict, patch_size=16):
-    """ convert patch embedding weight from manual patchify + linear proj to conv"""
-    out_dict = {}
-    for k, v in state_dict.items():
-        if 'patch_embed.proj.weight' in k:
-            if v.shape[-1] != patch_size:
-                patch_size = v.shape[-1]
-            v = v.reshape((v.shape[0], 3, patch_size, patch_size))
-        out_dict[k] = v
-    return out_dict
 

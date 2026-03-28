@@ -32,7 +32,7 @@ class MultiEventVoxelClipDataset(Dataset):
     def __init__(self, 
                  root_path: Path, 
                  delta_t_ms: int=50, 
-                 num_bins: int=15, 
+                 num_bins: int=5, 
                  clip_len: int = 3):
         
         assert num_bins >= 1
@@ -79,9 +79,9 @@ class MultiEventVoxelClipDataset(Dataset):
                     f"{seq_path}: expected 8 columns in anchor_poses.txt, got {anchor_poses.shape[1]}"
                 )
 
-            if rel_transf.shape[1] != 14:
+            if rel_transf.shape[1] != 9:
                 raise ValueError(
-                    f"{seq_path}: expected 14 columns in relative_motions.txt, got {rel_transf.shape[1]}"
+                    f"{seq_path}: expected 9 columns in relative_motions.txt, got {rel_transf.shape[1]}"
                 )
 
             anchors_us = anchor_poses[:, 0]
@@ -197,7 +197,7 @@ class MultiEventVoxelClipDataset(Dataset):
                 t0 = int(anchors[j])
                 t1 = int(anchors[j + 1])
                 rel_transf = self.seq_infos[seq_idx]["rel_transf"]
-                rel_target = self.get_relative_motion(rel_transf, t0_idx, t0, t1)   # shape [target_dim (12)]
+                rel_target = self.get_relative_motion(rel_transf, t0_idx, t0, t1)   # shape [target_dim (7)]
                 clip_targets.append(torch.as_tensor(rel_target, dtype=torch.float32))
 
         # stack voxels: list of [num_bins, H, W] -> [num_bins, clip_len, H, W]

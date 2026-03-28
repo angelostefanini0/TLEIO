@@ -2,11 +2,7 @@ import os
 import torch
 import torch.optim as optim
 from tqdm import tqdm
-from torchvision import transforms
-from torch.utils.tensorboard import SummaryWriter
-from torch.utils.data import random_split
-import pickle
-import json
+import torch.nn.functional as F
 
 
 torch.manual_seed(2026)
@@ -17,15 +13,15 @@ def val_epoch(model, val_loader, criterion, args):
     with tqdm(val_loader, unit="batch") as tepoch:
         for batch in tepoch:
             x = batch["representation" ] # B, C, T, H, W
-            y = batch["target"] #B, T - 1, 12
+            y = batch["target"] #B, T - 1, 7
             tepoch.set_description(f"Validating ")
             if torch.cuda.is_available():
                 x = x.cuda(non_blocking=True)
                 y = y.cuda(non_blocking=True)
 
             # predict transformation
-            estimated_transf = model(x.float()) # il modello returna [B, (T-1)*12]
-            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 12) #reshapiamo
+            estimated_transf = model(x.float()) # il modello returna [B, (T-1)*7]
+            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 7) #reshapiamo
 
             # compute loss
             loss = compute_loss(estimated_transf, y, criterion, args)
@@ -45,15 +41,15 @@ def train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_wr
             tepoch.set_description(f"Epoch {epoch}")
             
             x = batch["representation"] # B, C, T, H, W
-            y = batch["target"] #B, T - 1, 12
+            y = batch["target"] #B, T - 1, 7
             
             if torch.cuda.is_available():
                 x = x.cuda(non_blocking=True)
                 y = y.cuda(non_blocking=True)
 
-            # predict pose
+            # predict transformation
             estimated_transf = model(x.float())
-            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 12)
+            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 7)
 
             # compute loss
             loss = compute_loss(estimated_transf, y, criterion, args)
@@ -144,29 +140,25 @@ def get_optimizer(params, args):
 
 
 def compute_loss(y_hat, y, criterion, args):
-    if args["weighted_loss"] == None:
-        loss = criterion(y_hat, y.float()) #Do the MSE on everything at the same time (flattened)
-    else:
-        y = torch.reshape(y, (y.shape[0], args["clip_len"]-1, 12))
-        rot_idx = torch.tensor([0, 1, 2, 4, 5, 6, 8, 9, 10], device=y.device)
-        transl_idx = torch.tensor([3, 7, 11], device=y.device)
+    y = y.reshape(y.shape[0], args["clip_len"] - 1, 7).float()
+    y_hat = y_hat.reshape(y_hat.shape[0], args["clip_len"] - 1, 7)
 
-        gt_rot = y[..., rot_idx].flatten()   # shape [B, T-1, 9]
+    gt_transl = y[..., :3]
+    gt_quat = y[..., 3:]
 
-        gt_transl = y[..., transl_idx].flatten()
+    estimated_transl = y_hat[..., :3]
+    estimated_quat = y_hat[..., 3:]
 
-        # predicted transformation
-        y_hat = torch.reshape(y_hat, (y_hat.shape[0], args["clip_len"]-1, 12))
-        estimated_rot = y_hat[..., rot_idx].flatten()
-        estimated_transl = y_hat[..., transl_idx].flatten()
+    gt_quat = F.normalize(gt_quat, dim=-1)
+    estimated_quat = F.normalize(estimated_quat, dim=-1)
 
-        # compute custom loss
-        k = args["weighted_loss"]
-        loss_angles = k * criterion(estimated_rot, gt_rot.float())
-        loss_translation = criterion(estimated_transl, gt_transl.float())
-        loss =  loss_angles + loss_translation   
-    return loss
+    loss_translation = criterion(estimated_transl, gt_transl)
 
+    quat_loss_pos = criterion(estimated_quat, gt_quat)
+    quat_loss_neg = criterion(estimated_quat, -gt_quat)
+    loss_quat = torch.minimum(quat_loss_pos, quat_loss_neg)
 
+    k = 1.0 if args["weighted_loss"] is None else args["weighted_loss"]
+    return loss_translation + k * loss_quat
 
     
