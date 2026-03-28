@@ -18,18 +18,14 @@ git submodule update --init --recursive
 ## 2. Data Generation
 ### 2.1 EDS 
 
-Download the "00_peanuts_dark" sequence from the Event Camera Dataset (EDS):
+Download the eds dataset sequence from the Event Camera Dataset (EDS):
 
 ```bash
-cd data/eds
-python -c "import urllib.request; urllib.request.urlretrieve('https://download.ifi.uzh.ch/rpg/eds/dataset/00_peanuts_dark/00_peanuts_dark.tgz', '00_peanuts_dark.tgz')"
+python scripts/download/download_eds.py data/eds 6 1,4
 ```
 
-Extract the archive into data/eds/raw/00_peanuts_dark directory:
+Usage: write the directory to save it into first, then the number up to which you want to download (up to 16 - in the examaple 6), then the numbers of the sequences you want to have as testing sequences separated by comma (1,4 for example) 
 
-```bash
-tar -xzf 00_peanuts_dark.tgz
-```
 ### 2.2 TartanAir + TartanEvent
 
 Run the `download_tartanair.py` script to download sequences from a specified environment in the TartanAir dataset. TartanAir is downloaded using an API, but does not come with events (or doesn't look to come with it by default), and TartanEvent is taken from UZH RPG resources found in the RAMPVO github repo. Argument  `env-event` asks for the environment of TartanEvent (see list here: https://download.ifi.uzh.ch/rpg/web/data/iros24_rampvo/datasets/TartanEvent/), while `env-air` asks for the environment of TartanAir (see list at: https://github.com/castacks/tartanair_tools/blob/master/download_training_zipfiles.txt). All environments have two difficulties: easy and hard, which must be passed as an argument. 
@@ -50,7 +46,7 @@ git submodule update --init --recursive
 Then when installed run: 
 
 ```bash
-python scripts/download_tartanair.py \
+python scripts/download/download_tartanair.py \
 --root data/tartanair \
 --env-event office \
 --env-air Office \
