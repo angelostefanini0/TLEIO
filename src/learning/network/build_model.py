@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import os
 import torch.nn as nn
-from timesformer.models.vit import VisionTransformer
+from src.learning.network.models.vit import VisionTransformer
 from functools import partial
 from einops import rearrange, reduce, repeat
 

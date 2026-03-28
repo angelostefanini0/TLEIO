@@ -10,8 +10,8 @@ import warnings
 import torch.nn.functional as F
 import numpy as np
 
-from timesformer.models.vit_utils import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from vit_utils import DropPath, to_2tuple, trunc_normal_
+from .vit_utils import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
+from .vit_utils import DropPath, to_2tuple, trunc_normal_
 
 from torch import einsum
 from einops import rearrange, reduce, repeat
