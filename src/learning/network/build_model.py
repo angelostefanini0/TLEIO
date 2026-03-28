@@ -14,6 +14,7 @@ def count_parameters(model):
 def build_model(args, model_params):
     # build and load model
     model = VisionTransformer(img_size=(480,640),
+                              in_chans=args["num_bins"],
                               num_classes=model_params["num_classes"],
                               patch_size=model_params["patch_size"],
                               embed_dim=model_params["embed_dim"],
