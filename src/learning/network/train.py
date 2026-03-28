@@ -24,7 +24,8 @@ def val_epoch(model, val_loader, criterion, args):
                 y = y.cuda(non_blocking=True)
 
             # predict transformation
-            estimated_transf = model(x.float()) #B, T-1, 12
+            estimated_transf = model(x.float()) # il modello returna [B, (T-1)*12]
+            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 12) #reshapiamo
 
             # compute loss
             loss = compute_loss(estimated_transf, y, criterion, args)
@@ -52,12 +53,13 @@ def train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_wr
 
             # predict pose
             estimated_transf = model(x.float())
+            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 12)
 
             # compute loss
             loss = compute_loss(estimated_transf, y, criterion, args)
 
             # compute gradient and do optimizer step
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
 
@@ -75,6 +77,7 @@ def train(model, train_loader, val_loader, criterion, optimizer, tensorboard_wri
     checkpoint_path = args["checkpoint_path"]
     epochs = args["epoch"]
     init = args["epoch_init"]
+    best_val = args["best_val"]
     # scheduler = StepLR(optimizer, step_size=1, gamma=0.7)
     for epoch in range(init, epochs +1):
         # training for one epoch

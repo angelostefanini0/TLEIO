@@ -13,21 +13,23 @@ def count_parameters(model):
 
 def build_model(args, model_params):
     # build and load model
-    model = VisionTransformer(img_size=(480,640),
-                              in_chans=args["num_bins"],
-                              num_classes=model_params["num_classes"],
-                              patch_size=model_params["patch_size"],
-                              embed_dim=model_params["embed_dim"],
-                              depth=model_params["depth"],
-                              num_heads=model_params["heads"],
-                              mlp_ratio=4,
-                              qkv_bias=True,
-                              norm_layer=partial(nn.LayerNorm, eps=1e-6),
-                              drop_rate=0.,
-                              attn_drop_rate=model_params["attn_dropout"],
-                              drop_path_rate=model_params["ff_dropout"],
-                              num_frames=model_params["num_frames"],
-                              attention_type=model_params["attention_type"])
+    model = VisionTransformer(
+                img_size=(480,640),
+                in_chans=args["num_bins"],
+                num_classes=(args["clip_len"] - 1) * 12,
+                patch_size=model_params["patch_size"],
+                embed_dim=model_params["embed_dim"],
+                depth=model_params["depth"],
+                num_heads=model_params["heads"],
+                mlp_ratio=4,
+                qkv_bias=True,
+                norm_layer=partial(nn.LayerNorm, eps=1e-6),
+                drop_rate=0.,
+                attn_drop_rate=model_params["attn_dropout"],
+                drop_path_rate=model_params["ff_dropout"],
+                num_frames=args["clip_len"],
+                attention_type=model_params["attention_type"]
+            )
 
     if model_params["time_only"]:
         # for timesformer without spatial layers
