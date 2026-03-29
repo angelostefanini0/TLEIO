@@ -29,6 +29,8 @@ python scripts/processing.py data/eds/raw   \
 --process_gt imu.csv stamped_groundtruth.txt\
 --delta_t_ms 50 \
 --anchor_hz 20
+
+python scripts/processing.py data/eds/raw   --save-path data/eds/processed    --timestamps-key t --process_gt imu.csv stamped_groundtruth.txt --delta_t_ms 50 --anchor_hz 20
 """
 
 def parse_args() -> argparse.Namespace:
