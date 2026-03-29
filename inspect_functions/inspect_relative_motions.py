@@ -1,3 +1,6 @@
+"python inspect_functions/inspect_relative_motions.py --gt data\eds\train_processed\01_peanuts_light\stamped_groundtruth.txt --rel data/eds/predicted_relative_motions/sequence_01/v0_predicted_relative_motions.txt --gt_rel  data/eds/train_processed/01_peanuts_light/relative_motions.txt"
+
+
 import argparse
 from pathlib import Path
 
@@ -173,10 +176,20 @@ def main():
                              "[t0_us t1_us r11 r12 r13 px r21 r22 r23 py r31 r32 r33 pz]")
     parser.add_argument("--save_dir", type=Path, default=None,
                         help="Optional directory to save figures instead of showing them")
+    
+    parser.add_argument("--gt_rel", type=Path, default=None,
+                        help="Optional gt_rel.txt with columns: t0_us t1_us px py pz qx qy qz qw. If provided, will compare relative motions to gt_rel instead of source GT.")
+    
     args = parser.parse_args()
 
     gt = load_table(args.gt)
     rel = load_table(args.rel)
+    gt_rel = load_table(args.gt_rel) if args.gt_rel is not None else None
+
+
+    gt_rel_quat = gt_rel[:, 5:9] if gt_rel is not None else None
+
+    rel[:, 5:9] = gt_rel_quat if gt_rel_quat is not None else rel[:, 5:9]
 
     if gt.shape[1] != 8:
         raise ValueError(f"{args.gt} has {gt.shape[1]} columns, expected 8.")

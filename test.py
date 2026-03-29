@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 import numpy as np
 import torch
@@ -7,6 +8,7 @@ from torch.utils.data import DataLoader
 from src.learning.network.build_model import build_model
 from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 
+"python test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
 
 ARGS = {
     "root_dir": "data/eds/processed",
@@ -69,10 +71,77 @@ def average_quaternions(quats):
     return q / np.linalg.norm(q)
 
 
-def load_timestamps(sequence_dir: Path):
-    rel_file = sequence_dir / "01_peanuts_light/relative_motions.txt"
-    data = np.loadtxt(rel_file, comments="#", skiprows=1)
-    return data[:, :2].astype(np.int64)
+def load_inference_args(checkpoint_file: Path):
+    args_file = checkpoint_file.parent / "args.txt"
+    if not args_file.exists():
+        return ARGS.copy()
+
+    with open(args_file, "r") as f:
+        loaded = json.load(f)
+
+    if "model_params" not in loaded:
+        loaded["model_params"] = {
+            "embed_dim": loaded["embed_dim"],
+            "patch_size": loaded["patch_size"],
+            "attention_type": loaded["attention_type"],
+            "num_frames": loaded["clip_len"],
+            "num_classes": 7 * (loaded["clip_len"] - 1),
+            "depth": loaded["depth"],
+            "heads": loaded["heads"],
+            "dim_head": loaded["dim_head"],
+            "attn_dropout": loaded["attn_dropout"],
+            "ff_dropout": loaded["ff_dropout"],
+            "time_only": loaded["time_only"],
+        }
+
+    loaded["checkpoint"] = None
+    loaded["checkpoint_path"] = str(checkpoint_file.parent)
+    return loaded
+
+
+def build_inference_dataset(sequence_dir: Path, args_dict):
+    sequence_dir = sequence_dir.resolve()
+
+    dataset_root = sequence_dir
+    requested_sequence = None
+    if (sequence_dir / "events.h5").exists():
+        dataset_root = sequence_dir.parent
+        requested_sequence = sequence_dir
+
+    dataset = MultiEventVoxelClipDataset(
+        root_path=dataset_root,
+        delta_t_ms=args_dict["delta_t_ms"],
+        num_bins=args_dict["num_bins"],
+        clip_len=args_dict["clip_len"],
+    )
+
+    if requested_sequence is None:
+        return dataset
+
+    selected_indices = []
+    start_idx = 0
+    for seq_idx, seq_info in enumerate(dataset.seq_infos):
+        end_idx = dataset.cum_lengths[seq_idx]
+        if seq_info["seq_path"].resolve() == requested_sequence:
+            selected_indices.extend(range(start_idx, end_idx))
+            break
+        start_idx = end_idx
+
+    if not selected_indices:
+        raise ValueError(f"Sequence not found in dataset: {requested_sequence}")
+
+    return torch.utils.data.Subset(dataset, selected_indices)
+
+
+def load_target_stats(checkpoint, device):
+    target_mean = checkpoint.get("target_mean")
+    target_std = checkpoint.get("target_std")
+    if target_mean is None or target_std is None:
+        return None, None
+
+    target_mean = torch.as_tensor(target_mean, dtype=torch.float32, device=device).view(1, 1, 7)
+    target_std = torch.as_tensor(target_std, dtype=torch.float32, device=device).view(1, 1, 7)
+    return target_mean, target_std
 
 
 def main():
@@ -87,13 +156,8 @@ def main():
     output_file = Path(args_cli.output_file)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    dataset = MultiEventVoxelClipDataset(
-        root_path=sequence_dir,
-        delta_t_ms=ARGS["delta_t_ms"],
-        num_bins=ARGS["num_bins"],
-        clip_len=ARGS["clip_len"],
-    )
+    infer_args = load_inference_args(checkpoint_file)
+    dataset = build_inference_dataset(sequence_dir, infer_args)
 
     loader = DataLoader(
         dataset,
@@ -104,48 +168,53 @@ def main():
         drop_last=False,
     )
 
-    model, _ = build_model(ARGS, ARGS["model_params"])
-    ckpt = torch.load(checkpoint_file, map_location=device)
+    model, _ = build_model(infer_args, infer_args["model_params"])
+    ckpt = torch.load(checkpoint_file, map_location=device, weights_only=False)
+    target_mean, target_std = load_target_stats(ckpt, device)
 
     if "model_state_dict" in ckpt:
         state_dict = ckpt["model_state_dict"]
     else:
         state_dict = ckpt
 
-    model.load_state_dict(state_dict, strict=False)
+    model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
 
     preds = []
+    rel_t0_list = []
+    rel_t1_list = []
     with torch.no_grad():
-        for batch in loader:
+        for batch_idx, batch in enumerate(loader):
             x = batch["representation"].to(device).float()
+            anchors = batch["anchors_us"].cpu().numpy()
             y_hat = model(x)
-            y_hat = y_hat.view(x.shape[0], ARGS["clip_len"] - 1, 7)
-            preds.append(y_hat.cpu().numpy())
+            y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 7)
 
-    preds = np.concatenate(preds, axis=0)   # [num_clips, 2, 7]
+            if target_mean is not None and target_std is not None:
+                y_hat = y_hat * target_std + target_mean
+                y_hat[..., 3:] = torch.nn.functional.normalize(y_hat[..., 3:], dim=-1)
 
-    # merge con averaging delle overlap
-    rel_dict = {}
-    for clip_idx in range(preds.shape[0]):
-        for step in range(preds.shape[1]):
-            global_idx = clip_idx + step
-            rel_dict.setdefault(global_idx, []).append(preds[clip_idx, step])
+            y_hat = y_hat.cpu().numpy()
 
-    rows_pred = []
-    for global_idx in sorted(rel_dict.keys()):
-        motions = np.asarray(rel_dict[global_idx], dtype=np.float64)
-        trans = motions[:, :3].mean(axis=0)
-        quat = average_quaternions(motions[:, 3:])
-        rows_pred.append(np.concatenate([trans, quat], axis=0))
+            for i in range(y_hat.shape[0]):
+                anc_i = anchors[i]
 
-    rows_pred = np.stack(rows_pred, axis=0)   # [num_motions, 7]
+                if batch_idx == 0 and i == 0:
+                    preds.append(y_hat[i, 0])
+                    rel_t0_list.append(int(anc_i[0]))
+                    rel_t1_list.append(int(anc_i[1]))
 
-    timestamps = load_timestamps(sequence_dir)
+                preds.append(y_hat[i, -1])
+                rel_t0_list.append(int(anc_i[-2]))
+                rel_t1_list.append(int(anc_i[-1]))
 
-    n = min(len(timestamps), len(rows_pred))
-    out = np.concatenate([timestamps[:n], rows_pred[:n]], axis=1)
+    rows_pred = np.asarray(preds, dtype=np.float64)
+    timestamps = np.column_stack([
+        np.asarray(rel_t0_list, dtype=np.int64),
+        np.asarray(rel_t1_list, dtype=np.int64),
+    ])
+    out = np.concatenate([timestamps, rows_pred], axis=1)
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
     np.savetxt(
@@ -157,8 +226,7 @@ def main():
     )
 
     print(f"Saved: {output_file}")
-    print(f"num_clips: {preds.shape[0]}")
-    print(f"num_relative_motions: {n}")
+    print(f"num_relative_motions: {len(rows_pred)}")
 
 
 if __name__ == "__main__":
