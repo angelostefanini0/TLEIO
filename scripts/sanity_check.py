@@ -1,11 +1,11 @@
 import os
-import torch
-from pathlib import Path
 import sys
+from pathlib import Path
+
+import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
-
 
 from src.learning.network.build_model import build_model
 from src.learning.network.train import compute_loss, get_optimizer
@@ -24,7 +24,6 @@ def print_prediction_summary(pred, target, name=""):
     print(f"MAE     : {mae:.6f}")
     print(f"Max err : {max_err:.6f}")
 
-    # stampa il primo esempio del batch
     pred0 = pred[0].detach().cpu()
     target0 = target[0].detach().cpu()
 
@@ -39,6 +38,8 @@ def print_prediction_summary(pred, target, name=""):
 
 
 def main():
+    target_dim = 7  # quaternion (4) + translation (3)
+
     args = {
         "root_dir": "data/eds/processed",
         "clip_len": 3,
@@ -52,6 +53,7 @@ def main():
         "lr": 1e-4,
         "momentum": 0.9,
         "weight_decay": 1e-4,
+        "target_dim": target_dim,
     }
 
     model_params = {
@@ -59,7 +61,7 @@ def main():
         "patch_size": 16,
         "attention_type": "divided_space_time",
         "num_frames": args["clip_len"],
-        "num_classes": 12 * (args["clip_len"] - 1),
+        "num_classes": target_dim * (args["clip_len"] - 1),
         "depth": 6,
         "heads": 6,
         "dim_head": 64,
@@ -94,6 +96,10 @@ def main():
     print("target:", sample["target"].shape)
     print("anchors:", sample["anchors_us"].shape)
 
+    assert sample["target"].shape[-1] == target_dim, (
+        f"Target dim mismatch: expected {target_dim}, got {sample['target'].shape[-1]}"
+    )
+
     loader = torch.utils.data.DataLoader(
         dataset,
         batch_size=args["b_size"],
@@ -109,6 +115,13 @@ def main():
     print("\n--- BATCH ---")
     print("x:", x.shape)
     print("y:", y.shape)
+
+    assert y.shape[-1] == target_dim, (
+        f"Batch target dim mismatch: expected {target_dim}, got {y.shape[-1]}"
+    )
+    assert y.shape[1] == args["clip_len"] - 1, (
+        f"Target temporal dim mismatch: expected {args['clip_len'] - 1}, got {y.shape[1]}"
+    )
 
     x = x.to(device).float()
     y = y.to(device).float()
@@ -128,7 +141,13 @@ def main():
 
     B = x.shape[0]
     T = args["clip_len"]
-    out = out.view(B, T - 1, 12)
+
+    expected_out_dim = (T - 1) * target_dim
+    assert out.shape[1] == expected_out_dim, (
+        f"Model output dim mismatch: expected {expected_out_dim}, got {out.shape[1]}"
+    )
+
+    out = out.view(B, T - 1, target_dim)
     print("reshaped output:", out.shape)
 
     print("\n--- LOSS ---")
@@ -151,13 +170,13 @@ def main():
     optimizer = get_optimizer(model.parameters(), args)
 
     with torch.no_grad():
-        out0 = model(x).view(B, T - 1, 12)
+        out0 = model(x).view(B, T - 1, target_dim)
         loss0 = compute_loss(out0, y, criterion, args).item()
     print(f"Start overfit loss: {loss0:.6f}")
 
     for step in range(1, overfit_steps + 1):
         out = model(x)
-        out = out.view(B, T - 1, 12)
+        out = out.view(B, T - 1, target_dim)
         loss = compute_loss(out, y, criterion, args)
 
         optimizer.zero_grad(set_to_none=True)
@@ -169,7 +188,7 @@ def main():
 
     model.eval()
     with torch.no_grad():
-        out_final = model(x).view(B, T - 1, 12)
+        out_final = model(x).view(B, T - 1, target_dim)
         loss_final = compute_loss(out_final, y, criterion, args).item()
 
     print(f"Final overfit loss: {loss_final:.6f}")
@@ -208,7 +227,7 @@ def main():
         reloaded_model.eval()
 
         with torch.no_grad():
-            out_reload = reloaded_model(x).view(B, T - 1, 12)
+            out_reload = reloaded_model(x).view(B, T - 1, target_dim)
             reload_loss = compute_loss(out_reload, y, criterion, args).item()
 
         print(f"Reloaded model loss: {reload_loss:.6f}")

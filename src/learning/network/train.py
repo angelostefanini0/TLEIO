@@ -154,11 +154,11 @@ def compute_loss(y_hat, y, criterion, args):
 
     loss_translation = criterion(estimated_transl, gt_transl)
 
-    quat_loss_pos = criterion(estimated_quat, gt_quat)
-    quat_loss_neg = criterion(estimated_quat, -gt_quat)
-    loss_quat = torch.minimum(quat_loss_pos, quat_loss_neg)
+    dot = torch.sum(estimated_quat * gt_quat, dim=-1).abs()
+    dot = torch.clamp(dot, -1.0, 1.0)
+
+    loss_quat = (2.0 * torch.acos(dot)).mean()
 
     k = 1.0 if args["weighted_loss"] is None else args["weighted_loss"]
     return loss_translation + k * loss_quat
-
     
