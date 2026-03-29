@@ -69,7 +69,7 @@ def train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_wr
     return epoch_loss / len(train_loader)  
   
 
-def train(model, train_loader, val_loader, criterion, optimizer, tensorboard_writer, args):
+def train(model, train_loader, val_loader, criterion, optimizer, tensorboard_writer, args, stats):
     checkpoint_path = args["checkpoint_path"]
     epochs = args["epoch"]
     init = args["epoch_init"]
@@ -94,6 +94,8 @@ def train(model, train_loader, val_loader, criterion, optimizer, tensorboard_wri
                 "model_state_dict": model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 "best_val": best_val,
+                "target_mean": stats["mean"],
+                "target_std": stats["std"],
             }
             if val_loss < best_val:
                 print(f"Saving new best model -- loss decreased from {best_val:.6f} to {val_loss:.6f} \n")

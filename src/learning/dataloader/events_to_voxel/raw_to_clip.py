@@ -58,10 +58,15 @@ class MultiEventVoxelClipDataset(Dataset):
         # Set event representation
         self.voxel_grid = VoxelGrid(self.num_bins, self.height, self.width, normalize=True)
 
-        #Load lightweight metadata
-    
+        #Set the normalization stats to None: 
+        self.train_std = None
+        self.train_mean = None
+        self.eps = 1e-7
+
+        #Load lightweight data
         total = 0
         sequence_dirs = sorted([p for p in self.root_path.iterdir() if p.is_dir()])
+
         for seq_path in sequence_dirs:
             gt_poses_fn = seq_path / "anchor_poses.txt"
             gt_rel_transf_fn = seq_path / "relative_motions.txt"
@@ -73,7 +78,9 @@ class MultiEventVoxelClipDataset(Dataset):
 
             anchor_poses = np.atleast_2d(np.loadtxt(gt_poses_fn, dtype=np.float64, skiprows=1))
             rel_transf = np.atleast_2d(np.loadtxt(gt_rel_transf_fn, dtype=np.float64, skiprows=1))
+            
 
+            #Dimensionality checks
             if anchor_poses.shape[1] != 8:
                 raise ValueError(
                     f"{seq_path}: expected 8 columns in anchor_poses.txt, got {anchor_poses.shape[1]}"
@@ -97,8 +104,7 @@ class MultiEventVoxelClipDataset(Dataset):
             total += num_samples
             self.cum_lengths.append(total)
 
-        self._readers = [None] * len(self.seq_infos)
-
+        self._readers = [None] * len(self.seq_infos)        
     
     def _ensure_reader(self, seq_idx):
         if self._readers[seq_idx] is None:
@@ -198,6 +204,11 @@ class MultiEventVoxelClipDataset(Dataset):
                 t1 = int(anchors[j + 1])
                 rel_transf = self.seq_infos[seq_idx]["rel_transf"]
                 rel_target = self.get_relative_motion(rel_transf, t0_idx, t0, t1)   # shape [target_dim (7)]
+                
+                #Normalize the target based on the training split mean and std
+                if self.train_mean is not None and self.train_std is not None: 
+                    rel_target = (rel_target - self.train_mean) / self.train_std
+                
                 clip_targets.append(torch.as_tensor(rel_target, dtype=torch.float32))
 
         # stack voxels: list of [num_bins, H, W] -> [num_bins, clip_len, H, W]
@@ -213,3 +224,30 @@ class MultiEventVoxelClipDataset(Dataset):
         }
 
         return output
+    
+    def compute_stats(self, indices): 
+        all_train_targets = []
+        for index in indices: 
+            seq_idx, local_idx = self.locate_index(index, self.cum_lengths)
+
+            #Get the anchor timestamps 
+            seq_anchors = self.seq_infos[seq_idx]["anchors_us"]
+            anchors = seq_anchors[local_idx : local_idx + self.clip_len]
+            
+
+            for j in range(len(anchors)):
+                # target for pairwise motion: one target per transition
+                if j < len(anchors) - 1:
+                    t0_idx = local_idx + j
+                    t0 = int(anchors[j])
+                    t1 = int(anchors[j + 1])
+                    rel_transf = self.seq_infos[seq_idx]["rel_transf"]
+                    rel_target = self.get_relative_motion(rel_transf, t0_idx, t0, t1)  
+                    all_train_targets.append(rel_target)
+        
+        # stack targets: list of [target_dim] -> [train_samples, target_dim]
+        targets = np.stack(all_train_targets, axis=0)
+        self.train_std = np.std(targets, axis=0)
+        self.train_std = np.maximum(self.train_std, self.eps)
+        self.train_mean = np.mean(targets, axis=0)
+

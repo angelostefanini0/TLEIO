@@ -135,6 +135,11 @@ if __name__ == "__main__":
 
     train_data, val_data = random_split(dataset, [len(dataset) - nb_val, nb_val]) #generator=torch.Generator().manual_seed(2))
     
+    #Compute the mean and std of the train split to normalize targets
+    dataset.compute_stats(train_data.indices)
+    stats = {"mean": dataset.train_mean, 
+             "std": dataset.train_std}
+
     train_loader = DataLoader(
         train_data,
         batch_size=args["b_size"],
@@ -153,8 +158,6 @@ if __name__ == "__main__":
         drop_last=False,
     )
 
-
-
     # build and load model
     print("Building model...")
     model, args = build_model(args, model_params)
@@ -165,4 +168,4 @@ if __name__ == "__main__":
 
     # train network
     print(20*"--" +  " Training " + 20*"--")
-    train(model, train_loader, val_loader, criterion, optimizer, TensorBoardWriter, args)
+    train(model, train_loader, val_loader, criterion, optimizer, TensorBoardWriter, args, stats)
