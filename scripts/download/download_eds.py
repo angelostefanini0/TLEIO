@@ -128,11 +128,13 @@ def main() -> None:
     parser.add_argument(
         "testing",
         type=str,
+        nargs="?",
+        default="",
         help=(
-            "Comma-separated list of test sequences among the selected ones. "
+            "Optional comma-separated list of test sequences among the selected ones. "
             "You can use indices like '0,3,5' or names like "
             "'00_peanuts_dark,03_rocket_earth_dark'. "
-            "Use '' for none."
+            "Leave it out for none."
         ),
     )
     parser.add_argument(

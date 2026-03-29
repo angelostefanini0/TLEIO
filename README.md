@@ -24,7 +24,7 @@ Download the eds dataset sequence from the Event Camera Dataset (EDS):
 python scripts/download/download_eds.py data/eds 6 1,4
 ```
 
-Usage: write the directory to save it into first, then the number up to which you want to download (up to 16 - in the examaple 6), then the numbers of the sequences you want to have as testing sequences separated by comma (1,4 for example) 
+Usage: write the directory to save it into first, then the number up to which you want to download (up to 16 - in the examaple 6), and optionally the numbers of the sequences you want to have as testing sequences separated by comma (1,4 for example). If you omit the last argument, no sequence is placed in testing.
 
 ### 2.2 TartanAir + TartanEvent
 
@@ -78,5 +78,4 @@ python scripts/processing.py data/eds/raw   \
 --delta_t_ms 50 \
 --anchor_hz 20
 ```
-
 

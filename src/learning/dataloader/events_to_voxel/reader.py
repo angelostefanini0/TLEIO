@@ -4,7 +4,7 @@ from typing import Optional, Dict
 import h5py
 import numpy as np
 
-from src.learning.dataloader.representation.event_slicer import EventSlicer
+from ..representation.event_slicer import EventSlicer
 
 
 class EDSReader:
