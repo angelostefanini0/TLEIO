@@ -5,9 +5,9 @@ from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 import pickle
 import json
-from src.learning.network.train import *
-from src.learning.network.build_model import *
-from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
+from learning.network.train import *
+from learning.network.build_model import *
+from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 import argparse
 from pathlib import Path
 
@@ -32,7 +32,7 @@ def parse_args():
                         help="percentage to use as validation data")
     parser.add_argument("--clip_len", type=int, default=3,
                         help="number of frames in window")
-    parser.add_argument("--delta_t_ms", type=int, default=1,
+    parser.add_argument("--delta_t_ms", type=int, default=50,
                         help="Duration of event aggregation for voxel creation") 
     parser.add_argument("--num_bins", type=int, default=5, help="number of bins in voxel grid")
                        
@@ -66,7 +66,7 @@ def parse_args():
     parser.add_argument("--patch_size", type=int, default=16)
     parser.add_argument("--attention_type", type=str, default="divided_space_time",
                         choices=["divided_space_time", "space_only", "joint_space_time", "time_only"])
-    parser.add_argument("--depth", type=int, default=12)
+    parser.add_argument("--depth", type=int, default=6)
     parser.add_argument("--heads", type=int, default=6)
     parser.add_argument("--dim_head", type=int, default=64)
     parser.add_argument("--attn_dropout", type=float, default=0.1)

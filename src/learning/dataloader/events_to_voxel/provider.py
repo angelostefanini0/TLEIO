@@ -1,7 +1,7 @@
 from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
-from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
+from .raw_to_clip import MultiEventVoxelClipDataset
 
 from ..representation.voxel_grid import VoxelGrid
 from .reader import EDSReader
