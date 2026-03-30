@@ -1,66 +1,87 @@
-import numpy as np
-from filter.utils.math_utils import mat_exp, mat_log, hat, Jr_exp
+"""Implement the clone-based IMU propagation and TLEIO triplet EKF update.
 
-# ─── State layout ────────────────────────────────────────────────────────────
-# error state (33D): dR(3) dv(3) dp(3) dbg(3) dba(3)  [current IMU]
-#                  + dR1(3) dp1(3)                      [clone 1]
-#                  + dR2(3) dp2(3)                      [clone 2]
-#                  + dR3(3) dp3(3)                      [clone 3]
-# -----------------------------------------------------------------------------
+This file is the core of the filter branch. It keeps the current IMU state,
+manages stochastic pose clones at the three frame times, propagates with IMU
+measurements, and performs the stacked `(1 -> 2, 2 -> 3)` relative-pose update
+using the transformer's `2 x 7` output after converting it to a minimal 12D
+EKF residual.
+"""
+
+import numpy as np
+
+from filter.measurement_triplet import build_triplet_update, make_default_joint_covariance
+from filter.utils.math_utils import hat, mat_exp
+
 
 class State:
+    """Store the nominal filter state and its covariance.
+
+    The implementation keeps the current IMU state first and then appends the
+    pose clones, which is the layout already assumed by the existing code.
+    """
+
     def __init__(self):
-        self.R   = np.eye(3)       # rotation (body to world)
-        self.v   = np.zeros(3)     # velocity in world
-        self.p   = np.zeros(3)     # position in world
-        self.bg  = np.zeros(3)     # gyro bias
-        self.ba  = np.zeros(3)     # accel bias
+        """Initialize the nominal state, empty clone list, and small covariance."""
 
-        # Stochastic clones: list of (R, p) tuples, oldest first
-        self.clone_Rs = []
-        self.clone_ps = []
+        self.R = np.eye(3)       # rotation from body to world
+        self.v = np.zeros(3)     # velocity in world coordinates
+        self.p = np.zeros(3)     # position in world coordinates
+        self.bg = np.zeros(3)    # gyroscope bias
+        self.ba = np.zeros(3)    # accelerometer bias
 
-        # Covariance (33x33 when 3 clones present)
+        self.clone_Rs = []       # cloned body-to-world rotations, oldest first
+        self.clone_ps = []       # cloned world positions, oldest first
         self.P = np.eye(15) * 1e-6
 
     def get_clone_count(self):
+        """Return how many stochastic clones are currently stored."""
+
         return len(self.clone_Rs)
 
 
 class ImuMSCKF:
+    """Run IMU propagation and the TLEIO relative-pose update on cloned poses."""
 
     def __init__(self, args):
+        """Read filter hyperparameters and prepare the default measurement noise."""
+
         self.args = args
 
-        # IMU noise parameters (from args or defaults)
-        self.sigma_na  = getattr(args, 'sigma_na',  0.01)   # accel noise
-        self.sigma_ng  = getattr(args, 'sigma_ng',  0.001)  # gyro noise
-        self.sigma_nba = getattr(args, 'sigma_nba', 1e-4)   # accel bias walk
-        self.sigma_nbg = getattr(args, 'sigma_nbg', 1e-5)   # gyro bias walk
+        self.sigma_na = getattr(args, "sigma_na", 0.01)
+        self.sigma_ng = getattr(args, "sigma_ng", 0.001)
+        self.sigma_nba = getattr(args, "sigma_nba", 1e-4)
+        self.sigma_nbg = getattr(args, "sigma_nbg", 1e-5)
 
-        self.g = np.array([0, 0, -9.80665])  # gravity in world frame
+        self.sigma_rel_t = getattr(args, "sigma_rel_t", 0.10)
+        self.sigma_rel_r = getattr(args, "sigma_rel_r", 0.10)
+        self.meas_cov_scale = getattr(args, "meas_cov_scale", 1.0)
+
+        self.g = np.array([0.0, 0.0, -9.80665])
         self.state = State()
-
-    # ── Initialization ────────────────────────────────────────────────────────
+        self.default_measurement_covariance = make_default_joint_covariance(
+            self.sigma_rel_t, self.sigma_rel_r
+        )
+        self.t = 0.0
 
     def initialize_with_state(self, t, R, v, p, bg, ba, P=None):
+        """Reset the filter to a known nominal state and clear all clones."""
+
         self.t = t
-        self.state.R  = R.copy()
-        self.state.v  = v.copy()
-        self.state.p  = p.copy()
+        self.state.R = R.copy()
+        self.state.v = v.copy()
+        self.state.p = p.copy()
         self.state.bg = bg.copy()
         self.state.ba = ba.copy()
         self.state.clone_Rs = []
         self.state.clone_ps = []
-        if P is not None:
-            self.state.P = P.copy()
-        else:
-            self.state.P = np.eye(15) * 1e-6
-
-    # ── IMU propagation ───────────────────────────────────────────────────────
+        self.state.P = np.eye(15) * 1e-6 if P is None else P.copy()
 
     def propagate(self, imu_data):
-        """Propagate state and covariance through a list of IMU measurements."""
+        """Propagate the current IMU state and covariance through queued IMU samples."""
+
+        if len(imu_data) == 0:
+            return
+
         for meas in imu_data:
             dt = meas.dt
             wm = meas.gyro - self.state.bg
@@ -70,53 +91,54 @@ class ImuMSCKF:
             v_prev = self.state.v.copy()
             p_prev = self.state.p.copy()
 
-            # Strapdown integration (RK1 / Euler)
-            dR = mat_exp(hat(wm) * dt)
-            self.state.R = R_prev @ dR
-            self.state.v = v_prev + (R_prev @ am + self.g) * dt
-            self.state.p = p_prev + v_prev * dt + 0.5 * (R_prev @ am + self.g) * dt**2
+            dR = mat_exp(wm * dt)
+            specific_force_world = R_prev @ am + self.g
 
-            # Covariance propagation
+            self.state.R = R_prev @ dR
+            self.state.v = v_prev + specific_force_world * dt
+            self.state.p = p_prev + v_prev * dt + 0.5 * specific_force_world * dt**2
+
             self.state.P = propagate_covariance(
-                self.state.P, R_prev, wm, am, dt,
-                self.sigma_ng, self.sigma_na,
-                self.sigma_nbg, self.sigma_nba
+                self.state.P,
+                R_prev,
+                wm,
+                am,
+                dt,
+                self.sigma_ng,
+                self.sigma_na,
+                self.sigma_nbg,
+                self.sigma_nba,
             )
 
-        self.t = imu_data[-1].timestamp if hasattr(imu_data[-1], 'timestamp') else self.t
-
-    # ── Clone augmentation ────────────────────────────────────────────────────
+        self.t = imu_data[-1].timestamp
 
     def augment_clone(self):
-        """Append current pose as a new stochastic clone and expand covariance."""
+        """Append the current pose as a stochastic clone and expand covariance."""
+
         n_clones = self.state.get_clone_count()
         n_imu = 15
         n_old = n_imu + 6 * n_clones
         n_new = n_old + 6
 
-        # New state
         self.state.clone_Rs.append(self.state.R.copy())
         self.state.clone_ps.append(self.state.p.copy())
 
-        # Jacobian of new clone error w.r.t. old error state
-        # dR_new = dR_imu, dp_new = dp_imu  (no velocity cloned)
-        J = np.zeros((6, n_old))
-        J[0:3, 0:3] = np.eye(3)   # dR
-        J[3:6, 6:9] = np.eye(3)   # dp
+        clone_jacobian = np.zeros((6, n_old))
+        clone_jacobian[0:3, 0:3] = np.eye(3)
+        clone_jacobian[3:6, 6:9] = np.eye(3)
 
         P_old = self.state.P
         P_new = np.zeros((n_new, n_new))
         P_new[:n_old, :n_old] = P_old
-        P_new[n_old:, :n_old] = J @ P_old
-        P_new[:n_old, n_old:] = (J @ P_old).T
-        P_new[n_old:, n_old:] = J @ P_old @ J.T
+        P_new[n_old:, :n_old] = clone_jacobian @ P_old
+        P_new[:n_old, n_old:] = (clone_jacobian @ P_old).T
+        P_new[n_old:, n_old:] = clone_jacobian @ P_old @ clone_jacobian.T
 
-        self.state.P = P_new
-
-    # ── Clone marginalization ─────────────────────────────────────────────────
+        self.state.P = 0.5 * (P_new + P_new.T)
 
     def marginalize_oldest_clone(self):
-        """Remove the oldest clone from the state and covariance."""
+        """Drop the oldest clone and remove its covariance rows and columns."""
+
         if self.state.get_clone_count() == 0:
             return
 
@@ -125,78 +147,132 @@ class ImuMSCKF:
 
         n_imu = 15
         n_clones_after = self.state.get_clone_count()
-        n_after = n_imu + 6 * n_clones_after
-
-        # Indices to keep: IMU block + all clones except the first
-        keep = list(range(n_imu)) + list(range(n_imu + 6, n_imu + 6 + 6 * n_clones_after))
-        P = self.state.P
-        self.state.P = P[np.ix_(keep, keep)]
-
-    # ── Measurement update (Phase 2) ──────────────────────────────────────────
-
-    def update(self, network_output):
-        """
-        TODO (Phase 2): implement the stacked 12D relative-pose update.
-        network_output: dict with keys 'dx12' (12,) residual and 'cov12' (12,12).
-        """
-        raise NotImplementedError(
-            "update() will be implemented in Phase 2 (measurement_triplet.py)"
+        keep = list(range(n_imu)) + list(
+            range(n_imu + 6, n_imu + 6 + 6 * n_clones_after)
         )
 
+        P = self.state.P
+        self.state.P = 0.5 * (P[np.ix_(keep, keep)] + P[np.ix_(keep, keep)].T)
 
-# ── Standalone propagation helpers ───────────────────────────────────────────
+    def update(self, network_output):
+        """Run the stacked TLEIO relative-pose EKF update on the three clones.
+
+        The input is expected to contain the transformer's raw `2 x 7` mean
+        output and, optionally, one joint `12 x 12` covariance for the stacked
+        residual space.
+        """
+
+        residual, H, R = build_triplet_update(
+            self.state,
+            network_output,
+            self.default_measurement_covariance,
+            covariance_scale=self.meas_cov_scale,
+        )
+
+        P = self.state.P
+        innovation_covariance = H @ P @ H.T + R
+        PHt = P @ H.T
+        K = np.linalg.solve(innovation_covariance.T, PHt.T).T
+        delta_x = K @ residual
+
+        self._inject_error_state(delta_x)
+
+        identity = np.eye(P.shape[0])
+        joseph_left = identity - K @ H
+        P_updated = joseph_left @ P @ joseph_left.T + K @ R @ K.T
+        self.state.P = 0.5 * (P_updated + P_updated.T)
+
+        return {
+            "residual": residual,
+            "jacobian": H,
+            "measurement_covariance": R,
+            "innovation_covariance": innovation_covariance,
+            "kalman_gain": K,
+            "delta_x": delta_x,
+        }
+
+    def _inject_error_state(self, delta_x):
+        """Apply one EKF correction to the nominal state and all active clones."""
+
+        delta_x = np.asarray(delta_x, dtype=float)
+        expected_dim = self.state.P.shape[0]
+        if delta_x.shape != (expected_dim,):
+            raise ValueError(
+                f"Expected an error-state correction with shape ({expected_dim},), got {delta_x.shape}."
+            )
+
+        self.state.R = mat_exp(delta_x[0:3]) @ self.state.R
+        self.state.v = self.state.v + delta_x[3:6]
+        self.state.p = self.state.p + delta_x[6:9]
+        self.state.bg = self.state.bg + delta_x[9:12]
+        self.state.ba = self.state.ba + delta_x[12:15]
+
+        for clone_idx in range(self.state.get_clone_count()):
+            offset = 15 + 6 * clone_idx
+            self.state.clone_Rs[clone_idx] = (
+                mat_exp(delta_x[offset : offset + 3]) @ self.state.clone_Rs[clone_idx]
+            )
+            self.state.clone_ps[clone_idx] = (
+                self.state.clone_ps[clone_idx] + delta_x[offset + 3 : offset + 6]
+            )
+
 
 def propagate_rvt_and_jac(R, v, p, bg, ba, wm_raw, am_raw, dt, g):
+    """Propagate the nominal IMU state and its first-order transition matrix."""
+
     wm = wm_raw - bg
     am = am_raw - ba
-    dR = mat_exp(hat(wm) * dt)
+    dR = mat_exp(wm * dt)
     R_new = R @ dR
     v_new = v + (R @ am + g) * dt
     p_new = p + v * dt + 0.5 * (R @ am + g) * dt**2
 
-    # Continuous-time Jacobian blocks (first-order)
     F = np.zeros((15, 15))
     F[0:3, 0:3] = -hat(wm)
     F[0:3, 9:12] = -np.eye(3)
     F[3:6, 0:3] = -R @ hat(am)
-    F[3:6, 3:6] = np.zeros((3, 3))
     F[3:6, 12:15] = -R
     F[6:9, 3:6] = np.eye(3)
 
-    Phi = np.eye(15) + F * dt  # first-order ZOH
-
+    Phi = np.eye(15) + F * dt
     return R_new, v_new, p_new, Phi
 
 
 def propagate_covariance(P, R, wm, am, dt, sg, sa, sbg, sba):
+    """Propagate the current-plus-clones covariance through one IMU interval."""
+
     n = P.shape[0]
     n_imu = 15
 
     _, _, _, Phi_imu = propagate_rvt_and_jac(
-        R, np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), wm, am, dt,
-        np.zeros(3)
+        R,
+        np.zeros(3),
+        np.zeros(3),
+        np.zeros(3),
+        np.zeros(3),
+        wm,
+        am,
+        dt,
+        np.zeros(3),
     )
 
-    # Noise covariance
     Q_c = np.zeros((12, 12))
-    Q_c[0:3,   0:3]   = np.eye(3) * sg**2
-    Q_c[3:6,   3:6]   = np.eye(3) * sa**2
-    Q_c[6:9,   6:9]   = np.eye(3) * sbg**2
-    Q_c[9:12,  9:12]  = np.eye(3) * sba**2
+    Q_c[0:3, 0:3] = np.eye(3) * sg**2
+    Q_c[3:6, 3:6] = np.eye(3) * sa**2
+    Q_c[6:9, 6:9] = np.eye(3) * sbg**2
+    Q_c[9:12, 9:12] = np.eye(3) * sba**2
 
     G = np.zeros((15, 12))
-    G[0:3,  0:3]  = -np.eye(3)
-    G[3:6,  3:6]  = -R
-    G[9:12, 6:9]  = np.eye(3)
-    G[12:15,9:12] = np.eye(3)
+    G[0:3, 0:3] = -np.eye(3)
+    G[3:6, 3:6] = -R
+    G[9:12, 6:9] = np.eye(3)
+    G[12:15, 9:12] = np.eye(3)
 
     Q_d = G @ Q_c @ G.T * dt
 
-    # Full Phi (IMU block only; clones are constant)
     Phi = np.eye(n)
     Phi[:n_imu, :n_imu] = Phi_imu
 
     P_new = Phi @ P @ Phi.T
     P_new[:n_imu, :n_imu] += Q_d
-
-    return P_new
+    return 0.5 * (P_new + P_new.T)
