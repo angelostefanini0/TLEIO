@@ -86,9 +86,9 @@ class MultiEventVoxelClipDataset(Dataset):
                     f"{seq_path}: expected 8 columns in anchor_poses.txt, got {anchor_poses.shape[1]}"
                 )
 
-            if rel_transf.shape[1] != 9:
+            if rel_transf.shape[1] != 8:
                 raise ValueError(
-                    f"{seq_path}: expected 9 columns in relative_motions.txt, got {rel_transf.shape[1]}"
+                    f"{seq_path}: expected 8 columns in relative_motions.txt, got {rel_transf.shape[1]}"
                 )
 
             anchors_us = anchor_poses[:, 0]
@@ -203,7 +203,7 @@ class MultiEventVoxelClipDataset(Dataset):
                 t0 = int(anchors[j])
                 t1 = int(anchors[j + 1])
                 rel_transf = self.seq_infos[seq_idx]["rel_transf"]
-                rel_target = self.get_relative_motion(rel_transf, t0_idx, t0, t1)   # shape [target_dim (7)]
+                rel_target = self.get_relative_motion(rel_transf, t0_idx, t0, t1)   # shape [target_dim (6)]
                 
                 #Normalize the target based on the training split mean and std
                 if self.train_mean is not None and self.train_std is not None: 

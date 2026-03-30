@@ -222,6 +222,58 @@ def rotmat_to_quat_xyzw(R: np.ndarray) -> np.ndarray:
     q /= np.linalg.norm(q)
     return q
 
+def rotmat_log_to_rotvec(R: np.ndarray, eps: float = 1e-8) -> np.ndarray:
+    """
+    Convert a 3x3 rotation matrix to a 3D rotation vector using log(R).
+
+    Returns:
+        rotvec: shape (3,), where norm(rotvec) is the rotation angle in radians
+    """
+    R = np.asarray(R, dtype=np.float64)
+    if R.shape != (3, 3):
+        raise ValueError(f"Expected R shape (3,3), got {R.shape}")
+
+    trace = np.trace(R)
+    cos_theta = (trace - 1.0) / 2.0
+    cos_theta = np.clip(cos_theta, -1.0, 1.0)
+    theta = np.arccos(cos_theta)
+
+    # Skew-symmetric part vee(R - R^T)
+    w = np.array([
+        R[2, 1] - R[1, 2],
+        R[0, 2] - R[2, 0],
+        R[1, 0] - R[0, 1],
+    ], dtype=np.float64)
+
+    # Small-angle case
+    if theta < 1e-5:
+        return 0.5 * w
+
+    # Near-pi case
+    if np.pi - theta < 1e-5:
+        A = (R + np.eye(3)) / 2.0
+        axis = np.empty(3, dtype=np.float64)
+        axis[0] = np.sqrt(max(A[0, 0], 0.0))
+        axis[1] = np.sqrt(max(A[1, 1], 0.0))
+        axis[2] = np.sqrt(max(A[2, 2], 0.0))
+
+        # Fix signs using off-diagonal terms
+        if R[2, 1] - R[1, 2] < 0:
+            axis[0] = -axis[0]
+        if R[0, 2] - R[2, 0] < 0:
+            axis[1] = -axis[1]
+        if R[1, 0] - R[0, 1] < 0:
+            axis[2] = -axis[2]
+
+        norm_axis = np.linalg.norm(axis)
+        if norm_axis < eps:
+            axis = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+        else:
+            axis /= norm_axis
+        return theta * axis
+
+    return (theta / (2.0 * np.sin(theta))) * w
+
 def pose_to_T(pos: np.ndarray, quat_xyzw: np.ndarray) -> np.ndarray:
     T = np.eye(4, dtype=np.float64)
     T[:3, :3] = quat_xyzw_to_rotmat(quat_xyzw)
@@ -253,13 +305,14 @@ def compute_relative_motions(anchor_ts: np.ndarray, anchor_pos: np.ndarray, anch
         T_i1 = pose_to_T(anchor_pos[i + 1], anchor_quat[i + 1])
 
         T_rel = inv_T(T_i) @ T_i1
-        quat_rel = rotmat_to_quat_xyzw(T_rel[:3,:3])
+        #quat_rel = rotmat_to_quat_xyzw(T_rel[:3,:3])
+        axis_vec_rel = rotmat_log_to_rotvec(T_rel[:3,:3])
         trans_rel = T_rel[:3, 3]
 
         row = np.concatenate([
             np.array([anchor_ts[i], anchor_ts[i + 1]], dtype=np.int64),
             trans_rel,
-            quat_rel
+            axis_vec_rel
         ])
         rows.append(row)
 
@@ -276,14 +329,14 @@ def save_anchor_poses(out_path: Path, anchor_ts: np.ndarray, anchor_pos: np.ndar
 
 
 def save_relative_motions(out_path: Path, rel: np.ndarray):
-    header = "t0_us t1_us t0_us t1_us px py pz qx qy qz qw"
+    header = "t0_us t1_us px py pz rx ry rz"
     if rel.size == 0:
         np.savetxt(out_path, rel, header=header, comments="")
         return
     np.savetxt(
         out_path,
         rel,
-        fmt=["%d", "%d"] + ["%.10f"] * 7,
+        fmt=["%d", "%d"] + ["%.10f"] * 6,
         header=header,
         comments="",
     )

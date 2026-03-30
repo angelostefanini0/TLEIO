@@ -13,15 +13,15 @@ def load_table(path: Path) -> np.ndarray:
     data = np.loadtxt(path, skiprows=skiprows, dtype=np.float64)
 
     if data.size == 0:
-        return np.empty((0, 9), dtype=np.float64)
+        return np.empty((0, 8), dtype=np.float64)
 
     if data.ndim == 1:
         data = data[None, :]
 
-    if data.shape[1] != 9:
+    if data.shape[1] != 8:
         raise ValueError(
-            f"{path} has {data.shape[1]} columns, expected 9: "
-            "t0_us t1_us px py pz qx qy qz qw"
+            f"{path} has {data.shape[1]} columns, expected 8: "
+            "t0_us t1_us px py pz rx ry rz"
         )
 
     return data
@@ -62,7 +62,7 @@ def main() -> None:
         if len(rel) == 0:
             continue
 
-        all_targets.append(rel[:, 2:9].copy())
+        all_targets.append(rel[:, 2:8].copy())
 
     if not all_targets:
         raise ValueError("All relative_motions.txt files are empty.")

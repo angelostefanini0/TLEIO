@@ -1,12 +1,15 @@
-"python inspect_functions/inspect_relative_motions.py --gt data\eds\train_processed\01_peanuts_light\stamped_groundtruth.txt --rel data/eds/predicted_relative_motions/sequence_01/v0_predicted_relative_motions.txt --gt_rel  data/eds/train_processed/01_peanuts_light/relative_motions.txt"
-
-
 import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-
+"""
+python inspect_functions/inspect_relative_motions.py \
+  --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt \
+  --rel path/to/predicted_relative_motions.txt \
+  --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt \
+  --gt_rel_mode rotation
+"""
 
 def load_table(path: Path) -> np.ndarray:
     with open(path, "r") as f:
@@ -39,6 +42,26 @@ def quat_to_rotmat(q: np.ndarray) -> np.ndarray:
         [2.0 * (xy + wz),       1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
         [2.0 * (xz - wy),       2.0 * (yz + wx),       1.0 - 2.0 * (xx + yy)],
     ], dtype=np.float64)
+
+
+def rotvec_to_rotmat(rotvec: np.ndarray) -> np.ndarray:
+    theta = np.linalg.norm(rotvec)
+    if theta < 1e-12:
+        return np.eye(3, dtype=np.float64)
+
+    axis = rotvec / theta
+    x, y, z = axis
+    K = np.array([
+        [0.0, -z, y],
+        [z, 0.0, -x],
+        [-y, x, 0.0],
+    ], dtype=np.float64)
+
+    return (
+        np.eye(3, dtype=np.float64)
+        + np.sin(theta) * K
+        + (1.0 - np.cos(theta)) * (K @ K)
+    )
 
 
 def rotmat_to_quat(R: np.ndarray) -> np.ndarray:
@@ -90,7 +113,8 @@ def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
     """
     Supported row formats:
     - Legacy: t0_us t1_us r11 r12 r13 px r21 r22 r23 py r31 r32 r33 pz
-    - Current: t0_us t1_us px py pz qx qy qz qw
+    - Quaternion: t0_us t1_us px py pz qx qy qz qw
+    - Axis-vector: t0_us t1_us px py pz rx ry rz
     """
     if row.shape[0] == 14:
         T = np.eye(4, dtype=np.float64)
@@ -103,9 +127,44 @@ def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
         T[:3, 3] = row[2:5]
         return T
 
+    if row.shape[0] == 8:
+        T = np.eye(4, dtype=np.float64)
+        T[:3, :3] = rotvec_to_rotmat(row[5:8])
+        T[:3, 3] = row[2:5]
+        return T
+
     raise ValueError(
-        f"Unsupported relative motion row with {row.shape[0]} columns. Expected 9 or 14."
+        f"Unsupported relative motion row with {row.shape[0]} columns. Expected 8, 9 or 14."
     )
+
+
+def describe_rel_format(num_cols: int) -> str:
+    if num_cols == 8:
+        return "axis-vector + translation"
+    if num_cols == 9:
+        return "quaternion + translation"
+    if num_cols == 14:
+        return "legacy 3x4 transform"
+    return f"unknown ({num_cols} cols)"
+
+
+def fuse_rel_transforms(pred_row: np.ndarray, gt_row: np.ndarray | None, mode: str) -> np.ndarray:
+    T_rel = parse_rel_row_to_T(pred_row)
+    if gt_row is None or mode == "none":
+        return T_rel
+
+    T_gt = parse_rel_row_to_T(gt_row)
+
+    if mode == "rotation":
+        T_rel[:3, :3] = T_gt[:3, :3]
+    elif mode == "translation":
+        T_rel[:3, 3] = T_gt[:3, 3]
+    elif mode == "both":
+        T_rel = T_gt
+    else:
+        raise ValueError(f"Unsupported gt_rel_mode '{mode}'.")
+
+    return T_rel
 
 
 def slerp(q0: np.ndarray, q1: np.ndarray, alpha: float) -> np.ndarray:
@@ -172,13 +231,18 @@ def main():
                         help="stamped_groundtruth.txt with columns: timestamp_us px py pz qx qy qz qw")
     parser.add_argument("--rel", type=Path, required=True,
                         help="relative_motions.txt with columns either: "
+                             "[t0_us t1_us px py pz rx ry rz] or "
                              "[t0_us t1_us px py pz qx qy qz qw] or "
                              "[t0_us t1_us r11 r12 r13 px r21 r22 r23 py r31 r32 r33 pz]")
     parser.add_argument("--save_dir", type=Path, default=None,
                         help="Optional directory to save figures instead of showing them")
     
     parser.add_argument("--gt_rel", type=Path, default=None,
-                        help="Optional gt_rel.txt with columns: t0_us t1_us px py pz qx qy qz qw. If provided, will compare relative motions to gt_rel instead of source GT.")
+                        help="Optional GT relative motions used to inspect partial network results.")
+    parser.add_argument("--gt_rel_mode", type=str, default="rotation",
+                        choices=["none", "rotation", "translation", "both"],
+                        help="How to combine --rel with --gt_rel before integration. "
+                             "Default 'rotation' keeps predicted translation and uses GT rotation.")
     
     args = parser.parse_args()
 
@@ -186,15 +250,12 @@ def main():
     rel = load_table(args.rel)
     gt_rel = load_table(args.gt_rel) if args.gt_rel is not None else None
 
-
-    gt_rel_quat = gt_rel[:, 5:9] if gt_rel is not None else None
-
-    rel[:, 5:9] = gt_rel_quat if gt_rel_quat is not None else rel[:, 5:9]
-
     if gt.shape[1] != 8:
         raise ValueError(f"{args.gt} has {gt.shape[1]} columns, expected 8.")
-    if rel.shape[1] not in (9, 14):
-        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 9 or 14.")
+    if rel.shape[1] not in (8, 9, 14):
+        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 8, 9 or 14.")
+    if gt_rel is not None and gt_rel.shape[1] not in (8, 9, 14):
+        raise ValueError(f"{args.gt_rel} has {gt_rel.shape[1]} columns, expected 8, 9 or 14.")
 
     gt_ts = gt[:, 0].astype(np.int64)
     gt_pos = gt[:, 1:4]
@@ -210,6 +271,13 @@ def main():
         raise ValueError("Each relative motion must satisfy t1_us > t0_us.")
     if len(rel) > 1 and not np.array_equal(rel_t0[1:], rel_t1[:-1]):
         raise ValueError("Relative motions do not form a continuous timestamp chain.")
+    if gt_rel is not None:
+        gt_rel_t0 = gt_rel[:, 0].astype(np.int64)
+        gt_rel_t1 = gt_rel[:, 1].astype(np.int64)
+        if len(gt_rel) != len(rel):
+            raise ValueError("--gt_rel must have the same number of rows as --rel.")
+        if not np.array_equal(rel_t0, gt_rel_t0) or not np.array_equal(rel_t1, gt_rel_t1):
+            raise ValueError("--gt_rel timestamps do not match --rel timestamps.")
 
     # Anchor timestamps implied by relative motions
     anchor_ts = np.concatenate([rel_t0[:1], rel_t1])
@@ -225,7 +293,8 @@ def main():
     recon_quat = [init_quat[0]]
 
     for i in range(len(rel)):
-        T_rel = parse_rel_row_to_T(rel[i])
+        gt_rel_row = None if gt_rel is None else gt_rel[i]
+        T_rel = fuse_rel_transforms(rel[i], gt_rel_row, args.gt_rel_mode)
         T_chain = T_chain @ T_rel
         p, q = T_to_pose(T_chain)
         recon_pos.append(p)
@@ -241,12 +310,15 @@ def main():
     pos_err = np.linalg.norm(recon_pos - ref_pos, axis=1)
     rot_err = rotation_error_deg(ref_quat, recon_quat)
 
-    rel_format = "quaternion + translation" if rel.shape[1] == 9 else "legacy 3x4 transform"
+    rel_format = describe_rel_format(rel.shape[1])
+    gt_rel_format = "none" if gt_rel is None else describe_rel_format(gt_rel.shape[1])
 
     print("Relative motions vs source GT")
     print(f"GT poses:                 {len(gt_ts)}")
     print(f"Relative motions:         {len(rel)}")
     print(f"Relative format:          {rel_format}")
+    print(f"GT rel format:            {gt_rel_format}")
+    print(f"GT rel fusion mode:       {args.gt_rel_mode}")
     print(f"Reconstructed anchors:    {len(anchor_ts)}")
     print(f"Position RMSE [m]:        {np.sqrt(np.mean(pos_err ** 2)):.6e}")
     print(f"Position max  [m]:        {np.max(pos_err):.6e}")

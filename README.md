@@ -79,3 +79,13 @@ python scripts/processing.py data/eds/raw   \
 --anchor_hz 20
 ```
 
+## 5. Inspection of model output: 
+Run the `inspect_relative_motions.py` script to see how the model predicition compares to the GT. `gt` argument expects the stamped groundtruth, `rel` expects the predicted motions from the network, `gt_rel` expects the groundtruth relative motions, `gt_rel_mode` expects one of `[rotation, translation, both,]`. If `rotation` is used, the output will be the model predicted translation with gt rotation, if `translation` is used, the output will be the model predicted rotation, with gt translation, if `both` is used, the output will be the full gt relative motion.
+
+```bash
+python inspect_functions/inspect_relative_motions.py \
+--gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt \
+--rel path/to/predicted_relative_motions.txt \
+--gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt \
+--gt_rel_mode rotation
+```

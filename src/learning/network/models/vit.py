@@ -132,7 +132,7 @@ class Block(nn.Module):
 class PatchEmbed(nn.Module):
     """ Image to Patch Embedding
     """
-    def __init__(self, img_size=(224, 224), patch_size=16, in_chans=3, embed_dim=768):
+    def __init__(self, img_size=(224, 224), patch_size=16, in_chans=5, embed_dim=768):
         super().__init__()
         # img_size = to_2tuple(img_size)
         patch_size = to_2tuple(patch_size)

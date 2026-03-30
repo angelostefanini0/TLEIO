@@ -5,9 +5,9 @@ from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 import pickle
 import json
-from src.learning.network.train import *
-from src.learning.network.build_model import *
-from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
+from learning.network.train import *
+from learning.network.build_model import *
+from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 import argparse
 from pathlib import Path
 
