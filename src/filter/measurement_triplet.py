@@ -9,7 +9,7 @@ covariance for the `(1 -> 2, 2 -> 3)` update.
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from filter.utils.math_utils import Jr_log, hat, mat_log
+from filter.utils.math_utils import Jl_SO3_inv, hat, mat_log
 
 
 def extract_raw_triplet_measurement(network_output):
@@ -110,6 +110,11 @@ def build_pair_residual_and_local_jacobian(R_i, p_i, R_j, p_j, measurement_7d):
 
     The local Jacobian is ordered as:
     `(delta_theta_i, delta_p_i, delta_theta_j, delta_p_j)`.
+
+    The rotation residual is defined as `log(R_hat^T R_meas)` so that it follows
+    the same correction sign convention as a standard `measurement - prediction`
+    EKF innovation. With our left-multiplicative clone perturbations, this uses
+    the inverse left Jacobian of SO(3).
     """
 
     t_meas = measurement_7d[:3]
@@ -118,7 +123,7 @@ def build_pair_residual_and_local_jacobian(R_i, p_i, R_j, p_j, measurement_7d):
     t_hat, R_hat, delta_p = predict_relative_pose(R_i, p_i, R_j, p_j)
 
     residual_t = t_meas - t_hat
-    residual_R = mat_log(R_meas.T @ R_hat)
+    residual_R = mat_log(R_hat.T @ R_meas)
     residual = np.concatenate([residual_t, residual_R], axis=0)
 
     local_jacobian = np.zeros((6, 12), dtype=float)
@@ -126,9 +131,9 @@ def build_pair_residual_and_local_jacobian(R_i, p_i, R_j, p_j, measurement_7d):
     local_jacobian[0:3, 3:6] = R_i.T
     local_jacobian[0:3, 9:12] = -R_i.T
 
-    right_jacobian_inv = Jr_log(residual_R)
-    local_jacobian[3:6, 0:3] = -right_jacobian_inv @ R_j.T
-    local_jacobian[3:6, 6:9] = right_jacobian_inv @ R_j.T
+    left_jacobian_inv = Jl_SO3_inv(residual_R)
+    local_jacobian[3:6, 0:3] = left_jacobian_inv @ R_j.T
+    local_jacobian[3:6, 6:9] = -left_jacobian_inv @ R_j.T
 
     return residual, local_jacobian
 

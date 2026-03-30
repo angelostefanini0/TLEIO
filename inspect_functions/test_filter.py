@@ -1,17 +1,16 @@
-"""Run a GT-driven smoke test for the TLEIO filter on raw EDS IMU data.
+"""Run a processed-sequence smoke test for the TLEIO filter.
 
 This inspection script is meant to answer one concrete question: does the
 current filter implementation behave sensibly when we feed it realistic IMU
-propagation data and synthetic relative-pose measurements built from ground
-truth. By default the synthetic measurements are scheduled every 75 ms so that
-each triplet spans 150 ms, matching the intended three-voxel timing semantics.
-The script:
-1. loads raw IMU, ground-truth poses, and frame timestamps;
-2. builds realistic measurement timestamps and interpolates GT poses there;
-3. converts consecutive GT frame poses into the transformer's `2 x 7` relative
-   measurements over triplets;
+propagation data together with the same `2 x 7` relative-pose targets that the
+transformer is trained to predict. In the processed-data mode used by default,
+the script:
+1. loads zero-based IMU data from a processed sequence;
+2. loads precomputed adjacent-anchor relative poses from `relative_motions.txt`;
+3. slides a triplet window over those rows so each EKF update consumes two
+   consecutive `7D` measurements, exactly like the network output;
 4. perturbs those measurements with configurable translation/rotation noise;
-5. runs the clone-based EKF update and reports trajectory errors.
+5. uses stamped GT only for initialization, evaluation, and plotting.
 """
 
 from __future__ import annotations
@@ -57,6 +56,36 @@ def load_pose_table(path: Path) -> np.ndarray:
     return poses
 
 
+def load_relative_motion_table(path: Path) -> np.ndarray:
+    """Load processed relative motions and validate the expected 9-column layout.
+
+    The processed files may contain a stale text header, so this parser skips
+    non-numeric lines and keeps only the numeric `t0 t1 px py pz qx qy qz qw`
+    rows that match the transformer's per-edge output contract.
+    """
+
+    rows = []
+    with Path(path).open("r", encoding="utf-8") as handle:
+        for line in handle:
+            parts = line.strip().split()
+            if not parts:
+                continue
+            try:
+                rows.append([float(value) for value in parts])
+            except ValueError:
+                continue
+
+    relative_motions = np.asarray(rows, dtype=np.float64)
+    if relative_motions.ndim != 2 or relative_motions.shape[1] != 9:
+        raise ValueError(
+            f"{path} has shape {relative_motions.shape}, expected N x 9: "
+            "t0 t1 px py pz qx qy qz qw."
+        )
+    if relative_motions.shape[0] < 2:
+        raise ValueError(f"{path} needs at least two relative-motion rows to form one EKF update.")
+    return relative_motions
+
+
 def load_frame_times(path: Path) -> np.ndarray:
     """Load image timestamps for the optional image-aligned measurement mode."""
 
@@ -80,6 +109,35 @@ def build_measurement_anchor_times(start_time_s: float, end_time_s: float, measu
     times = start_time_s + measurement_dt_s * np.arange(count, dtype=np.float64)
     times = times[times <= end_time_s + 1e-12]
     return times
+
+
+def build_anchor_times_from_relative_motions(relative_motion_table: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Recover anchor times and `7D` per-edge measurements from processed relative motions.
+
+    Each row stores one adjacent-anchor relative pose. Consecutive rows must be
+    continuous so the EKF can consume overlapping pairs `(k, k+1)` as one
+    stacked triplet update.
+    """
+
+    relative_motion_table = np.asarray(relative_motion_table, dtype=np.float64)
+    raw_times = relative_motion_table[:, :2]
+    time_scale = infer_time_scale_to_seconds(raw_times.reshape(-1))
+    edge_start_times_s = raw_times[:, 0] * time_scale
+    edge_end_times_s = raw_times[:, 1] * time_scale
+
+    if np.any(edge_end_times_s <= edge_start_times_s):
+        raise ValueError("Found a non-positive relative-motion interval in relative_motions.txt.")
+
+    continuity_error = np.max(np.abs(edge_end_times_s[:-1] - edge_start_times_s[1:]))
+    if continuity_error > 1e-9:
+        raise ValueError(
+            "Consecutive rows in relative_motions.txt are not time-continuous, "
+            f"maximum discontinuity is {continuity_error:.3e} s."
+        )
+
+    anchor_times_s = np.concatenate([edge_start_times_s[:1], edge_end_times_s], axis=0)
+    relative_measurements = normalize_quaternions(relative_motion_table[:, 2:9])
+    return anchor_times_s, relative_measurements
 
 
 def infer_time_scale_to_seconds(timestamps: np.ndarray) -> float:
@@ -257,39 +315,56 @@ def save_trajectory_table(path: Path, trajectory_table: np.ndarray) -> Path:
     return path
 
 
-def save_trajectory_comparison_plot(path: Path, times_s: np.ndarray, gt_positions: np.ndarray, estimated_positions: np.ndarray) -> Path:
-    """Save a compact trajectory plot comparing the EKF estimate against GT."""
+def resample_positions(query_times_s: np.ndarray, source_times_s: np.ndarray, source_positions: np.ndarray) -> np.ndarray:
+    """Interpolate a position trajectory onto a target timestamp grid."""
+
+    query_times_s = np.asarray(query_times_s, dtype=np.float64)
+    source_times_s = np.asarray(source_times_s, dtype=np.float64)
+    source_positions = np.asarray(source_positions, dtype=np.float64)
+
+    if source_times_s.ndim != 1 or source_positions.ndim != 2 or source_positions.shape[1] != 3:
+        raise ValueError("Position resampling expects `times: [N]` and `positions: [N, 3]`.")
+
+    return np.column_stack(
+        [np.interp(query_times_s, source_times_s, source_positions[:, axis]) for axis in range(3)]
+    )
+
+
+def save_trajectory_comparison_plot(
+    path: Path,
+    gt_times_s: np.ndarray,
+    gt_positions: np.ndarray,
+    estimated_positions_at_gt_times: np.ndarray,
+) -> Path:
+    """Save four time-series plots on the processed GT timestamp grid.
+
+    The time axis comes directly from the processed `stamped_groundtruth.txt`
+    file, so the plots compare `x`, `y`, `z`, and total position error against
+    the same reference timestamps used by the processed sequence.
+    """
 
     import matplotlib.pyplot as plt
 
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    t_rel = times_s - times_s[0]
+    t_rel = gt_times_s - gt_times_s[0]
     fig, axes = plt.subplots(2, 2, figsize=(12, 9))
 
-    axes[0, 0].plot(gt_positions[:, 0], gt_positions[:, 1], label="GT")
-    axes[0, 0].plot(estimated_positions[:, 0], estimated_positions[:, 1], label="EKF")
-    axes[0, 0].set_title("XY trajectory")
-    axes[0, 0].set_xlabel("x [m]")
-    axes[0, 0].set_ylabel("y [m]")
-    axes[0, 0].grid(True)
-    axes[0, 0].axis("equal")
-    axes[0, 0].legend()
-
     for axis_idx, label in enumerate(("x", "y", "z")):
-        row = 0 if axis_idx < 2 else 1
-        col = 1 if axis_idx < 2 else 0
+        row = axis_idx // 2
+        col = axis_idx % 2
         axis = axes[row, col]
         axis.plot(t_rel, gt_positions[:, axis_idx], label=f"GT {label}")
-        axis.plot(t_rel, estimated_positions[:, axis_idx], label=f"EKF {label}")
+        axis.plot(t_rel, estimated_positions_at_gt_times[:, axis_idx], label=f"EKF {label}")
+        axis.set_title(f"{label.upper()} Position")
         axis.set_xlabel("time [s]")
         axis.set_ylabel(f"{label} [m]")
         axis.grid(True)
         axis.legend()
 
-    position_error = np.linalg.norm(estimated_positions - gt_positions, axis=1)
+    position_error = np.linalg.norm(estimated_positions_at_gt_times - gt_positions, axis=1)
     axes[1, 1].plot(t_rel, position_error, color="tab:red")
-    axes[1, 1].set_title("Position error")
+    axes[1, 1].set_title("Total Position Error")
     axes[1, 1].set_xlabel("time [s]")
     axes[1, 1].set_ylabel("||p_est - p_gt|| [m]")
     axes[1, 1].grid(True)
@@ -301,8 +376,9 @@ def save_trajectory_comparison_plot(path: Path, times_s: np.ndarray, gt_position
 
 
 def test_filter(
-    imu_path: Path = ROOT / "data/eds/imu.csv",
-    gt_path: Path = ROOT / "data/eds/stamped_groundtruth.txt",
+    imu_path: Path = ROOT / "data/eds/processed/00_peanuts_dark/imu.csv",
+    gt_path: Path = ROOT / "data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt",
+    relative_motions_path: Path | None = ROOT / "data/eds/processed/00_peanuts_dark/relative_motions.txt",
     frame_timestamps_path: Path | None = ROOT / "data/eds/images_timestamps.txt",
     measurement_dt_ms: float = 75.0,
     use_frame_timestamps: bool = False,
@@ -315,7 +391,7 @@ def test_filter(
     max_frames: int | None = None,
     output_dir: Path | None = ROOT / "inspect_functions" / "outputs" / "test_filter",
 ) -> dict:
-    """Run a GT-driven noisy-measurement filter test and return trajectory/error diagnostics.
+    """Run a noisy relative-pose filter test and return trajectory/error diagnostics.
 
     The returned dictionary contains two trajectory views:
     1. anchor-time states at the measurement timestamps, which are useful for
@@ -329,43 +405,85 @@ def test_filter(
 
     The synthetic measurement corruption and the EKF's assumed covariance are
     configurable separately. This is useful when we want to test whether the
-    filter is under-trusting or over-trusting the relative-pose update. By
-    default the measurement anchors are synthetic timestamps separated by
-    `measurement_dt_ms`, so each triplet spans `2 * measurement_dt_ms`.
+    filter is under-trusting or over-trusting the relative-pose update.
+
+    By default the function uses the processed `relative_motions.txt` file,
+    which already contains the transformer's per-edge `7D` outputs between
+    adjacent anchor timestamps. In that mode, each EKF update consumes two
+    consecutive rows, exactly matching the intended `2 x 7` filter input.
     """
 
     imu_table = load_imu_table(Path(imu_path))
     gt_table = load_pose_table(Path(gt_path))
+    relative_motion_table = (
+        load_relative_motion_table(Path(relative_motions_path))
+        if relative_motions_path is not None
+        else None
+    )
 
     imu_times_s = imu_table[:, 0].astype(np.float64) * infer_time_scale_to_seconds(imu_table[:, 0])
-    gt_times_s = gt_table[:, 0].astype(np.float64)
+    gt_times_s = gt_table[:, 0].astype(np.float64) * infer_time_scale_to_seconds(gt_table[:, 0])
 
     overlap_start = max(imu_times_s[0], gt_times_s[0])
     overlap_end = min(imu_times_s[-1], gt_times_s[-1])
 
-    measurement_dt_s = float(measurement_dt_ms) * 1e-3
-    if use_frame_timestamps:
-        if frame_timestamps_path is None:
-            raise ValueError("`frame_timestamps_path` is required when `use_frame_timestamps=True`.")
-        frame_times = load_frame_times(Path(frame_timestamps_path))
-        frame_times_s = frame_times.astype(np.float64) * infer_time_scale_to_seconds(frame_times)
-        overlap_start = max(overlap_start, frame_times_s[0])
-        overlap_end = min(overlap_end, frame_times_s[-1])
-        measurement_times_s = frame_times_s[
-            (frame_times_s >= overlap_start) & (frame_times_s <= overlap_end)
-        ]
+    if relative_motion_table is not None:
+        measurement_times_s, relative_measurements = build_anchor_times_from_relative_motions(
+            relative_motion_table
+        )
+        valid_mask = (
+            (measurement_times_s >= overlap_start - 1e-9)
+            & (measurement_times_s <= overlap_end + 1e-9)
+        )
+        if not np.all(valid_mask):
+            if not np.any(valid_mask):
+                raise ValueError("The processed anchor times do not overlap with both IMU and ground truth.")
+            first_valid = int(np.argmax(valid_mask))
+            last_valid = int(len(valid_mask) - np.argmax(valid_mask[::-1]))
+            measurement_times_s = measurement_times_s[first_valid:last_valid]
+            relative_measurements = relative_measurements[first_valid:last_valid - 1]
+        measurement_times_s = np.asarray(measurement_times_s, dtype=np.float64)
+        relative_measurements = np.asarray(relative_measurements, dtype=np.float64)
+        if max_frames is not None:
+            measurement_times_s = measurement_times_s[:max_frames]
+            relative_measurements = relative_measurements[: max(0, measurement_times_s.size - 1)]
     else:
-        measurement_times_s = build_measurement_anchor_times(
-            overlap_start,
-            overlap_end,
-            measurement_dt_s,
+        measurement_dt_s = float(measurement_dt_ms) * 1e-3
+        if use_frame_timestamps:
+            if frame_timestamps_path is None:
+                raise ValueError("`frame_timestamps_path` is required when `use_frame_timestamps=True`.")
+            frame_times = load_frame_times(Path(frame_timestamps_path))
+            frame_times_s = frame_times.astype(np.float64) * infer_time_scale_to_seconds(frame_times)
+            overlap_start = max(overlap_start, frame_times_s[0])
+            overlap_end = min(overlap_end, frame_times_s[-1])
+            measurement_times_s = frame_times_s[
+                (frame_times_s >= overlap_start) & (frame_times_s <= overlap_end)
+            ]
+        else:
+            measurement_times_s = build_measurement_anchor_times(
+                overlap_start,
+                overlap_end,
+                measurement_dt_s,
+            )
+
+        if max_frames is not None:
+            measurement_times_s = measurement_times_s[:max_frames]
+        relative_measurements = None
+
+    if use_frame_timestamps and relative_motion_table is not None:
+        raise ValueError(
+            "`use_frame_timestamps` is only supported in the legacy GT-derived mode. "
+            "Leave it disabled when using precomputed relative_motions.txt."
         )
 
-    if max_frames is not None:
+    if max_frames is not None and relative_motion_table is None:
         measurement_times_s = measurement_times_s[:max_frames]
     if measurement_times_s.size < 3:
         raise ValueError("Need at least three overlapping frame times to test the triplet update.")
-
+    if relative_measurements is not None and relative_measurements.shape[0] != measurement_times_s.size - 1:
+        raise ValueError(
+            "The processed relative-motions table does not match the inferred anchor times."
+        )
     gt_positions = gt_table[:, 1:4].astype(np.float64)
     gt_quaternions = normalize_quaternions(gt_table[:, 4:8].astype(np.float64))
     anchor_positions, anchor_quaternions = interpolate_poses(
@@ -455,10 +573,13 @@ def test_filter(
         ekf.augment_clone()
 
         if ekf.state.get_clone_count() == 3:
-            clean_measurement = build_triplet_measurement(
-                anchor_positions[frame_idx - 2 : frame_idx + 1],
-                anchor_quaternions[frame_idx - 2 : frame_idx + 1],
-            )
+            if relative_measurements is None:
+                clean_measurement = build_triplet_measurement(
+                    anchor_positions[frame_idx - 2 : frame_idx + 1],
+                    anchor_quaternions[frame_idx - 2 : frame_idx + 1],
+                )
+            else:
+                clean_measurement = relative_measurements[frame_idx - 2 : frame_idx]
             noisy_measurement = perturb_triplet_measurement(
                 clean_measurement,
                 rng,
@@ -503,6 +624,14 @@ def test_filter(
         gt_quaternions,
         dense_times_s,
     )
+    plot_mask = (gt_times_s >= dense_times_s[0] - 1e-9) & (gt_times_s <= dense_times_s[-1] + 1e-9)
+    plot_gt_times_s = gt_times_s[plot_mask]
+    plot_gt_positions = gt_positions[plot_mask]
+    plot_estimated_positions = resample_positions(
+        plot_gt_times_s,
+        dense_times_s,
+        dense_estimated_positions,
+    )
 
     anchor_estimated_trajectory = build_trajectory_table(
         measurement_times_s,
@@ -546,9 +675,9 @@ def test_filter(
         )
         saved_files["trajectory_plot"] = save_trajectory_comparison_plot(
             output_dir / "trajectory_comparison.png",
-            dense_times_s,
-            dense_gt_positions,
-            dense_estimated_positions,
+            plot_gt_times_s,
+            plot_gt_positions,
+            plot_estimated_positions,
         )
 
     return {
@@ -562,6 +691,9 @@ def test_filter(
         "dense_gt_quaternions": dense_gt_quaternions,
         "dense_estimated_positions": dense_estimated_positions,
         "dense_estimated_quaternions": dense_estimated_quaternions,
+        "plot_gt_times_s": plot_gt_times_s,
+        "plot_gt_positions": plot_gt_positions,
+        "plot_estimated_positions": plot_estimated_positions,
         "anchor_estimated_trajectory": anchor_estimated_trajectory,
         "anchor_ground_truth_trajectory": anchor_ground_truth_trajectory,
         "estimated_trajectory": estimated_trajectory,
@@ -589,8 +721,11 @@ def test_filter(
         "seed": int(seed),
         "sigma_rel_t": float(sigma_rel_t),
         "sigma_rel_r_deg": float(sigma_rel_r_deg),
-        "measurement_dt_ms": float(measurement_dt_ms),
+        "measurement_dt_ms": float(
+            np.median(np.diff(measurement_times_s)) * 1e3 if measurement_times_s.size > 1 else measurement_dt_ms
+        ),
         "use_frame_timestamps": bool(use_frame_timestamps),
+        "using_precomputed_relative_motions": bool(relative_motion_table is not None),
         "measurement_sigma_rel_t": measurement_sigma_rel_t,
         "measurement_sigma_rel_r_deg": measurement_sigma_rel_r_deg,
         "assumed_sigma_rel_t": assumed_sigma_rel_t,
@@ -602,11 +737,21 @@ def test_filter(
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI arguments for the GT-driven filter smoke test."""
+    """Parse CLI arguments for the processed-sequence filter smoke test."""
 
-    parser = argparse.ArgumentParser(description="Run a noisy GT-driven test of the TLEIO filter.")
-    parser.add_argument("--imu", type=Path, default=ROOT / "data/eds/imu.csv")
-    parser.add_argument("--gt", type=Path, default=ROOT / "data/eds/stamped_groundtruth.txt")
+    parser = argparse.ArgumentParser(description="Run a noisy processed-sequence test of the TLEIO filter.")
+    parser.add_argument("--imu", type=Path, default=ROOT / "data/eds/processed/00_peanuts_dark/imu.csv")
+    parser.add_argument(
+        "--gt",
+        type=Path,
+        default=ROOT / "data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt",
+    )
+    parser.add_argument(
+        "--relative_motions",
+        type=Path,
+        default=ROOT / "data/eds/processed/00_peanuts_dark/relative_motions.txt",
+        help="Processed adjacent-anchor relative poses used to build overlapping `2 x 7` EKF updates.",
+    )
     parser.add_argument("--frames", type=Path, default=ROOT / "data/eds/images_timestamps.txt")
     parser.add_argument(
         "--measurement_dt_ms",
@@ -655,6 +800,7 @@ def main() -> None:
     results = test_filter(
         imu_path=args.imu,
         gt_path=args.gt,
+        relative_motions_path=args.relative_motions,
         frame_timestamps_path=args.frames,
         measurement_dt_ms=args.measurement_dt_ms,
         use_frame_timestamps=args.use_frame_timestamps,
@@ -672,6 +818,7 @@ def main() -> None:
     print(f"Dense trajectory samples:    {results['num_trajectory_samples']}")
     print(f"Triplet updates applied:     {results['num_updates']}")
     print(f"Measurement dt [ms]:         {results['measurement_dt_ms']:.3f}")
+    print(f"Using processed rel poses:   {results['using_precomputed_relative_motions']}")
     print(f"Using frame timestamps:      {results['use_frame_timestamps']}")
     print(f"Propagated pos RMSE [m]:     {results['propagated_position_rmse_m']:.6f}")
     print(f"Position RMSE [m]:           {results['position_rmse_m']:.6f}")

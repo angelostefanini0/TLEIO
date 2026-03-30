@@ -160,6 +160,11 @@ class ImuMSCKF:
         The input is expected to contain the transformer's raw `2 x 7` mean
         output and, optionally, one joint `12 x 12` covariance for the stacked
         residual space.
+
+        `build_triplet_update()` returns the Jacobian of the residual itself,
+        not the Jacobian of a predicted measurement map. Because of that, the
+        EKF correction must apply the negative Kalman step so the residual is
+        driven toward zero instead of away from it.
         """
 
         residual, H, R = build_triplet_update(
@@ -173,7 +178,7 @@ class ImuMSCKF:
         innovation_covariance = H @ P @ H.T + R
         PHt = P @ H.T
         K = np.linalg.solve(innovation_covariance.T, PHt.T).T
-        delta_x = K @ residual
+        delta_x = -K @ residual
 
         self._inject_error_state(delta_x)
 

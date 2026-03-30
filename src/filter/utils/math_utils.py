@@ -188,15 +188,15 @@ def Jr_log(phi):
     if theta < 1e-3:
         J = np.eye(3) + 0.5 * hat(phi)
     else:
+        phi_hat = hat(phi)
         J = (
             np.eye(3)
-            + 0.5 * hat(phi)
+            + 0.5 * phi_hat
             + (
                 1 / np.power(theta, 2.0)
-                + (1 + np.cos(theta)) / (2 * theta * np.sin(theta))
+                - (1 + np.cos(theta)) / (2 * theta * np.sin(theta))
             )
-            * hat(phi)
-            * hat(phi)
+            * (phi_hat @ phi_hat)
         )
     return J
 
