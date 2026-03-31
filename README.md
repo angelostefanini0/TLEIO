@@ -21,10 +21,10 @@ git submodule update --init --recursive
 Download the eds dataset sequence from the Event Camera Dataset (EDS):
 
 ```bash
-python scripts/download/download_eds.py data/eds 6 1,4
+python scripts/download/download_eds.py data/eds --seq 0,1,2,3,4,5
 ```
 
-Usage: write the directory to save it into first, then the number up to which you want to download (up to 16 - in the examaple 6), and optionally the numbers of the sequences you want to have as testing sequences separated by comma (1,4 for example). If you omit the last argument, no sequence is placed in testing.
+Usage: write the directory to save it into first, then pass the exact sequence numbers you want to download with `--seq` as a comma-separated list.
 
 ### 2.2 TartanAir + TartanEvent
 
@@ -72,6 +72,8 @@ CURRENTLY WORKING FOR EDS ONLY, NEEDS MINOR FIXES TO WORK WITH THE TARTAN AIR DA
 ```bash
 python scripts/processing.py data/eds/raw   \
 --save-path data/eds/processed   \
+--save_path_testing data/eds/processed_testing \
+--test-seq 0,6 \
 --overwrite  \
 --timestamps-key t \
 --process_gt imu.csv stamped_groundtruth.txt \

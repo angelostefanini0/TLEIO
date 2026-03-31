@@ -1,8 +1,6 @@
 from __future__ import annotations
-import shutil
 import argparse
 from pathlib import Path
-from typing import Optional
 
 
 import h5py
@@ -24,13 +22,15 @@ Additionally, supplementary files such as `imu.csv` and `stamped_groundtruth.txt
 Command to run:
 python scripts/processing.py data/eds/raw   \
 --save-path data/eds/processed   \
+--save_path_testing data/eds/processed_testing \
+--test-seq 0,6 \
 --overwrite  \
 --timestamps-key t \
 --process_gt imu.csv stamped_groundtruth.txt\
 --delta_t_ms 50 \
 --anchor_hz 20
 
-python scripts/processing.py data/eds/raw   --save-path data/eds/processed    --timestamps-key t --process_gt imu.csv stamped_groundtruth.txt --delta_t_ms 50 --anchor_hz 20
+python scripts/processing.py data/eds/raw --save-path data/eds/processed --save_path_testing data/eds/processed_testing --test-seq 0,6 --timestamps-key t --process_gt imu.csv stamped_groundtruth.txt --delta_t_ms 50 --anchor_hz 20
 """
 
 def parse_args() -> argparse.Namespace:
@@ -53,6 +53,22 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Path where the output files will be saved.",
+    )
+    parser.add_argument(
+        "--save_path_testing",
+        type=Path,
+        default=None,
+        help="Path where the testing sequence output files will be saved.",
+    )
+    parser.add_argument(
+        "--test-seq",
+        type=str,
+        default="",
+        help=(
+            "Comma-separated list of sequences to save under --save_path_testing. "
+            "You can use indices like '0,6' or sequence names like "
+            "'00_peanuts_dark,06_ziggy_and_fuzz'."
+        ),
     )
     parser.add_argument(
         "--dataset-name",
@@ -88,6 +104,37 @@ def parse_args() -> argparse.Namespace:
     )
 
     return parser.parse_args()
+
+
+def parse_sequence_selection(value: str, available_names: list[str]) -> set[str]:
+    if not value.strip():
+        return set()
+
+    available_set = set(available_names)
+    prefix_to_name = {}
+    for name in available_names:
+        prefix = name.split("_", 1)[0]
+        if prefix.isdigit():
+            prefix_to_name[str(int(prefix))] = name
+            prefix_to_name[prefix] = name
+
+    selected = set()
+    items = [item.strip() for item in value.split(",") if item.strip()]
+    for item in items:
+        if item in available_set:
+            selected.add(item)
+            continue
+
+        if item in prefix_to_name:
+            selected.add(prefix_to_name[item])
+            continue
+
+        raise ValueError(
+            f"Unknown sequence '{item}' in --test-seq. "
+            f"Use indices like '0,6' or sequence names from: {', '.join(available_names)}"
+        )
+
+    return selected
 
 
 def ensure_file_exists(path: Path) -> Path:
@@ -296,12 +343,18 @@ def main() -> None:
                 --save-path /path/to/ms_to_idx.h5 \
                 --overwrite
 
-        3. Read timestamps from a different internal HDF5 key:
+        3. Save specific sequences to a dedicated testing directory:
+            python processing.py /path/to/raw \
+                --save-path /path/to/processed \
+                --save_path_testing /path/to/processed_testing \
+                --test-seq 0,6
+
+        4. Read timestamps from a different internal HDF5 key:
             python processing.py /path/to/events.h5 \
                 --timestamps-key t \
                 --save-path /path/to/ms_to_idx.h5
 
-        4. Save the lookup table under a custom dataset name in the output file:
+        5. Save the lookup table under a custom dataset name in the output file:
             python processing.py /path/to/events.h5 \
                 --save-path /path/to/ms_to_idx.h5 \
                 --dataset-name custom_ms_to_idx
@@ -311,6 +364,10 @@ def main() -> None:
     input_path = ensure_file_exists(args.file)
     sequence_dirs = sorted([p for p in input_path.iterdir() if p.is_dir()])
     sequence_names = sorted([p.name for p in input_path.iterdir() if p.is_dir()])
+    testing_sequences = parse_sequence_selection(args.test_seq, sequence_names)
+
+    if testing_sequences and args.save_path_testing is None:
+        raise ValueError("Provide --save_path_testing when using --test-seq.")
 
     for seq, seq_name in zip(sequence_dirs, sequence_names): 
         event_path = seq / "events.h5"
@@ -321,8 +378,18 @@ def main() -> None:
         print(f"Recording duration: {len(ms_to_idx) - 1} ms")
 
     
-        if args.save_path:
-            output_path = args.save_path / seq_name / "events.h5"
+        if args.save_path or args.save_path_testing:
+            base_save_path = args.save_path
+            if seq_name in testing_sequences:
+                base_save_path = args.save_path_testing
+
+            if base_save_path is None:
+                raise ValueError(
+                    f"No output path configured for sequence '{seq_name}'. "
+                    "Set --save-path for training sequences."
+                )
+
+            output_path = base_save_path / seq_name / "events.h5"
             write_to_new_file(
                 input_path=event_path,
                 output_path=output_path,
