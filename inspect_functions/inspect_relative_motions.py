@@ -239,7 +239,7 @@ def main():
     
     parser.add_argument("--gt_rel", type=Path, default=None,
                         help="Optional GT relative motions used to inspect partial network results.")
-    parser.add_argument("--gt_rel_mode", type=str, default="rotation",
+    parser.add_argument("--gt_rel_mode", type=str, default="none",
                         choices=["none", "rotation", "translation", "both"],
                         help="How to combine --rel with --gt_rel before integration. "
                              "Default 'rotation' keeps predicted translation and uses GT rotation.")

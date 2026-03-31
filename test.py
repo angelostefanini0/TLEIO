@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from src.learning.network.build_model import build_model
+from src.learning.network.build_model import *
 from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 
 "python test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
@@ -41,7 +41,7 @@ ARGS = {
         "patch_size": 16,
         "attention_type": "divided_space_time",
         "num_frames": 3,
-        "num_classes": 14,
+        "num_classes": 12,
         "depth": 6,
         "heads": 6,
         "dim_head": 64,
@@ -139,8 +139,8 @@ def load_target_stats(checkpoint, device):
     if target_mean is None or target_std is None:
         return None, None
 
-    target_mean = torch.as_tensor(target_mean, dtype=torch.float32, device=device).view(1, 1, 7)
-    target_std = torch.as_tensor(target_std, dtype=torch.float32, device=device).view(1, 1, 7)
+    target_mean = torch.as_tensor(target_mean, dtype=torch.float32, device=device).view(1, 1, 6)
+    target_std = torch.as_tensor(target_std, dtype=torch.float32, device=device).view(1, 1, 6)
     return target_mean, target_std
 
 
@@ -189,11 +189,11 @@ def main():
             x = batch["representation"].to(device).float()
             anchors = batch["anchors_us"].cpu().numpy()
             y_hat = model(x)
-            y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 7)
+            y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 6)
 
             if target_mean is not None and target_std is not None:
                 y_hat = y_hat * target_std + target_mean
-                y_hat[..., 3:] = torch.nn.functional.normalize(y_hat[..., 3:], dim=-1)
+                #y_hat[..., 3:] = torch.nn.functional.normalize(y_hat[..., 3:], dim=-1)
 
             y_hat = y_hat.cpu().numpy()
 
@@ -220,8 +220,8 @@ def main():
     np.savetxt(
         output_file,
         out,
-        fmt=["%d", "%d"] + ["%.10f"] * 7,
-        header="t0_us t1_us px py pz qx qy qz qw",
+        fmt=["%d", "%d"] + ["%.10f"] * 6,
+        header="t0_us t1_us px py pz rx ry rz",
         comments=""
     )
 
