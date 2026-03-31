@@ -290,8 +290,8 @@ def make_filter_args(sigma_rel_t: float, sigma_rel_r_rad: float) -> SimpleNamesp
     """Create the small argument namespace needed by the current EKF implementation."""
 
     return SimpleNamespace(
-        sigma_na=0.01,
-        sigma_ng=0.001,
+        sigma_na=0.1,
+        sigma_ng=0.005,
         sigma_nba=1e-4,
         sigma_nbg=1e-5,
         sigma_rel_t=sigma_rel_t,
@@ -486,6 +486,8 @@ def test_filter(
         )
     gt_positions = gt_table[:, 1:4].astype(np.float64)
     gt_quaternions = normalize_quaternions(gt_table[:, 4:8].astype(np.float64))
+    # gt_quaternions_xyzw = gt_table[:, [5, 6, 7, 4]].astype(np.float64)
+    # gt_quaternions = normalize_quaternions(gt_quaternions_xyzw)
     anchor_positions, anchor_quaternions = interpolate_poses(
         gt_times_s,
         gt_positions,
@@ -515,9 +517,10 @@ def test_filter(
 
     initial_rotation = Rotation.from_quat(anchor_quaternions[0]).as_matrix()
     initial_position = anchor_positions[0]
-    initial_velocity = (anchor_positions[1] - anchor_positions[0]) / max(
-        measurement_times_s[1] - measurement_times_s[0], 1e-9
-    )
+    # initial_velocity = (anchor_positions[1] - anchor_positions[0]) / max(
+    #     measurement_times_s[1] - measurement_times_s[0], 1e-9
+    # )
+    initial_velocity = np.zeros(3, dtype=np.float64)
     ekf.initialize_with_state(
         measurement_times_s[0],
         initial_rotation,
@@ -595,6 +598,7 @@ def test_filter(
             residual_norms.append(float(np.linalg.norm(update_info["residual"])))
             delta_norms.append(float(np.linalg.norm(update_info["delta_x"])))
             ekf.marginalize_oldest_clone()
+            ekf.marginalize_oldest_clone() #Added a marginalization to protect the independence assumption and avoid drift
 
         corrected_position_errors.append(
             float(np.linalg.norm(ekf.state.p - anchor_positions[frame_idx]))
