@@ -112,20 +112,8 @@ def T_to_pose(T: np.ndarray):
 def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
     """
     Supported row formats:
-    - Legacy: t0_us t1_us r11 r12 r13 px r21 r22 r23 py r31 r32 r33 pz
-    - Quaternion: t0_us t1_us px py pz qx qy qz qw
     - Axis-vector: t0_us t1_us px py pz rx ry rz
     """
-    if row.shape[0] == 14:
-        T = np.eye(4, dtype=np.float64)
-        T[:3, :] = row[2:].reshape(3, 4)
-        return T
-
-    if row.shape[0] == 9:
-        T = np.eye(4, dtype=np.float64)
-        T[:3, :3] = quat_to_rotmat(normalize_quat(row[5:9][None, :])[0])
-        T[:3, 3] = row[2:5]
-        return T
 
     if row.shape[0] == 8:
         T = np.eye(4, dtype=np.float64)
@@ -134,17 +122,13 @@ def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
         return T
 
     raise ValueError(
-        f"Unsupported relative motion row with {row.shape[0]} columns. Expected 8, 9 or 14."
+        f"Unsupported relative motion row with {row.shape[0]} columns. Expected 8"
     )
 
 
 def describe_rel_format(num_cols: int) -> str:
     if num_cols == 8:
         return "axis-vector + translation"
-    if num_cols == 9:
-        return "quaternion + translation"
-    if num_cols == 14:
-        return "legacy 3x4 transform"
     return f"unknown ({num_cols} cols)"
 
 
@@ -231,9 +215,7 @@ def main():
                         help="stamped_groundtruth.txt with columns: timestamp_us px py pz qx qy qz qw")
     parser.add_argument("--rel", type=Path, required=True,
                         help="relative_motions.txt with columns either: "
-                             "[t0_us t1_us px py pz rx ry rz] or "
-                             "[t0_us t1_us px py pz qx qy qz qw] or "
-                             "[t0_us t1_us r11 r12 r13 px r21 r22 r23 py r31 r32 r33 pz]")
+                             "[t0_us t1_us px py pz rx ry rz]")
     parser.add_argument("--save_dir", type=Path, default=None,
                         help="Optional directory to save figures instead of showing them")
     
@@ -252,10 +234,10 @@ def main():
 
     if gt.shape[1] != 8:
         raise ValueError(f"{args.gt} has {gt.shape[1]} columns, expected 8.")
-    if rel.shape[1] not in (8, 9, 14):
-        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 8, 9 or 14.")
-    if gt_rel is not None and gt_rel.shape[1] not in (8, 9, 14):
-        raise ValueError(f"{args.gt_rel} has {gt_rel.shape[1]} columns, expected 8, 9 or 14.")
+    if rel.shape[1] != 8:
+        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 8")
+    if gt_rel is not None and gt_rel.shape[1] != 8:
+        raise ValueError(f"{args.gt_rel} has {gt_rel.shape[1]} columns, expected 8")
 
     gt_ts = gt[:, 0].astype(np.int64)
     gt_pos = gt[:, 1:4]

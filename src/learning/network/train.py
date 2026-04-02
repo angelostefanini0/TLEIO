@@ -23,8 +23,8 @@ def val_epoch(model, val_loader, criterion, args):
                 y = y.cuda(non_blocking=True)
 
             # predict transformation
-            estimated_transf = model(x.float()) # model returns [B, (T-1)*6]
-            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 6) #reshapiamo
+            estimated_transf = model(x.float()) # model returns [B, (T-1)*9]
+            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 9) #safe reshaping
 
             # compute loss
             tr_loss, rot_loss = compute_loss(estimated_transf, y, criterion, args)
@@ -67,7 +67,7 @@ def train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_wr
 
             # predict transformation
             estimated_transf = model(x.float())
-            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 6)
+            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 9)
 
             # compute loss
             tr_loss, rot_loss = compute_loss(estimated_transf, y, criterion, args)
@@ -180,13 +180,14 @@ def get_optimizer(params, args):
 
 def compute_loss(y_hat, y, criterion, args):
     y = y.reshape(y.shape[0], args["clip_len"] - 1, 6).float()
-    y_hat = y_hat.reshape(y_hat.shape[0], args["clip_len"] - 1, 6)
+    y_hat = y_hat.reshape(y_hat.shape[0], args["clip_len"] - 1, 9)
 
     gt_transl = y[..., :3]
     gt_rotvec = y[..., 3:]
 
     estimated_transl = y_hat[..., :3]
-    estimated_rotvec = y_hat[..., 3:]
+    estimated_rotvec = y_hat[..., 3:6]
+    estimated_cov = y_hat[..., 6:]
 
     loss_translation = criterion(estimated_transl, gt_transl)
     loss_rot = criterion(estimated_rotvec, gt_rotvec)

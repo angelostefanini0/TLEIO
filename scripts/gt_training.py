@@ -171,56 +171,6 @@ def quat_xyzw_to_rotmat(q: np.ndarray) -> np.ndarray:
 
 import numpy as np
 
-def rotmat_to_quat_xyzw(R: np.ndarray) -> np.ndarray:
-    """
-    Convert a 3x3 rotation matrix to quaternion [x, y, z, w].
-
-    Parameters
-    ----------
-    R : np.ndarray
-        Rotation matrix of shape (3, 3).
-
-    Returns
-    -------
-    np.ndarray
-        Quaternion as [x, y, z, w].
-    """
-    R = np.asarray(R, dtype=np.float64)
-    assert R.shape == (3, 3), f"Expected (3,3), got {R.shape}"
-
-    tr = R[0, 0] + R[1, 1] + R[2, 2]
-
-    if tr > 0.0:
-        S = np.sqrt(tr + 1.0) * 2.0
-        w = 0.25 * S
-        x = (R[2, 1] - R[1, 2]) / S
-        y = (R[0, 2] - R[2, 0]) / S
-        z = (R[1, 0] - R[0, 1]) / S
-
-    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
-        S = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2.0
-        w = (R[2, 1] - R[1, 2]) / S
-        x = 0.25 * S
-        y = (R[0, 1] + R[1, 0]) / S
-        z = (R[0, 2] + R[2, 0]) / S
-
-    elif R[1, 1] > R[2, 2]:
-        S = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2.0
-        w = (R[0, 2] - R[2, 0]) / S
-        x = (R[0, 1] + R[1, 0]) / S
-        y = 0.25 * S
-        z = (R[1, 2] + R[2, 1]) / S
-
-    else:
-        S = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2.0
-        w = (R[1, 0] - R[0, 1]) / S
-        x = (R[0, 2] + R[2, 0]) / S
-        y = (R[1, 2] + R[2, 1]) / S
-        z = 0.25 * S
-
-    q = np.array([x, y, z, w], dtype=np.float64)
-    q /= np.linalg.norm(q)
-    return q
 
 def rotmat_log_to_rotvec(R: np.ndarray, eps: float = 1e-8) -> np.ndarray:
     """
@@ -295,8 +245,8 @@ def compute_relative_motions(anchor_ts: np.ndarray, anchor_pos: np.ndarray, anch
     T_rel_i = inv(T_i) @ T_{i+1}
 
     Returns rows:
-    t0_us t1_us px py pz qx qy qz qw
-    where q indicates element of the quaternion
+    t0_us t1_us px py pz rx ry rz
+    where r indicates the rotation vector component
     """
     rows = []
 
@@ -305,7 +255,6 @@ def compute_relative_motions(anchor_ts: np.ndarray, anchor_pos: np.ndarray, anch
         T_i1 = pose_to_T(anchor_pos[i + 1], anchor_quat[i + 1])
 
         T_rel = inv_T(T_i) @ T_i1
-        #quat_rel = rotmat_to_quat_xyzw(T_rel[:3,:3])
         axis_vec_rel = rotmat_log_to_rotvec(T_rel[:3,:3])
         trans_rel = T_rel[:3, 3]
 
@@ -317,7 +266,7 @@ def compute_relative_motions(anchor_ts: np.ndarray, anchor_pos: np.ndarray, anch
         rows.append(row)
 
     if len(rows) == 0:
-        return np.empty((0, 9), dtype=np.float64)
+        return np.empty((0, 8), dtype=np.float64)
 
     return np.stack(rows, axis=0)
 

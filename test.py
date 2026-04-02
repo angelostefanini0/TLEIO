@@ -41,7 +41,7 @@ ARGS = {
         "patch_size": 16,
         "attention_type": "divided_space_time",
         "num_frames": 3,
-        "num_classes": 12,
+        "num_classes": 18,
         "depth": 6,
         "heads": 6,
         "dim_head": 64,
@@ -85,7 +85,7 @@ def load_inference_args(checkpoint_file: Path):
             "patch_size": loaded["patch_size"],
             "attention_type": loaded["attention_type"],
             "num_frames": loaded["clip_len"],
-            "num_classes": 7 * (loaded["clip_len"] - 1),
+            "num_classes": 9 * (loaded["clip_len"] - 1),
             "depth": loaded["depth"],
             "heads": loaded["heads"],
             "dim_head": loaded["dim_head"],
@@ -189,23 +189,26 @@ def main():
             x = batch["representation"].to(device).float()
             anchors = batch["anchors_us"].cpu().numpy()
             y_hat = model(x)
-            y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 6)
+            y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 9)
+            #Handle covariance update
+            y_hat_tr = y_hat[..., 0:6]
+            y_cov = y_hat[...,6:]
 
             if target_mean is not None and target_std is not None:
-                y_hat = y_hat * target_std + target_mean
+                y_hat_tr = y_hat_tr * target_std + target_mean
                 #y_hat[..., 3:] = torch.nn.functional.normalize(y_hat[..., 3:], dim=-1)
 
-            y_hat = y_hat.cpu().numpy()
+            y_hat_tr = y_hat_tr.cpu().numpy()
 
-            for i in range(y_hat.shape[0]):
+            for i in range(y_hat_tr.shape[0]):
                 anc_i = anchors[i]
 
                 if batch_idx == 0 and i == 0:
-                    preds.append(y_hat[i, 0])
+                    preds.append(y_hat_tr[i, 0])
                     rel_t0_list.append(int(anc_i[0]))
                     rel_t1_list.append(int(anc_i[1]))
 
-                preds.append(y_hat[i, -1])
+                preds.append(y_hat_tr[i, -1])
                 rel_t0_list.append(int(anc_i[-2]))
                 rel_t1_list.append(int(anc_i[-1]))
 

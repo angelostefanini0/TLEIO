@@ -8,7 +8,6 @@ import bisect
 from ..representation.voxel_grid import VoxelGrid
 from .reader import EDSReader
 
-from ..utils.io import *
 
 class MultiEventVoxelClipDataset(Dataset):
     # We use the voxel grid representation + clipping for TSformer-VO
