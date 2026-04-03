@@ -139,6 +139,11 @@ def main() -> None:
         action="store_true",
         help="Keep downloaded .tgz files after extraction.",
     )
+    parser.add_argument(
+        "--remove-images",
+        action="store_true",
+        help="Remove extracted images to save space.",
+    )
     args = parser.parse_args()
 
     selected = parse_sequence_arg(args.seq, SEQUENCES)
@@ -174,6 +179,14 @@ def main() -> None:
         print(f"Extracting to {seq_dir} ...")
         extract_tgz(archive_path, seq_dir)
         maybe_strip_single_top_level_dir(seq_dir)
+
+        if args.remove_images:
+            images_dir = seq_dir / "images"
+            if images_dir.exists() and images_dir.is_dir():
+                for item in images_dir.iterdir():
+                    if item.is_file():
+                        item.unlink()
+                images_dir.rmdir()
 
         if not args.keep_archives:
             archive_path.unlink(missing_ok=True)
