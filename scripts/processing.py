@@ -1,7 +1,7 @@
 from __future__ import annotations
 import argparse
 from pathlib import Path
-
+import shutil
 
 import h5py
 import numpy as np
@@ -410,15 +410,9 @@ def main() -> None:
         
         # delete recursively the raw input files if specified
         if args.remove_raw:
-            for item in seq.iterdir():
-                if item.is_file():
-                    item.unlink()
-                elif item.is_dir():
-                    for subitem in item.iterdir():
-                        if subitem.is_file():
-                            subitem.unlink()
-                    item.rmdir()
-            seq.rmdir()
+            if seq.exists() and seq.is_dir():
+                shutil.rmtree(seq)
+                print(f"Successfully removed: {seq}", flush=True)
 
 
 if __name__ == "__main__":
