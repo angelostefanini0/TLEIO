@@ -407,10 +407,9 @@ def main() -> None:
             
             if args.process_gt:
                 process_gt(event_path, output_path, args.process_gt, t0, args.delta_t_ms, args.anchor_hz)
-    
-    # delete recursively the raw input files if specified
-    if args.remove_raw:
-        for seq in sequence_dirs:
+        
+        # delete recursively the raw input files if specified
+        if args.remove_raw:
             for item in seq.iterdir():
                 if item.is_file():
                     item.unlink()
