@@ -82,6 +82,11 @@ def parse_args() -> argparse.Namespace:
         help="Overwrite the output file if it exists.",
     )
     parser.add_argument(
+        "--remove-raw",
+        action="store_true",
+        help="Remove raw input files after processing.",
+    )
+    parser.add_argument(
         "--process_gt",
         nargs="*",
         default=[],
@@ -402,8 +407,20 @@ def main() -> None:
             
             if args.process_gt:
                 process_gt(event_path, output_path, args.process_gt, t0, args.delta_t_ms, args.anchor_hz)
-            
-        
+    
+    # delete recursively the raw input files if specified
+    if args.remove_raw:
+        for seq in sequence_dirs:
+            for item in seq.iterdir():
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    for subitem in item.iterdir():
+                        if subitem.is_file():
+                            subitem.unlink()
+                    item.rmdir()
+            seq.rmdir()
+
 
 if __name__ == "__main__":
     main()
