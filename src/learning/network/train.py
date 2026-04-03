@@ -123,6 +123,9 @@ def train(model, train_loader, val_loader, criterion, optimizer, tensorboard_wri
                 f"val total={val_loss:.4f} tr={val_tr_loss:.4f} rot={val_rot_loss:.4f}"
             )
 
+            # if parallelized, you need to extract the raw model
+            raw_model = model.module if hasattr(model, "module") else model
+            
             # save best mode
             state = {
                 "epoch": epoch,

@@ -46,7 +46,11 @@ def build_model(args, model_params):
         args["best_val"] = checkpoint["best_val"]
         model.load_state_dict(checkpoint['model_state_dict'])
 
-    if torch.cuda.is_available():
-        model.cuda()
-    
+    # if torch.cuda.is_available():
+    #    model.cuda()
+ 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = nn.DataParallel(model)
+    model.to(device)
+
     return model, args
