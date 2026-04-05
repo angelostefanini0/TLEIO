@@ -8,9 +8,9 @@ the script:
 1. loads zero-based IMU data from a processed sequence;
 2. loads precomputed adjacent-anchor relative poses from `relative_motions.txt`;
 3. slides a triplet window over those rows so each EKF update consumes two
-   consecutive `7D` measurements, exactly like the network output;
-4. perturbs those measurements with configurable translation/rotation noise;
-5. uses stamped GT only for initialization, evaluation, and plotting.
+   consecutive `7D` measurements, exactly like theon/rotation noise;
+5. uses stamped GT only for initialization, evaluation, and network output;
+4. perturbs those measurements with configurable translati plotting.
 """
 
 from __future__ import annotations
@@ -136,7 +136,9 @@ def build_anchor_times_from_relative_motions(relative_motion_table: np.ndarray) 
         )
 
     anchor_times_s = np.concatenate([edge_start_times_s[:1], edge_end_times_s], axis=0)
-    relative_measurements = normalize_quaternions(relative_motion_table[:, 2:9])
+    relative_measurements = relative_motion_table[:, 2:9].copy()
+    relative_measurements[:, 3:7] = normalize_quaternions(relative_measurements[:, 3:7])
+    # relative_measurements = normalize_quaternions(relative_motion_table[:, 2:9])
     return anchor_times_s, relative_measurements
 
 
@@ -293,7 +295,7 @@ def make_filter_args(sigma_rel_t: float, sigma_rel_r_rad: float) -> SimpleNamesp
         sigma_na=0.1,
         sigma_ng=0.005,
         sigma_nba=1e-4,
-        sigma_nbg=1e-5,
+        sigma_nbg=1e-3,
         sigma_rel_t=sigma_rel_t,
         sigma_rel_r=sigma_rel_r_rad,
         meas_cov_scale=1.0,
@@ -374,11 +376,18 @@ def save_trajectory_comparison_plot(
     plt.close(fig)
     return path
 
+def fix_quaternion_signs(quaternions_xyzw: np.ndarray) -> np.ndarray:
+    q = quaternions_xyzw.copy()
+    for i in range(1, len(q)):
+        if np.dot(q[i], q[i-1]) < 0:
+            q[i] = -q[i]
+    return q
+
 
 def test_filter(
-    imu_path: Path = ROOT / "data/eds/processed/00_peanuts_dark/imu.csv",
-    gt_path: Path = ROOT / "data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt",
-    relative_motions_path: Path | None = ROOT / "data/eds/processed/00_peanuts_dark/relative_motions.txt",
+    imu_path: Path = ROOT / "data/eds/processed/02_rocket_earth_light/imu.csv",
+    gt_path: Path = ROOT / "data/eds/processed/02_rocket_earth_light/stamped_groundtruth.txt",
+    relative_motions_path: Path | None = ROOT / "data/eds/processed/02_rocket_earth_light/relative_motions.txt",
     frame_timestamps_path: Path | None = ROOT / "data/eds/images_timestamps.txt",
     measurement_dt_ms: float = 75.0,
     use_frame_timestamps: bool = False,
@@ -517,23 +526,76 @@ def test_filter(
 
     initial_rotation = Rotation.from_quat(anchor_quaternions[0]).as_matrix()
     initial_position = anchor_positions[0]
-    # initial_velocity = (anchor_positions[1] - anchor_positions[0]) / max(
-    #     measurement_times_s[1] - measurement_times_s[0], 1e-9
-    # )
-    initial_velocity = np.zeros(3, dtype=np.float64)
+    initial_velocity = (anchor_positions[1] - anchor_positions[0]) / max(
+        measurement_times_s[1] - measurement_times_s[0], 1e-9
+    )
+    initial_bg = np.array([0.0, -0.43, 0.0])
     ekf.initialize_with_state(
         measurement_times_s[0],
         initial_rotation,
         initial_velocity,
         initial_position,
-        np.zeros(3, dtype=np.float64),
+        initial_bg,
         np.zeros(3, dtype=np.float64),
     )
     ekf.augment_clone()
 
     raw_gyro = imu_table[:, 1:4].astype(np.float64)
     raw_accel = imu_table[:, 4:7].astype(np.float64)
+
+    # Carica anchor_poses
+    anchor_poses_path = Path(imu_path).parent / "anchor_poses.txt"
+    anchor_poses_table = np.loadtxt(anchor_poses_path, comments="#",skiprows=1, ndmin=2)
+    ap_times_s = anchor_poses_table[:, 0] * 1e-6
+    ap_positions = anchor_poses_table[:, 1:4]
+    ap_quaternions = normalize_quaternions(anchor_poses_table[:, 4:8])
+    ap_quaternions = fix_quaternion_signs(ap_quaternions)
+
+    # Stima bias gyro da anchor_poses
+    from filter.utils.math_utils import mat_log
+    bias_estimates = []
+    for i in range(len(ap_times_s) - 1):
+        dt = ap_times_s[i+1] - ap_times_s[i]
+        if dt < 1e-6:
+            continue
+        R_i = Rotation.from_quat(ap_quaternions[i]).as_matrix()
+        R_j = Rotation.from_quat(ap_quaternions[i+1]).as_matrix()
+        omega_true = mat_log(R_i.T @ R_j) / dt
+        mask = (imu_times_s >= ap_times_s[i]) & (imu_times_s < ap_times_s[i+1])
+        if mask.sum() == 0:
+            continue
+        gyro_mean = np.mean(raw_gyro[mask], axis=0)
+        bias_estimates.append(gyro_mean - omega_true)
+
+    initial_bg = np.mean(bias_estimates, axis=0)
+    initial_ba = np.zeros(3)
+    print("Bias gyro from anchor_poses:", initial_bg)
+    print("Bias std:", np.std(bias_estimates, axis=0))
+    print("First 5 bias estimates:")
+    for i, b in enumerate(bias_estimates[:5]):
+        print(f"  [{i}]: {b}  |norm|={np.linalg.norm(b):.3f}")
+    for i in range(len(ap_times_s) - 1):
+        dt = ap_times_s[i+1] - ap_times_s[i]
+        if dt < 1e-6:
+            continue
+        R_i = Rotation.from_quat(ap_quaternions[i]).as_matrix()
+        R_j = Rotation.from_quat(ap_quaternions[i+1]).as_matrix()
+        rel_rot = mat_log(R_i.T @ R_j)
+        if np.linalg.norm(rel_rot) > 0.5:  # più di ~28 gradi in 50ms è sospetto
+            print(f"Huge rotation at frame {i}: {np.rad2deg(np.linalg.norm(rel_rot)):.1f} deg")
+
+    ekf.initialize_with_state(
+        measurement_times_s[0],
+        initial_rotation,
+        initial_velocity,
+        initial_position,
+        initial_bg,
+        initial_ba,
+    )
+    ekf.augment_clone()
+
     joint_covariance = make_default_joint_covariance(assumed_sigma_rel_t, assumed_sigma_rel_r_rad)
+
 
     estimated_positions = [ekf.state.p.copy()]
     estimated_quaternions = [Rotation.from_matrix(ekf.state.R).as_quat()]
@@ -574,6 +636,20 @@ def test_filter(
         )
 
         ekf.augment_clone()
+        if frame_idx <= 3:
+            P = ekf.state.P
+            print(f"\n[frame {frame_idx}] Diagonal Covariance:")
+            print(f"  rot  [0:3]:  {np.diag(P)[0:3]}")
+            print(f"  vel  [3:6]:  {np.diag(P)[3:6]}")
+            print(f"  pos  [6:9]:  {np.diag(P)[6:9]}")
+            print(f"  bg   [9:12]: {np.diag(P)[9:12]}")
+            print(f"  ba  [12:15]: {np.diag(P)[12:15]}")
+            if P.shape[0] > 15:
+                print(f"  clone1_rot [15:18]: {np.diag(P)[15:18]}")
+                print(f"  clone1_pos [18:21]: {np.diag(P)[18:21]}")
+            print(f"  P min={P.min():.2e}  P max={P.max():.2e}")
+            print(f"  P sym: {np.allclose(P, P.T, atol=1e-10)}")
+            print(f"  P pos def: {np.all(np.linalg.eigvalsh(P) > 0)}")
 
         if ekf.state.get_clone_count() == 3:
             if relative_measurements is None:
@@ -595,6 +671,12 @@ def test_filter(
                     "joint_covariance": joint_covariance,
                 }
             )
+            if frame_idx <= 6:
+                P_post = ekf.state.P
+                print(f"\n[frame {frame_idx}] POST-UPDATE diagonal:")
+                print(f"  rot  [0:3]:  {np.diag(P_post)[0:3]}")
+                print(f"  bg   [9:12]: {np.diag(P_post)[9:12]}")
+                print(f"  P def pos: {np.all(np.linalg.eigvalsh(P_post) > 0)}")
             residual_norms.append(float(np.linalg.norm(update_info["residual"])))
             delta_norms.append(float(np.linalg.norm(update_info["delta_x"])))
             ekf.marginalize_oldest_clone()
@@ -744,16 +826,16 @@ def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for the processed-sequence filter smoke test."""
 
     parser = argparse.ArgumentParser(description="Run a noisy processed-sequence test of the TLEIO filter.")
-    parser.add_argument("--imu", type=Path, default=ROOT / "data/eds/processed/00_peanuts_dark/imu.csv")
+    parser.add_argument("--imu", type=Path, default=ROOT / "data/eds/processed/02_rocket_earth_light/imu.csv")
     parser.add_argument(
         "--gt",
         type=Path,
-        default=ROOT / "data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt",
+        default=ROOT / "data/eds/processed/02_rocket_earth_light/stamped_groundtruth.txt",
     )
     parser.add_argument(
         "--relative_motions",
         type=Path,
-        default=ROOT / "data/eds/processed/00_peanuts_dark/relative_motions.txt",
+        default=ROOT / "data/eds/processed/02_rocket_earth_light/relative_motions.txt",
         help="Processed adjacent-anchor relative poses used to build overlapping `2 x 7` EKF updates.",
     )
     parser.add_argument("--frames", type=Path, default=ROOT / "data/eds/images_timestamps.txt")
