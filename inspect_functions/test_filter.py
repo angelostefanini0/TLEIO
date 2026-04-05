@@ -292,10 +292,10 @@ def make_filter_args(sigma_rel_t: float, sigma_rel_r_rad: float) -> SimpleNamesp
     """Create the small argument namespace needed by the current EKF implementation."""
 
     return SimpleNamespace(
-        sigma_na=0.1,
-        sigma_ng=0.005,
-        sigma_nba=1e-4,
-        sigma_nbg=1e-3,
+        sigma_na=0.05,       
+        sigma_ng=0.01,       
+        sigma_nba=1e-3,      
+        sigma_nbg=1e-4,      
         sigma_rel_t=sigma_rel_t,
         sigma_rel_r=sigma_rel_r_rad,
         meas_cov_scale=1.0,
@@ -385,9 +385,9 @@ def fix_quaternion_signs(quaternions_xyzw: np.ndarray) -> np.ndarray:
 
 
 def test_filter(
-    imu_path: Path = ROOT / "data/eds/processed/02_rocket_earth_light/imu.csv",
-    gt_path: Path = ROOT / "data/eds/processed/02_rocket_earth_light/stamped_groundtruth.txt",
-    relative_motions_path: Path | None = ROOT / "data/eds/processed/02_rocket_earth_light/relative_motions.txt",
+    imu_path: Path = ROOT / "data/eds/processed/00_peanuts_dark/imu.csv",
+    gt_path: Path = ROOT / "data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt",
+    relative_motions_path: Path | None = ROOT / "data/eds/processed/00_peanuts_dark/relative_motions.txt",
     frame_timestamps_path: Path | None = ROOT / "data/eds/images_timestamps.txt",
     measurement_dt_ms: float = 75.0,
     use_frame_timestamps: bool = False,
@@ -494,9 +494,9 @@ def test_filter(
             "The processed relative-motions table does not match the inferred anchor times."
         )
     gt_positions = gt_table[:, 1:4].astype(np.float64)
-    gt_quaternions = normalize_quaternions(gt_table[:, 4:8].astype(np.float64))
-    # gt_quaternions_xyzw = gt_table[:, [5, 6, 7, 4]].astype(np.float64)
-    # gt_quaternions = normalize_quaternions(gt_quaternions_xyzw)
+    # gt_quaternions = normalize_quaternions(gt_table[:, 4:8].astype(np.float64))
+    gt_quaternions_xyzw = gt_table[:, [5, 6, 7, 4]].astype(np.float64)
+    gt_quaternions = normalize_quaternions(gt_quaternions_xyzw)
     anchor_positions, anchor_quaternions = interpolate_poses(
         gt_times_s,
         gt_positions,
@@ -524,34 +524,22 @@ def test_filter(
     filter_args = make_filter_args(assumed_sigma_rel_t, assumed_sigma_rel_r_rad)
     ekf = ImuMSCKF(filter_args)
 
+    raw_gyro = imu_table[:, 1:4].astype(np.float64)
+    raw_accel = imu_table[:, 4:7].astype(np.float64)
+
     initial_rotation = Rotation.from_quat(anchor_quaternions[0]).as_matrix()
     initial_position = anchor_positions[0]
     initial_velocity = (anchor_positions[1] - anchor_positions[0]) / max(
         measurement_times_s[1] - measurement_times_s[0], 1e-9
     )
-    initial_bg = np.array([0.0, -0.43, 0.0])
-    ekf.initialize_with_state(
-        measurement_times_s[0],
-        initial_rotation,
-        initial_velocity,
-        initial_position,
-        initial_bg,
-        np.zeros(3, dtype=np.float64),
-    )
-    ekf.augment_clone()
 
-    raw_gyro = imu_table[:, 1:4].astype(np.float64)
-    raw_accel = imu_table[:, 4:7].astype(np.float64)
-
-    # Carica anchor_poses
     anchor_poses_path = Path(imu_path).parent / "anchor_poses.txt"
     anchor_poses_table = np.loadtxt(anchor_poses_path, comments="#",skiprows=1, ndmin=2)
     ap_times_s = anchor_poses_table[:, 0] * 1e-6
-    ap_positions = anchor_poses_table[:, 1:4]
-    ap_quaternions = normalize_quaternions(anchor_poses_table[:, 4:8])
+    ap_quaternions_xyzw = anchor_poses_table[:, [5, 6, 7, 4]].astype(np.float64)
+    ap_quaternions = normalize_quaternions(ap_quaternions_xyzw)
     ap_quaternions = fix_quaternion_signs(ap_quaternions)
 
-    # Stima bias gyro da anchor_poses
     from filter.utils.math_utils import mat_log
     bias_estimates = []
     for i in range(len(ap_times_s) - 1):
@@ -567,22 +555,8 @@ def test_filter(
         gyro_mean = np.mean(raw_gyro[mask], axis=0)
         bias_estimates.append(gyro_mean - omega_true)
 
-    initial_bg = np.mean(bias_estimates, axis=0)
+    initial_bg = np.mean(bias_estimates, axis=0) if bias_estimates else np.zeros(3)
     initial_ba = np.zeros(3)
-    print("Bias gyro from anchor_poses:", initial_bg)
-    print("Bias std:", np.std(bias_estimates, axis=0))
-    print("First 5 bias estimates:")
-    for i, b in enumerate(bias_estimates[:5]):
-        print(f"  [{i}]: {b}  |norm|={np.linalg.norm(b):.3f}")
-    for i in range(len(ap_times_s) - 1):
-        dt = ap_times_s[i+1] - ap_times_s[i]
-        if dt < 1e-6:
-            continue
-        R_i = Rotation.from_quat(ap_quaternions[i]).as_matrix()
-        R_j = Rotation.from_quat(ap_quaternions[i+1]).as_matrix()
-        rel_rot = mat_log(R_i.T @ R_j)
-        if np.linalg.norm(rel_rot) > 0.5:  # più di ~28 gradi in 50ms è sospetto
-            print(f"Huge rotation at frame {i}: {np.rad2deg(np.linalg.norm(rel_rot)):.1f} deg")
 
     ekf.initialize_with_state(
         measurement_times_s[0],
@@ -592,6 +566,14 @@ def test_filter(
         initial_bg,
         initial_ba,
     )
+    
+    accel_mean = np.mean(raw_accel[:50], axis=0)
+    gravity_in_world = initial_rotation @ accel_mean
+    gravity_norm = np.linalg.norm(gravity_in_world)
+    
+    ekf.g = -gravity_in_world * (9.80665 / gravity_norm)
+    print(f"\n[INIT] Gravity: {ekf.g}")
+    
     ekf.augment_clone()
 
     joint_covariance = make_default_joint_covariance(assumed_sigma_rel_t, assumed_sigma_rel_r_rad)
@@ -680,7 +662,7 @@ def test_filter(
             residual_norms.append(float(np.linalg.norm(update_info["residual"])))
             delta_norms.append(float(np.linalg.norm(update_info["delta_x"])))
             ekf.marginalize_oldest_clone()
-            ekf.marginalize_oldest_clone() #Added a marginalization to protect the independence assumption and avoid drift
+            #ekf.marginalize_oldest_clone() #Added a marginalization to protect the independence assumption and avoid drift
 
         corrected_position_errors.append(
             float(np.linalg.norm(ekf.state.p - anchor_positions[frame_idx]))
@@ -826,16 +808,16 @@ def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for the processed-sequence filter smoke test."""
 
     parser = argparse.ArgumentParser(description="Run a noisy processed-sequence test of the TLEIO filter.")
-    parser.add_argument("--imu", type=Path, default=ROOT / "data/eds/processed/02_rocket_earth_light/imu.csv")
+    parser.add_argument("--imu", type=Path, default=ROOT / "data/eds/processed/00_peanuts_dark/imu.csv")
     parser.add_argument(
         "--gt",
         type=Path,
-        default=ROOT / "data/eds/processed/02_rocket_earth_light/stamped_groundtruth.txt",
+        default=ROOT / "data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt",
     )
     parser.add_argument(
         "--relative_motions",
         type=Path,
-        default=ROOT / "data/eds/processed/02_rocket_earth_light/relative_motions.txt",
+        default=ROOT / "data/eds/processed/00_peanuts_dark/relative_motions.txt",
         help="Processed adjacent-anchor relative poses used to build overlapping `2 x 7` EKF updates.",
     )
     parser.add_argument("--frames", type=Path, default=ROOT / "data/eds/images_timestamps.txt")
