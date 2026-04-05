@@ -12,6 +12,8 @@ import numpy as np
 from filter.measurement_triplet import build_triplet_update, make_default_joint_covariance
 from filter.utils.math_utils import hat, mat_exp
 
+eps=1e-9
+
 
 class State:
     """Store the nominal filter state and its covariance.
@@ -32,6 +34,7 @@ class State:
         self.clone_Rs = []       # cloned body-to-world rotations, oldest first
         self.clone_ps = []       # cloned world positions, oldest first
         self.P = np.eye(15) * 1e-6
+        self.P[9:15, 9:15] = np.eye(6) * 1e-3
 
     def get_clone_count(self):
         """Return how many stochastic clones are currently stored."""
@@ -56,7 +59,7 @@ class ImuMSCKF:
         self.sigma_rel_r = getattr(args, "sigma_rel_r", 0.10)
         self.meas_cov_scale = getattr(args, "meas_cov_scale", 1.0)
 
-        self.g = np.array([0.0, 0.0, 9.80665])
+        self.g = np.array([0.0, 0.0, -9.80665])
         self.state = State()
         self.default_measurement_covariance = make_default_joint_covariance(
             self.sigma_rel_t, self.sigma_rel_r
@@ -74,7 +77,11 @@ class ImuMSCKF:
         self.state.ba = ba.copy()
         self.state.clone_Rs = []
         self.state.clone_ps = []
-        self.state.P = np.eye(15) * 1e-6 if P is None else P.copy()
+        if P is None:
+            self.state.P = np.eye(15) * 1e-6
+            self.state.P[9:15, 9:15] = np.eye(6) * 1e-3
+        else:
+            self.state.P = P.copy()
 
     def propagate(self, imu_data):
         """Propagate the current IMU state and covariance through queued IMU samples."""
@@ -134,7 +141,8 @@ class ImuMSCKF:
         P_new[:n_old, n_old:] = (clone_jacobian @ P_old).T
         P_new[n_old:, n_old:] = clone_jacobian @ P_old @ clone_jacobian.T
 
-        self.state.P = 0.5 * (P_new + P_new.T)
+        P_sym = 0.5 * (P_new + P_new.T)
+        self.state.P = P_sym + eps * np.eye(P_sym.shape[0])
 
     def marginalize_oldest_clone(self):
         """Drop the oldest clone and remove its covariance rows and columns."""
@@ -152,7 +160,8 @@ class ImuMSCKF:
         )
 
         P = self.state.P
-        self.state.P = 0.5 * (P[np.ix_(keep, keep)] + P[np.ix_(keep, keep)].T)
+        P_sym = 0.5 * (P[np.ix_(keep, keep)] + P[np.ix_(keep, keep)].T)
+        self.state.P = P_sym + eps * np.eye(P_sym.shape[0])
 
     def update(self, network_output):
         """Run the stacked TLEIO relative-pose EKF update on the three clones.
@@ -206,7 +215,7 @@ class ImuMSCKF:
                 f"Expected an error-state correction with shape ({expected_dim},), got {delta_x.shape}."
             )
 
-        self.state.R = mat_exp(delta_x[0:3]) @ self.state.R
+        self.state.R = self.state.R @ mat_exp(delta_x[0:3])
         self.state.v = self.state.v + delta_x[3:6]
         self.state.p = self.state.p + delta_x[6:9]
         self.state.bg = self.state.bg + delta_x[9:12]
@@ -215,8 +224,8 @@ class ImuMSCKF:
         for clone_idx in range(self.state.get_clone_count()):
             offset = 15 + 6 * clone_idx
             self.state.clone_Rs[clone_idx] = (
-                mat_exp(delta_x[offset : offset + 3]) @ self.state.clone_Rs[clone_idx]
-            )
+                self.state.clone_Rs[clone_idx] @ mat_exp(delta_x[offset : offset + 3])
+                )
             self.state.clone_ps[clone_idx] = (
                 self.state.clone_ps[clone_idx] + delta_x[offset + 3 : offset + 6]
             )
@@ -280,4 +289,6 @@ def propagate_covariance(P, R, wm, am, dt, sg, sa, sbg, sba):
 
     P_new = Phi @ P @ Phi.T
     P_new[:n_imu, :n_imu] += Q_d
-    return 0.5 * (P_new + P_new.T)
+    P_sym = 0.5 * (P_new + P_new.T)
+    
+    return P_sym + eps * np.eye(P_sym.shape[0])
