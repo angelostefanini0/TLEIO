@@ -91,3 +91,17 @@ python inspect_functions/inspect_relative_motions.py \
 --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt \
 --gt_rel_mode rotation
 ```
+
+## 6. Visualization of event data: 
+Run the `play_events_on_rgb.py` script to playback the input video with events overlayed onto RGB frames. `root` argument expects the absolute path to the root folder, `sequence` expects the name of the sequence to inspect, `height` and `width` are the input dimensions of the images to display. To have the playback uncapped, set `fps` to 0.
+
+```bash
+python scripts/play_events_on_rgb.py \
+--root /home/alessandro/Desktop/TLEIO/data/eds/raw \
+--sequence 01_peanuts_light \
+--height 480 \
+--width 640 \
+--start-img 1 \
+--num-frames 30 \
+--fps 12.5
+```
