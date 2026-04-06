@@ -83,6 +83,9 @@ class EdsDataLoader():
         self.root_dir: str = os.path.expanduser(root_dir)
         self.dataset_dir: str = os.path.join(self.root_dir)
         logger.info(f"Loading directory in {self.dataset_dir}")
+        self.min_timestamp = None
+        self.max_timestamp = None
+        self.min_event_ts = None
 
     def __del__(self):
         try:
@@ -140,9 +143,10 @@ class EdsDataLoader():
         self._len_cache = len(self._time_cache)
         self.set_image_index()
         # Only get images where events exist.
-        min_timestamp = max(self._image_cache["timestamp"][0], self.preloaded_event["t"][0])
-        max_timestamp = min(self._image_cache["timestamp"][-1], self.preloaded_event["t"][-1])
-        valid_ind = np.where((min_timestamp <= self._image_cache["timestamp"]) & (max_timestamp >= self._image_cache["timestamp"]))[0]
+        self.min_event_ts = self.preloaded_event["t"][0]
+        self.min_timestamp = max(self._image_cache["timestamp"][0], self.preloaded_event["t"][0])
+        self.max_timestamp = min(self._image_cache["timestamp"][-1], self.preloaded_event["t"][-1])
+        valid_ind = np.where((self.min_timestamp <= self._image_cache["timestamp"]) & (self.max_timestamp >= self._image_cache["timestamp"]))[0]
         valid_ind_start = valid_ind[0]
         valid_ind_end = valid_ind[-1]
         self._image_cache["timestamp"] = self._image_cache["timestamp"][valid_ind_start:valid_ind_end]

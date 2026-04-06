@@ -4,7 +4,7 @@ from typing import Any
 
 import cv2
 import numpy as np
-from eds_loader import EdsDataLoader
+from scripts.viz.eds_loader import EdsDataLoader
 
 
 def parse_args() -> argparse.Namespace:
