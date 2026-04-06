@@ -209,6 +209,19 @@ def rotation_error_deg(q_ref: np.ndarray, q_est: np.ndarray) -> np.ndarray:
     return np.rad2deg(2.0 * np.arccos(dots))
 
 
+def set_axes_equal_3d(ax, points: np.ndarray) -> None:
+    mins = points.min(axis=0)
+    maxs = points.max(axis=0)
+    centers = 0.5 * (mins + maxs)
+    radius = 0.5 * np.max(maxs - mins)
+    if radius < 1e-12:
+        radius = 1.0
+
+    ax.set_xlim(centers[0] - radius, centers[0] + radius)
+    ax.set_ylim(centers[1] - radius, centers[1] + radius)
+    ax.set_zlim(centers[2] - radius, centers[2] + radius)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--gt", type=Path, required=True,
@@ -332,7 +345,26 @@ def main():
     ax.legend()
     ax.set_title("XY trajectory comparison")
 
-    fig3, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
+    fig3 = plt.figure(figsize=(10, 8))
+    ax3d = fig3.add_subplot(111, projection="3d")
+    ax3d.plot(gt_pos[:, 0], gt_pos[:, 1], gt_pos[:, 2], label="raw stamped GT")
+    ax3d.plot(ref_pos[:, 0], ref_pos[:, 1], ref_pos[:, 2], "--", label="GT at anchor times")
+    ax3d.scatter(
+        recon_pos[:, 0],
+        recon_pos[:, 1],
+        recon_pos[:, 2],
+        s=12,
+        label="trajectory from relative motions",
+    )
+    ax3d.set_xlabel("x [m]")
+    ax3d.set_ylabel("y [m]")
+    ax3d.set_zlabel("z [m]")
+    ax3d.set_title("3D trajectory comparison")
+    all_points = np.vstack([gt_pos, ref_pos, recon_pos])
+    set_axes_equal_3d(ax3d, all_points)
+    ax3d.legend()
+
+    fig4, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
     axes[0].plot(t_anchor, pos_err)
     axes[0].set_ylabel("pos err [m]")
     axes[0].grid(True)
@@ -340,7 +372,7 @@ def main():
     axes[1].set_ylabel("rot err [deg]")
     axes[1].set_xlabel("time [s]")
     axes[1].grid(True)
-    fig3.suptitle("Reconstructed trajectory error vs source GT")
+    fig4.suptitle("Reconstructed trajectory error vs source GT")
 
     plt.tight_layout()
 
@@ -348,7 +380,8 @@ def main():
         args.save_dir.mkdir(parents=True, exist_ok=True)
         fig1.savefig(args.save_dir / "relative_vs_gt_xyz.png", dpi=150, bbox_inches="tight")
         fig2.savefig(args.save_dir / "relative_vs_gt_xy.png", dpi=150, bbox_inches="tight")
-        fig3.savefig(args.save_dir / "relative_vs_gt_error.png", dpi=150, bbox_inches="tight")
+        fig3.savefig(args.save_dir / "relative_vs_gt_xyz_3d.png", dpi=150, bbox_inches="tight")
+        fig4.savefig(args.save_dir / "relative_vs_gt_error.png", dpi=150, bbox_inches="tight")
         print(f"Saved figures to {args.save_dir}")
     else:
         plt.show()

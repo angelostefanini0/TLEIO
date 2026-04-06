@@ -13,8 +13,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sequence", type=str, required=True, help="Sequence folder name.")
     parser.add_argument("--height", type=int, default=480, help="Image height.")
     parser.add_argument("--width", type=int, default=640, help="Image width.")
-    parser.add_argument("--start-img", type=int, default=474, help="Starting RGB frame index.")
-    parser.add_argument("--num-frames", type=int, default=30, help="Number of frames to play.")
+    parser.add_argument("--start-img", type=int, default=1, help="Starting RGB frame index.")
+    parser.add_argument("--num-frames", type=int, default=20000, help="Number of frames to play.")
     parser.add_argument("--fps", type=float, default=12.5, help="Playback FPS. Use 0 for uncapped.")
     parser.add_argument(
         "--event-alpha",

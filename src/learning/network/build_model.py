@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import os
 import torch.nn as nn
-from learning.network.models.vit import VisionTransformer
+from src.learning.network.models.vit import VisionTransformer
 from functools import partial
 
 
@@ -50,7 +50,7 @@ def build_model(args, model_params):
     #    model.cuda()
  
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = nn.DataParallel(model)
+    #model = nn.DataParallel(model)
     model.to(device)
 
     return model, args

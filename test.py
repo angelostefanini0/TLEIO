@@ -12,19 +12,19 @@ from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelC
 
 ARGS = {
     "root_dir": "data/eds/processed",
-    "b_size": 2,
+    "b_size": 6,
     "val_split": 0.1,
     "clip_len": 3,
     "delta_t_ms": 50,
     "num_bins": 5,
     "optimizer": "Adam",
-    "lr": 1e-05,
+    "lr": 2e-05,
     "momentum": 0.9,
     "weight_decay": 0.0001,
     "epoch": 100,
-    "weighted_loss": None,
+    "weighted_loss": 0.0,
     "pretrained_ViT": False,
-    "num_workers": 0,
+    "num_workers": 6,
     "checkpoint_path": "checkpoints",
     "checkpoint": None,
     "embed_dim": 384,
@@ -144,59 +144,35 @@ def load_target_stats(checkpoint, device):
     return target_mean, target_std
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--sequence_dir", type=str, required=True)
-    parser.add_argument("--checkpoint_file", type=str, required=True)
-    parser.add_argument("--output_file", type=str, required=True)
-    args_cli = parser.parse_args()
+def average_overlapping_predictions(prediction_store):
+    rows = []
+    timestamps = []
 
-    sequence_dir = Path(args_cli.sequence_dir)
-    checkpoint_file = Path(args_cli.checkpoint_file)
-    output_file = Path(args_cli.output_file)
+    for key in sorted(prediction_store.keys()):
+        values = np.stack(prediction_store[key], axis=0)
+        rows.append(values.mean(axis=0))
+        timestamps.append(key)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    infer_args = load_inference_args(checkpoint_file)
-    dataset = build_inference_dataset(sequence_dir, infer_args)
+    rows_pred = np.asarray(rows, dtype=np.float64)
+    timestamps = np.asarray(timestamps, dtype=np.int64)
+    return rows_pred, timestamps
 
-    loader = DataLoader(
-        dataset,
-        batch_size=1,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=torch.cuda.is_available(),
-        drop_last=False,
-    )
 
-    model, _ = build_model(infer_args, infer_args["model_params"])
-    ckpt = torch.load(checkpoint_file, map_location=device, weights_only=False)
-    target_mean, target_std = load_target_stats(ckpt, device)
-
-    if "model_state_dict" in ckpt:
-        state_dict = ckpt["model_state_dict"]
-    else:
-        state_dict = ckpt
-
-    model.load_state_dict(state_dict)
-    model.to(device)
-    model.eval()
-
+def collect_last_step_predictions(loader, model, device, infer_args, target_mean, target_std):
     preds = []
     rel_t0_list = []
     rel_t1_list = []
+
     with torch.no_grad():
         for batch_idx, batch in enumerate(loader):
             x = batch["representation"].to(device).float()
             anchors = batch["anchors_us"].cpu().numpy()
             y_hat = model(x)
             y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 9)
-            #Handle covariance update
             y_hat_tr = y_hat[..., 0:6]
-            y_cov = y_hat[...,6:]
 
             if target_mean is not None and target_std is not None:
                 y_hat_tr = y_hat_tr * target_std + target_mean
-                #y_hat[..., 3:] = torch.nn.functional.normalize(y_hat[..., 3:], dim=-1)
 
             y_hat_tr = y_hat_tr.cpu().numpy()
 
@@ -217,6 +193,84 @@ def main():
         np.asarray(rel_t0_list, dtype=np.int64),
         np.asarray(rel_t1_list, dtype=np.int64),
     ])
+    return rows_pred, timestamps
+
+
+def collect_averaged_predictions(loader, model, device, infer_args, target_mean, target_std):
+    prediction_store = {}
+
+    with torch.no_grad():
+        for batch in loader:
+            x = batch["representation"].to(device).float()
+            anchors = batch["anchors_us"].cpu().numpy()
+            y_hat = model(x)
+            y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 9)
+            y_hat_tr = y_hat[..., 0:6]
+
+            if target_mean is not None and target_std is not None:
+                y_hat_tr = y_hat_tr * target_std + target_mean
+
+            y_hat_tr = y_hat_tr.cpu().numpy()
+
+            for i in range(y_hat_tr.shape[0]):
+                anc_i = anchors[i]
+                for step_idx in range(y_hat_tr.shape[1]):
+                    key = (int(anc_i[step_idx]), int(anc_i[step_idx + 1]))
+                    prediction_store.setdefault(key, []).append(y_hat_tr[i, step_idx])
+
+    return average_overlapping_predictions(prediction_store)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sequence_dir", type=str, required=True)
+    parser.add_argument("--checkpoint_file", type=str, required=True)
+    parser.add_argument("--output_file", type=str, required=True)
+    parser.add_argument(
+        "--average_overlaps",
+        action="store_true",
+        help="Average predictions that correspond to the same displacement across overlapping clips.",
+    )
+    args_cli = parser.parse_args()
+
+    sequence_dir = Path(args_cli.sequence_dir)
+    checkpoint_file = Path(args_cli.checkpoint_file)
+    output_file = Path(args_cli.output_file)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    infer_args = load_inference_args(checkpoint_file)
+    dataset = build_inference_dataset(sequence_dir, infer_args)
+
+    loader = DataLoader(
+        dataset,
+        batch_size=2,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=torch.cuda.is_available(),
+        drop_last=False,
+    )
+
+    model, _ = build_model(infer_args, infer_args["model_params"])
+    ckpt = torch.load(checkpoint_file, map_location=device, weights_only=False)
+    target_mean, target_std = load_target_stats(ckpt, device)
+
+    if "model_state_dict" in ckpt:
+        state_dict = ckpt["model_state_dict"]
+    else:
+        state_dict = ckpt
+
+    model.load_state_dict(state_dict)
+    model.to(device)
+    model.eval()
+
+    if args_cli.average_overlaps:
+        rows_pred, timestamps = collect_averaged_predictions(
+            loader, model, device, infer_args, target_mean, target_std
+        )
+    else:
+        rows_pred, timestamps = collect_last_step_predictions(
+            loader, model, device, infer_args, target_mean, target_std
+        )
     out = np.concatenate([timestamps, rows_pred], axis=1)
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -230,6 +284,7 @@ def main():
 
     print(f"Saved: {output_file}")
     print(f"num_relative_motions: {len(rows_pred)}")
+    print(f"average_overlaps: {args_cli.average_overlaps}")
 
 
 if __name__ == "__main__":
