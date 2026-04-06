@@ -8,13 +8,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent.parent
+REPO_ROOT = SCRIPT_DIR.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from eds_loader import EdsDataLoader
+from scripts.viz.eds_loader import EdsDataLoader
 from inspect_functions.inspect_relative_motions import *
-from matplotlib_utils import create_live_trajectory_viewer, update_live_trajectory_viewer
+from scripts.viz.matplotlib_utils import create_live_trajectory_viewer, update_live_trajectory_viewer
 
 
 def parse_args() -> argparse.Namespace:
