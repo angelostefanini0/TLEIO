@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import os
 import torch.nn as nn
-from learning.network.models.vit import VisionTransformer
+from src.learning.network.models.vit import VisionTransformer
 from functools import partial
 
 
@@ -15,7 +15,7 @@ def build_model(args, model_params):
     model = VisionTransformer(
                 img_size=(480,640),
                 in_chans=args["num_bins"],
-                num_classes=(args["clip_len"] - 1) * 7,
+                num_classes=(args["clip_len"] - 1) * 6,
                 patch_size=model_params["patch_size"],
                 embed_dim=model_params["embed_dim"],
                 depth=model_params["depth"],

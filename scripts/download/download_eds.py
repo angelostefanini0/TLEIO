@@ -158,8 +158,8 @@ def main() -> None:
         )
 
     root = args.root.resolve()
-    raw_root = root / "raw"
-    testing_root = root / "testing"
+    raw_root = root / "train_raw"
+    testing_root = root / "test_raw"
     archives_root = root / "_archives"
 
     raw_root.mkdir(parents=True, exist_ok=True)

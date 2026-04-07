@@ -30,7 +30,7 @@ ARGS = {
     "embed_dim": 384,
     "patch_size": 16,
     "attention_type": "divided_space_time",
-    "depth": 6,
+    "depth": 12,
     "heads": 6,
     "dim_head": 64,
     "attn_dropout": 0.1,
@@ -41,8 +41,8 @@ ARGS = {
         "patch_size": 16,
         "attention_type": "divided_space_time",
         "num_frames": 3,
-        "num_classes": 14,
-        "depth": 6,
+        "num_classes": 12,
+        "depth": 12,
         "heads": 6,
         "dim_head": 64,
         "attn_dropout": 0.1,
@@ -85,7 +85,7 @@ def load_inference_args(checkpoint_file: Path):
             "patch_size": loaded["patch_size"],
             "attention_type": loaded["attention_type"],
             "num_frames": loaded["clip_len"],
-            "num_classes": 7 * (loaded["clip_len"] - 1),
+            "num_classes": 6 * (loaded["clip_len"] - 1),
             "depth": loaded["depth"],
             "heads": loaded["heads"],
             "dim_head": loaded["dim_head"],
@@ -139,8 +139,8 @@ def load_target_stats(checkpoint, device):
     if target_mean is None or target_std is None:
         return None, None
 
-    target_mean = torch.as_tensor(target_mean, dtype=torch.float32, device=device).view(1, 1, 7)
-    target_std = torch.as_tensor(target_std, dtype=torch.float32, device=device).view(1, 1, 7)
+    target_mean = torch.as_tensor(target_mean, dtype=torch.float32, device=device).view(1, 1, 6)
+    target_std = torch.as_tensor(target_std, dtype=torch.float32, device=device).view(1, 1, 6)
     return target_mean, target_std
 
 
@@ -156,7 +156,7 @@ def main():
     output_file = Path(args_cli.output_file)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    infer_args = load_inference_args(checkpoint_file)
+    infer_args = ARGS.copy()
     dataset = build_inference_dataset(sequence_dir, infer_args)
 
     loader = DataLoader(
@@ -189,11 +189,11 @@ def main():
             x = batch["representation"].to(device).float()
             anchors = batch["anchors_us"].cpu().numpy()
             y_hat = model(x)
-            y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 7)
+            y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1,6)
 
             if target_mean is not None and target_std is not None:
                 y_hat = y_hat * target_std + target_mean
-                y_hat[..., 3:] = torch.nn.functional.normalize(y_hat[..., 3:], dim=-1)
+                
 
             y_hat = y_hat.cpu().numpy()
 
@@ -220,7 +220,7 @@ def main():
     np.savetxt(
         output_file,
         out,
-        fmt=["%d", "%d"] + ["%.10f"] * 7,
+        fmt=["%d", "%d"] + ["%.10f"] * 6,
         header="t0_us t1_us px py pz qx qy qz qw",
         comments=""
     )

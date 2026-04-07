@@ -151,8 +151,8 @@ def compute_loss(y_hat, y, criterion, args):
     estimated_transl = y_hat[..., :3]
     estimated_quat = y_hat[..., 3:]
 
-    gt_quat = F.normalize(gt_quat, dim=-1)
-    estimated_quat = F.normalize(estimated_quat, dim=-1)
+    #gt_quat = F.normalize(gt_quat, dim=-1)
+    #estimated_quat = F.normalize(estimated_quat, dim=-1)
 
     loss_translation = criterion(estimated_transl, gt_transl)
 
