@@ -292,10 +292,10 @@ def make_filter_args(sigma_rel_t: float, sigma_rel_r_rad: float) -> SimpleNamesp
     """Create the small argument namespace needed by the current EKF implementation."""
 
     return SimpleNamespace(
-        sigma_na=0.05,       
-        sigma_ng=0.01,       
+        sigma_na=0.5,       
+        sigma_ng=0.05,       
         sigma_nba=1e-3,      
-        sigma_nbg=1e-4,      
+        sigma_nbg=5e-2,      
         sigma_rel_t=sigma_rel_t,
         sigma_rel_r=sigma_rel_r_rad,
         meas_cov_scale=1.0,
@@ -494,9 +494,9 @@ def test_filter(
             "The processed relative-motions table does not match the inferred anchor times."
         )
     gt_positions = gt_table[:, 1:4].astype(np.float64)
-    # gt_quaternions = normalize_quaternions(gt_table[:, 4:8].astype(np.float64))
-    gt_quaternions_xyzw = gt_table[:, [5, 6, 7, 4]].astype(np.float64)
-    gt_quaternions = normalize_quaternions(gt_quaternions_xyzw)
+    gt_quaternions = normalize_quaternions(gt_table[:, 4:8].astype(np.float64))
+    # gt_quaternions_xyzw = gt_table[:, [5, 6, 7, 4]].astype(np.float64)
+    # gt_quaternions = normalize_quaternions(gt_quaternions_xyzw)
     anchor_positions, anchor_quaternions = interpolate_poses(
         gt_times_s,
         gt_positions,
@@ -533,11 +533,12 @@ def test_filter(
         measurement_times_s[1] - measurement_times_s[0], 1e-9
     )
 
+
     anchor_poses_path = Path(imu_path).parent / "anchor_poses.txt"
     anchor_poses_table = np.loadtxt(anchor_poses_path, comments="#",skiprows=1, ndmin=2)
     ap_times_s = anchor_poses_table[:, 0] * 1e-6
-    ap_quaternions_xyzw = anchor_poses_table[:, [5, 6, 7, 4]].astype(np.float64)
-    ap_quaternions = normalize_quaternions(ap_quaternions_xyzw)
+    ap_quaternions = normalize_quaternions(anchor_poses_table[:, 4:8].astype(np.float64))
+    # ap_quaternions = normalize_quaternions(ap_quaternions_xyzw)
     ap_quaternions = fix_quaternion_signs(ap_quaternions)
 
     from filter.utils.math_utils import mat_log
@@ -557,6 +558,10 @@ def test_filter(
 
     initial_bg = np.mean(bias_estimates, axis=0) if bias_estimates else np.zeros(3)
     initial_ba = np.zeros(3)
+    accel_mean_body = np.mean(raw_accel[:200], axis=0)
+    g_world_estimated = initial_rotation @ (-accel_mean_body)
+    g_world_normalized = g_world_estimated / np.linalg.norm(g_world_estimated) * 9.80665
+    ekf.g = g_world_normalized
 
     ekf.initialize_with_state(
         measurement_times_s[0],
@@ -572,7 +577,7 @@ def test_filter(
     gravity_norm = np.linalg.norm(gravity_in_world)
     
     ekf.g = -gravity_in_world * (9.80665 / gravity_norm)
-    print(f"\n[INIT] Gravity: {ekf.g}")
+    #print(f"\n[INIT] Gravity: {ekf.g}")
     
     ekf.augment_clone()
 
@@ -618,20 +623,20 @@ def test_filter(
         )
 
         ekf.augment_clone()
-        if frame_idx <= 3:
-            P = ekf.state.P
-            print(f"\n[frame {frame_idx}] Diagonal Covariance:")
-            print(f"  rot  [0:3]:  {np.diag(P)[0:3]}")
-            print(f"  vel  [3:6]:  {np.diag(P)[3:6]}")
-            print(f"  pos  [6:9]:  {np.diag(P)[6:9]}")
-            print(f"  bg   [9:12]: {np.diag(P)[9:12]}")
-            print(f"  ba  [12:15]: {np.diag(P)[12:15]}")
-            if P.shape[0] > 15:
-                print(f"  clone1_rot [15:18]: {np.diag(P)[15:18]}")
-                print(f"  clone1_pos [18:21]: {np.diag(P)[18:21]}")
-            print(f"  P min={P.min():.2e}  P max={P.max():.2e}")
-            print(f"  P sym: {np.allclose(P, P.T, atol=1e-10)}")
-            print(f"  P pos def: {np.all(np.linalg.eigvalsh(P) > 0)}")
+        # if frame_idx <= 3:
+        #     P = ekf.state.P
+        #     (f"\n[frame {frame_idx}] Diagonal Covariance:")
+        #     print(f"  rot  [0:3]:  {np.diag(P)[0:3]}")
+        #     print(f"  vel  [3:6]:  {np.diag(P)[3:6]}")
+        #     print(f"print  pos  [6:9]:  {np.diag(P)[6:9]}")
+        #     print(f"  bg   [9:12]: {np.diag(P)[9:12]}")
+        #     print(f"  ba  [12:15]: {np.diag(P)[12:15]}")
+        #     if P.shape[0] > 15:
+        #         print(f"  clone1_rot [15:18]: {np.diag(P)[15:18]}")
+        #         print(f"  clone1_pos [18:21]: {np.diag(P)[18:21]}")
+        #     print(f"  P min={P.min():.2e}  P max={P.max():.2e}")
+        #     print(f"  P sym: {np.allclose(P, P.T, atol=1e-10)}")
+        #     print(f"  P pos def: {np.all(np.linalg.eigvalsh(P) > 0)}")
 
         if ekf.state.get_clone_count() == 3:
             if relative_measurements is None:
@@ -653,16 +658,16 @@ def test_filter(
                     "joint_covariance": joint_covariance,
                 }
             )
-            if frame_idx <= 6:
-                P_post = ekf.state.P
-                print(f"\n[frame {frame_idx}] POST-UPDATE diagonal:")
-                print(f"  rot  [0:3]:  {np.diag(P_post)[0:3]}")
-                print(f"  bg   [9:12]: {np.diag(P_post)[9:12]}")
-                print(f"  P def pos: {np.all(np.linalg.eigvalsh(P_post) > 0)}")
+            # if frame_idx <= 6:
+            #     P_post = ekf.state.P
+            #     print(f"\n[frame {frame_idx}] POST-UPDATE diagonal:")
+            #     print(f"  rot  [0:3]:  {np.diag(P_post)[0:3]}")
+            #     print(f"  bg   [9:12]: {np.diag(P_post)[9:12]}")
+            #     print(f"  P def pos: {np.all(np.linalg.eigvalsh(P_post) > 0)}")
             residual_norms.append(float(np.linalg.norm(update_info["residual"])))
             delta_norms.append(float(np.linalg.norm(update_info["delta_x"])))
             ekf.marginalize_oldest_clone()
-            #ekf.marginalize_oldest_clone() #Added a marginalization to protect the independence assumption and avoid drift
+            ekf.marginalize_oldest_clone() #Added a marginalization to protect the independence assumption and avoid drift
 
         corrected_position_errors.append(
             float(np.linalg.norm(ekf.state.p - anchor_positions[frame_idx]))
