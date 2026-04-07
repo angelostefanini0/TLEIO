@@ -376,6 +376,59 @@ def save_trajectory_comparison_plot(
     plt.close(fig)
     return path
 
+def save_rotation_comparison_plot(
+    path: Path,
+    times_s: np.ndarray,
+    gt_quaternions_xyzw: np.ndarray,
+    estimated_quaternions_xyzw: np.ndarray,
+) -> Path:
+    """Save four time-series plots for Roll, Pitch, Yaw and absolute rotation error."""
+
+    import matplotlib.pyplot as plt
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    t_rel = times_s - times_s[0]
+    
+    # Convert to Euler angles (rad) and unwrap to avoid jumps at +/- 180 deg
+    gt_euler_rad = Rotation.from_quat(gt_quaternions_xyzw).as_euler('xyz', degrees=False)
+    est_euler_rad = Rotation.from_quat(estimated_quaternions_xyzw).as_euler('xyz', degrees=False)
+    
+    gt_euler_deg = np.rad2deg(np.unwrap(gt_euler_rad, axis=0))
+    est_euler_deg = np.rad2deg(np.unwrap(est_euler_rad, axis=0))
+
+    # Compute absolute rotation error point-by-point
+    rot_errors_deg = np.array([
+        rotation_error_deg(q_gt, q_est) 
+        for q_gt, q_est in zip(gt_quaternions_xyzw, estimated_quaternions_xyzw)
+    ])
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+
+    labels = ['Roll (X)', 'Pitch (Y)', 'Yaw (Z)']
+    for axis_idx, label in enumerate(labels):
+        row = axis_idx // 2
+        col = axis_idx % 2
+        axis = axes[row, col]
+        axis.plot(t_rel, gt_euler_deg[:, axis_idx], label=f"GT {label}")
+        axis.plot(t_rel, est_euler_deg[:, axis_idx], label=f"EKF {label}")
+        axis.set_title(f"{label} Angle")
+        axis.set_xlabel("time [s]")
+        axis.set_ylabel("angle [deg]")
+        axis.grid(True)
+        axis.legend()
+
+    axes[1, 1].plot(t_rel, rot_errors_deg, color="tab:red")
+    axes[1, 1].set_title("Absolute Rotation Error")
+    axes[1, 1].set_xlabel("time [s]")
+    axes[1, 1].set_ylabel("Geodesic Error [deg]")
+    axes[1, 1].grid(True)
+
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return path
+
 def fix_quaternion_signs(quaternions_xyzw: np.ndarray) -> np.ndarray:
     q = quaternions_xyzw.copy()
     for i in range(1, len(q)):
@@ -752,6 +805,12 @@ def test_filter(
             plot_gt_positions,
             plot_estimated_positions,
         )
+        saved_files["rotation_plot"] = save_rotation_comparison_plot(
+            output_dir / "rotation_comparison.png",
+            dense_times_s,
+            dense_gt_quaternions,
+            dense_estimated_quaternions,
+        )
 
     return {
         "times_s": measurement_times_s,
@@ -916,7 +975,7 @@ def main() -> None:
         print(f"Anchor est trajectory:       {results['saved_files']['anchor_estimated_trajectory']}")
         print(f"Anchor GT trajectory:        {results['saved_files']['anchor_ground_truth_trajectory']}")
         print(f"Trajectory plot:             {results['saved_files']['trajectory_plot']}")
-
+        print(f"Rotation plot:               {results['saved_files']['rotation_plot']}")
 
 if __name__ == "__main__":
     main()
