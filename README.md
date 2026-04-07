@@ -21,10 +21,10 @@ git submodule update --init --recursive
 Download the eds dataset sequence from the Event Camera Dataset (EDS):
 
 ```bash
-python scripts/download/download_eds.py data/eds 6 1,4
+python scripts/download/download_eds.py data/eds --seq 0,1,2,3,4,5
 ```
 
-Usage: write the directory to save it into first, then the number up to which you want to download (up to 16 - in the examaple 6), and optionally the numbers of the sequences you want to have as testing sequences separated by comma (1,4 for example). If you omit the last argument, no sequence is placed in testing.
+Usage: write the directory to save it into first, then pass the exact sequence numbers you want to download with `--seq` as a comma-separated list.
 
 ### 2.2 TartanAir + TartanEvent
 
@@ -53,17 +53,7 @@ python scripts/download/download_tartanair.py \
 --difficulty easy hard
 ```
 
-## 3. Event Visualization
-
-Run the viewer to inspect the event stream and verify the correctness of data:
-
-```bash
-python scripts/view_events.py --h5 data/eds/00_peanuts_dark/events.h5
-```
-
-
-
-## 4. Data pre-processing
+## 3. Data pre-processing
 
 Run the `processing.py` script to process the event stream and the ground truth data to get supervision for the network. The script generates a ms_to_idx mapping for efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency. 
 
@@ -72,27 +62,49 @@ CURRENTLY WORKING FOR EDS ONLY, NEEDS MINOR FIXES TO WORK WITH THE TARTAN AIR DA
 ```bash
 python scripts/processing.py data/eds/raw   \
 --save-path data/eds/processed   \
+--save_path_testing data/eds/processed_testing \
+--test-seq 0,6 \
 --overwrite  \
 --timestamps-key t \
 --process_gt imu.csv stamped_groundtruth.txt \
 --delta_t_ms 50 \
 --anchor_hz 20
 ```
-
-
-## 4. Data pre-processing
-
-Run the `processing.py` script to process the event stream and the ground truth data to get supervision for the network. The script generates a ms_to_idx mapping for efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency. 
-
-CURRENTLY WORKING FOR EDS ONLY, NEEDS MINOR FIXES TO WORK WITH THE TARTAN AIR DATASET AS WELL
+## 4. Visualization of event data: 
+Run the `scripts/viz/play_events_on_rgb.py` script to playback the input video with events overlayed onto RGB frames. `root` argument expects the absolute path to the root folder, `sequence` expects the name of the sequence to inspect, `height` and `width` are the input dimensions of the images to display. To have the playback uncapped, set `fps` to 0.
 
 ```bash
-python scripts/processing.py data/eds/raw   \
---save-path data/eds/processed   \
---overwrite  \
---timestamps-key t \
---process_gt imu.csv stamped_groundtruth.txt \
---delta_t_ms 50 \
---anchor_hz 20
+python scripts/viz/play_events_on_rgb.py \
+--root /home/alessandro/Desktop/TLEIO/data/eds/raw \
+--sequence 01_peanuts_light \
+--height 480 \
+--width 640 \
+--start-img 1 \
+--num-frames 30 \
+--fps 12.5
 ```
 
+## 5. Inspection of model output: 
+Run the `inspect_relative_motions.py` script to see how the model predicition compares to the GT. `gt` argument expects the stamped groundtruth, `rel` expects the predicted motions from the network, `gt_rel` expects the groundtruth relative motions, `gt_rel_mode` expects one of `[rotation, translation, both,]`. If `rotation` is used, the output will be the model predicted translation with gt rotation, if `translation` is used, the output will be the model predicted rotation, with gt translation, if `both` is used, the output will be the full gt relative motion.
+
+```bash
+python inspect_functions/inspect_relative_motions.py \
+--gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt \
+--rel path/to/predicted_relative_motions.txt \
+--gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt \
+--gt_rel_mode rotation
+```
+
+## 6. Live visualization and inspection of results: 
+Run the `scripts/viz/test_trajectory_with_events.py` script to playback the input video with events overlayed onto RGB frames, and get the corresponding trajectory plot live (gt against predicted from the model). 
+```bash
+python scripts/viz/test_trajectory_with_events.py \
+--root /home/alessandro/Desktop/TLEIO/data/eds/raw \
+--sequence 03_rocket_earth_dark \
+--height 480 \
+--width 640 \
+--fps 0 \
+--rel-model data/eds/predicted_relative_motions/sequence_03/big_relative_motions_averaged.txt \
+--rel-gt data/eds/processed_testing/03_rocket_earth_dark/relative_motions.txt \
+--gt data/eds/processed_testing/03_rocket_earth_dark/stamped_groundtruth.txt
+```

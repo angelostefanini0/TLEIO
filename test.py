@@ -5,26 +5,26 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from src.learning.network.build_model import build_model
+from src.learning.network.build_model import *
 from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 
 "python test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
 
 ARGS = {
     "root_dir": "data/eds/processed",
-    "b_size": 2,
+    "b_size": 6,
     "val_split": 0.1,
     "clip_len": 3,
     "delta_t_ms": 50,
     "num_bins": 5,
     "optimizer": "Adam",
-    "lr": 1e-05,
+    "lr": 2e-05,
     "momentum": 0.9,
     "weight_decay": 0.0001,
     "epoch": 100,
-    "weighted_loss": None,
+    "weighted_loss": 0.0,
     "pretrained_ViT": False,
-    "num_workers": 0,
+    "num_workers": 6,
     "checkpoint_path": "checkpoints",
     "checkpoint": None,
     "embed_dim": 384,
@@ -41,8 +41,8 @@ ARGS = {
         "patch_size": 16,
         "attention_type": "divided_space_time",
         "num_frames": 3,
-        "num_classes": 12,
-        "depth": 12,
+        "num_classes": 18,
+        "depth": 6,
         "heads": 6,
         "dim_head": 64,
         "attn_dropout": 0.1,
@@ -85,7 +85,7 @@ def load_inference_args(checkpoint_file: Path):
             "patch_size": loaded["patch_size"],
             "attention_type": loaded["attention_type"],
             "num_frames": loaded["clip_len"],
-            "num_classes": 6 * (loaded["clip_len"] - 1),
+            "num_classes": 9 * (loaded["clip_len"] - 1),
             "depth": loaded["depth"],
             "heads": loaded["heads"],
             "dim_head": loaded["dim_head"],
@@ -144,11 +144,93 @@ def load_target_stats(checkpoint, device):
     return target_mean, target_std
 
 
+def average_overlapping_predictions(prediction_store):
+    rows = []
+    timestamps = []
+
+    for key in sorted(prediction_store.keys()):
+        values = np.stack(prediction_store[key], axis=0)
+        rows.append(values.mean(axis=0))
+        timestamps.append(key)
+
+    rows_pred = np.asarray(rows, dtype=np.float64)
+    timestamps = np.asarray(timestamps, dtype=np.int64)
+    return rows_pred, timestamps
+
+
+def collect_last_step_predictions(loader, model, device, infer_args, target_mean, target_std):
+    preds = []
+    rel_t0_list = []
+    rel_t1_list = []
+
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(loader):
+            x = batch["representation"].to(device).float()
+            anchors = batch["anchors_us"].cpu().numpy()
+            y_hat = model(x)
+            y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 9)
+            y_hat_tr = y_hat[..., 0:6]
+
+            if target_mean is not None and target_std is not None:
+                y_hat_tr = y_hat_tr * target_std + target_mean
+
+            y_hat_tr = y_hat_tr.cpu().numpy()
+
+            for i in range(y_hat_tr.shape[0]):
+                anc_i = anchors[i]
+
+                if batch_idx == 0 and i == 0:
+                    preds.append(y_hat_tr[i, 0])
+                    rel_t0_list.append(int(anc_i[0]))
+                    rel_t1_list.append(int(anc_i[1]))
+
+                preds.append(y_hat_tr[i, -1])
+                rel_t0_list.append(int(anc_i[-2]))
+                rel_t1_list.append(int(anc_i[-1]))
+
+    rows_pred = np.asarray(preds, dtype=np.float64)
+    timestamps = np.column_stack([
+        np.asarray(rel_t0_list, dtype=np.int64),
+        np.asarray(rel_t1_list, dtype=np.int64),
+    ])
+    return rows_pred, timestamps
+
+
+def collect_averaged_predictions(loader, model, device, infer_args, target_mean, target_std):
+    prediction_store = {}
+
+    with torch.no_grad():
+        for batch in loader:
+            x = batch["representation"].to(device).float()
+            anchors = batch["anchors_us"].cpu().numpy()
+            y_hat = model(x)
+            y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 9)
+            y_hat_tr = y_hat[..., 0:6]
+
+            if target_mean is not None and target_std is not None:
+                y_hat_tr = y_hat_tr * target_std + target_mean
+
+            y_hat_tr = y_hat_tr.cpu().numpy()
+
+            for i in range(y_hat_tr.shape[0]):
+                anc_i = anchors[i]
+                for step_idx in range(y_hat_tr.shape[1]):
+                    key = (int(anc_i[step_idx]), int(anc_i[step_idx + 1]))
+                    prediction_store.setdefault(key, []).append(y_hat_tr[i, step_idx])
+
+    return average_overlapping_predictions(prediction_store)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sequence_dir", type=str, required=True)
     parser.add_argument("--checkpoint_file", type=str, required=True)
     parser.add_argument("--output_file", type=str, required=True)
+    parser.add_argument(
+        "--average_overlaps",
+        action="store_true",
+        help="Average predictions that correspond to the same displacement across overlapping clips.",
+    )
     args_cli = parser.parse_args()
 
     sequence_dir = Path(args_cli.sequence_dir)
@@ -161,7 +243,7 @@ def main():
 
     loader = DataLoader(
         dataset,
-        batch_size=1,
+        batch_size=2,
         shuffle=False,
         num_workers=0,
         pin_memory=torch.cuda.is_available(),
@@ -181,52 +263,28 @@ def main():
     model.to(device)
     model.eval()
 
-    preds = []
-    rel_t0_list = []
-    rel_t1_list = []
-    with torch.no_grad():
-        for batch_idx, batch in enumerate(loader):
-            x = batch["representation"].to(device).float()
-            anchors = batch["anchors_us"].cpu().numpy()
-            y_hat = model(x)
-            y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1,6)
-
-            if target_mean is not None and target_std is not None:
-                y_hat = y_hat * target_std + target_mean
-                
-
-            y_hat = y_hat.cpu().numpy()
-
-            for i in range(y_hat.shape[0]):
-                anc_i = anchors[i]
-
-                if batch_idx == 0 and i == 0:
-                    preds.append(y_hat[i, 0])
-                    rel_t0_list.append(int(anc_i[0]))
-                    rel_t1_list.append(int(anc_i[1]))
-
-                preds.append(y_hat[i, -1])
-                rel_t0_list.append(int(anc_i[-2]))
-                rel_t1_list.append(int(anc_i[-1]))
-
-    rows_pred = np.asarray(preds, dtype=np.float64)
-    timestamps = np.column_stack([
-        np.asarray(rel_t0_list, dtype=np.int64),
-        np.asarray(rel_t1_list, dtype=np.int64),
-    ])
+    if args_cli.average_overlaps:
+        rows_pred, timestamps = collect_averaged_predictions(
+            loader, model, device, infer_args, target_mean, target_std
+        )
+    else:
+        rows_pred, timestamps = collect_last_step_predictions(
+            loader, model, device, infer_args, target_mean, target_std
+        )
     out = np.concatenate([timestamps, rows_pred], axis=1)
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
     np.savetxt(
         output_file,
         out,
-        fmt=["%d", "%d"] + ["%.10f"] * 6,
+        fmt=["%d", "%d"] + ["%.10f"] * 7,
         header="t0_us t1_us px py pz qx qy qz qw",
         comments=""
     )
 
     print(f"Saved: {output_file}")
     print(f"num_relative_motions: {len(rows_pred)}")
+    print(f"average_overlaps: {args_cli.average_overlaps}")
 
 
 if __name__ == "__main__":

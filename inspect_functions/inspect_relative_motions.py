@@ -4,6 +4,12 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 """
+python inspect_functions/inspect_relative_motions.py \
+  --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt \
+  --rel path/to/predicted_relative_motions.txt \
+  --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt \
+  --gt_rel_mode rotation
+""""""
 python inspect_functions/inspect_relative_motions.py --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt --rel path/to/predicted_relative_motions.txt  --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt --gt_rel_mode rotation
 """
 
@@ -108,18 +114,12 @@ def T_to_pose(T: np.ndarray):
 def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
     """
     Supported row formats:
-    - Legacy: t0_us t1_us r11 r12 r13 px r21 r22 r23 py r31 r32 r33 pz
-    - Quaternion: t0_us t1_us px py pz qx qy qz qw
     - Axis-vector: t0_us t1_us px py pz rx ry rz
     """
-    if row.shape[0] == 14:
-        T = np.eye(4, dtype=np.float64)
-        T[:3, :] = row[2:].reshape(3, 4)
-        return T
 
-    if row.shape[0] == 9:
+    if row.shape[0] == 8:
         T = np.eye(4, dtype=np.float64)
-        T[:3, :3] = quat_to_rotmat(normalize_quat(row[5:9][None, :])[0])
+        T[:3, :3] = rotvec_to_rotmat(row[5:8])
         T[:3, 3] = row[2:5]
         return T
 
@@ -130,17 +130,13 @@ def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
         return T
 
     raise ValueError(
-        f"Unsupported relative motion row with {row.shape[0]} columns. Expected 8, 9 or 14."
+        f"Unsupported relative motion row with {row.shape[0]} columns. Expected 8"
     )
 
 
 def describe_rel_format(num_cols: int) -> str:
     if num_cols == 8:
         return "axis-vector + translation"
-    if num_cols == 9:
-        return "quaternion + translation"
-    if num_cols == 14:
-        return "legacy 3x4 transform"
     return f"unknown ({num_cols} cols)"
 
 
@@ -221,21 +217,32 @@ def rotation_error_deg(q_ref: np.ndarray, q_est: np.ndarray) -> np.ndarray:
     return np.rad2deg(2.0 * np.arccos(dots))
 
 
+def set_axes_equal_3d(ax, points: np.ndarray) -> None:
+    mins = points.min(axis=0)
+    maxs = points.max(axis=0)
+    centers = 0.5 * (mins + maxs)
+    radius = 0.5 * np.max(maxs - mins)
+    if radius < 1e-12:
+        radius = 1.0
+
+    ax.set_xlim(centers[0] - radius, centers[0] + radius)
+    ax.set_ylim(centers[1] - radius, centers[1] + radius)
+    ax.set_zlim(centers[2] - radius, centers[2] + radius)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--gt", type=Path, required=True,
                         help="stamped_groundtruth.txt with columns: timestamp_us px py pz qx qy qz qw")
     parser.add_argument("--rel", type=Path, required=True,
                         help="relative_motions.txt with columns either: "
-                             "[t0_us t1_us px py pz rx ry rz] or "
-                             "[t0_us t1_us px py pz qx qy qz qw] or "
-                             "[t0_us t1_us r11 r12 r13 px r21 r22 r23 py r31 r32 r33 pz]")
+                             "[t0_us t1_us px py pz rx ry rz]")
     parser.add_argument("--save_dir", type=Path, default=None,
                         help="Optional directory to save figures instead of showing them")
     
     parser.add_argument("--gt_rel", type=Path, default=None,
                         help="Optional GT relative motions used to inspect partial network results.")
-    parser.add_argument("--gt_rel_mode", type=str, default="rotation",
+    parser.add_argument("--gt_rel_mode", type=str, default="none",
                         choices=["none", "rotation", "translation", "both"],
                         help="How to combine --rel with --gt_rel before integration. "
                              "Default 'rotation' keeps predicted translation and uses GT rotation.")
@@ -248,10 +255,10 @@ def main():
 
     if gt.shape[1] != 8:
         raise ValueError(f"{args.gt} has {gt.shape[1]} columns, expected 8.")
-    if rel.shape[1] not in (8, 9, 14):
-        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 8, 9 or 14.")
-    if gt_rel is not None and gt_rel.shape[1] not in (8, 9, 14):
-        raise ValueError(f"{args.gt_rel} has {gt_rel.shape[1]} columns, expected 8, 9 or 14.")
+    if rel.shape[1] != 8:
+        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 8")
+    if gt_rel is not None and gt_rel.shape[1] != 8:
+        raise ValueError(f"{args.gt_rel} has {gt_rel.shape[1]} columns, expected 8")
 
     gt_ts = gt[:, 0].astype(np.int64)
     gt_pos = gt[:, 1:4]
@@ -346,7 +353,26 @@ def main():
     ax.legend()
     ax.set_title("XY trajectory comparison")
 
-    fig3, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
+    fig3 = plt.figure(figsize=(10, 8))
+    ax3d = fig3.add_subplot(111, projection="3d")
+    ax3d.plot(gt_pos[:, 0], gt_pos[:, 1], gt_pos[:, 2], label="raw stamped GT")
+    ax3d.plot(ref_pos[:, 0], ref_pos[:, 1], ref_pos[:, 2], "--", label="GT at anchor times")
+    ax3d.scatter(
+        recon_pos[:, 0],
+        recon_pos[:, 1],
+        recon_pos[:, 2],
+        s=12,
+        label="trajectory from relative motions",
+    )
+    ax3d.set_xlabel("x [m]")
+    ax3d.set_ylabel("y [m]")
+    ax3d.set_zlabel("z [m]")
+    ax3d.set_title("3D trajectory comparison")
+    all_points = np.vstack([gt_pos, ref_pos, recon_pos])
+    set_axes_equal_3d(ax3d, all_points)
+    ax3d.legend()
+
+    fig4, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
     axes[0].plot(t_anchor, pos_err)
     axes[0].set_ylabel("pos err [m]")
     axes[0].grid(True)
@@ -354,7 +380,7 @@ def main():
     axes[1].set_ylabel("rot err [deg]")
     axes[1].set_xlabel("time [s]")
     axes[1].grid(True)
-    fig3.suptitle("Reconstructed trajectory error vs source GT")
+    fig4.suptitle("Reconstructed trajectory error vs source GT")
 
     plt.tight_layout()
 
@@ -362,7 +388,8 @@ def main():
         args.save_dir.mkdir(parents=True, exist_ok=True)
         fig1.savefig(args.save_dir / "relative_vs_gt_xyz.png", dpi=150, bbox_inches="tight")
         fig2.savefig(args.save_dir / "relative_vs_gt_xy.png", dpi=150, bbox_inches="tight")
-        fig3.savefig(args.save_dir / "relative_vs_gt_error.png", dpi=150, bbox_inches="tight")
+        fig3.savefig(args.save_dir / "relative_vs_gt_xyz_3d.png", dpi=150, bbox_inches="tight")
+        fig4.savefig(args.save_dir / "relative_vs_gt_error.png", dpi=150, bbox_inches="tight")
         print(f"Saved figures to {args.save_dir}")
     else:
         plt.show()

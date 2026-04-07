@@ -15,7 +15,7 @@ def build_model(args, model_params):
     model = VisionTransformer(
                 img_size=(480,640),
                 in_chans=args["num_bins"],
-                num_classes=(args["clip_len"] - 1) * 6,
+                num_classes=(args["clip_len"] - 1) * 7,
                 patch_size=model_params["patch_size"],
                 embed_dim=model_params["embed_dim"],
                 depth=model_params["depth"],
@@ -46,7 +46,11 @@ def build_model(args, model_params):
         args["best_val"] = checkpoint["best_val"]
         model.load_state_dict(checkpoint['model_state_dict'])
 
-    if torch.cuda.is_available():
-        model.cuda()
-    
+    # if torch.cuda.is_available():
+    #    model.cuda()
+ 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #model = nn.DataParallel(model)
+    model.to(device)
+
     return model, args
