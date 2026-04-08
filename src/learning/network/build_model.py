@@ -88,5 +88,7 @@ def build_model(args, model_params):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     #model = nn.DataParallel(model)
     model.to(device)
+    n_params = count_parameters(model)
+    print(f"Number of Parameters: {n_params}")
 
     return model, args

@@ -42,7 +42,8 @@ def parse_args():
     parser.add_argument("--delta_t_ms", type=int, default=50,
                         help="Duration of event aggregation for voxel creation") 
     parser.add_argument("--num_bins", type=int, default=5, help="number of bins in voxel grid")
-    parser.add_argument("--downsampling_factor", type=float, default=1.0, help="downsampling factor for events image")
+    parser.add_argument("--downsampling_factor", type=float, default=1.0, 
+                        help="downsampling factor for events image")
                        
     # optimization
     parser.add_argument("--optimizer", type=str, default="Adam",
@@ -171,6 +172,7 @@ if __name__ == "__main__":
     # build and load model
     print("Building model...")
     model, args = build_model(args, model_params)
+    
 
     # loss and optimizer
     criterion = torch.nn.MSELoss()

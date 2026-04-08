@@ -83,8 +83,30 @@ python scripts/viz/play_events_on_rgb.py \
 --num-frames 30 \
 --fps 12.5
 ```
+## 5. Training the model: 
+Run the `main_network.py` script to train the model. A bunch of arguments can be passed for general data handling, optimization strategies and model parameters. Important parameters: `weighted_loss` has to be set to 0 if we only want to regress translation; `downsampling_factor` is the factor by which the event image resolution is decreased. The basic script to run:
 
-## 5. Inspection of model output: 
+```bash
+python src/main_network.py \
+--b_size 2 \
+--depth 12 \
+--heads 6 \
+--num_workers 4 \
+--downsampling_factor 0.7 \
+--weighted_loss 0.0
+```
+
+## 6. Testing the model: 
+Run the `test.py` script to test the model and save the motions into a file. 
+
+```bash
+python test.py \
+--sequence_dir data/eds/processed_testing \
+--checkpoint_file checkpoints/checkpoint_best.pth \
+--output_file data/eds/path/to/save/outputs
+```
+
+## 7. Inspection of model output: 
 Run the `inspect_relative_motions.py` script to see how the model predicition compares to the GT. `gt` argument expects the stamped groundtruth, `rel` expects the predicted motions from the network, `gt_rel` expects the groundtruth relative motions, `gt_rel_mode` expects one of `[rotation, translation, both,]`. If `rotation` is used, the output will be the model predicted translation with gt rotation, if `translation` is used, the output will be the model predicted rotation, with gt translation, if `both` is used, the output will be the full gt relative motion.
 
 ```bash
@@ -95,7 +117,7 @@ python inspect_functions/inspect_relative_motions.py \
 --gt_rel_mode rotation
 ```
 
-## 6. Live visualization and inspection of results: 
+## 8. Live visualization and inspection of results: 
 Run the `scripts/viz/test_trajectory_with_events.py` script to playback the input video with events overlayed onto RGB frames, and get the corresponding trajectory plot live (gt against predicted from the model). 
 ```bash
 python scripts/viz/test_trajectory_with_events.py \

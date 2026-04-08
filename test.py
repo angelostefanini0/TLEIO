@@ -23,7 +23,7 @@ ARGS = {
     "clip_len": 3,
     "delta_t_ms": 50,
     "num_bins": 5,
-    "downsampling_factor": 1.0,
+    "downsampling_factor": 0.7,
     "optimizer": "Adam",
     "lr": 2e-05,
     "momentum": 0.9,
