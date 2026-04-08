@@ -2,10 +2,17 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import shutil
+import sys
 
 import h5py
 import numpy as np
-from gt_training import *
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.gt_training import *
 
 """This script processes event-based datasets stored in HDF5 files and augments it with a temporal lookup table called `ms_to_idx`.
 

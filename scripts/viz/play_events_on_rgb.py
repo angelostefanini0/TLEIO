@@ -1,9 +1,17 @@
 import argparse
+from pathlib import Path
+import sys
 import time
 from typing import Any
 
 import cv2
 import numpy as np
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from scripts.viz.eds_loader import EdsDataLoader
 
 

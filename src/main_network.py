@@ -1,15 +1,22 @@
 import os
+import sys
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 import pickle
 import json
-from learning.network.train import *
-from learning.network.build_model import *
-from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 import argparse
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.learning.network.train import get_optimizer, train
+from src.learning.network.build_model import build_model
+from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 
 
 def str2bool(v):
@@ -35,6 +42,7 @@ def parse_args():
     parser.add_argument("--delta_t_ms", type=int, default=50,
                         help="Duration of event aggregation for voxel creation") 
     parser.add_argument("--num_bins", type=int, default=5, help="number of bins in voxel grid")
+    parser.add_argument("--downsampling_factor", type=float, default=1.0, help="downsampling factor for events image")
                        
     # optimization
     parser.add_argument("--optimizer", type=str, default="Adam",
@@ -129,6 +137,8 @@ if __name__ == "__main__":
         delta_t_ms=args["delta_t_ms"],
         num_bins=args["num_bins"],
         clip_len=args["clip_len"],
+        downsampling_factor=args["downsampling_factor"],
+        patch_size=args["patch_size"],
     )
     
     nb_val = round(args["val_split"] * len(dataset))
