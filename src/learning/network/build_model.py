@@ -77,17 +77,22 @@ def build_model(args, model_params):
     args["epoch_init"] = 1
     args["best_val"] = np.inf
     if args["checkpoint"] is not None:
-        checkpoint = torch.load(os.path.join(args["checkpoint_path"], args["checkpoint"]))
+        checkpoint = torch.load(os.path.join(args["checkpoint_path"], args["checkpoint"]), weights_only=False)
         args["epoch_init"] = checkpoint["epoch"] + 1
         args["best_val"] = checkpoint["best_val"]
         model.load_state_dict(checkpoint['model_state_dict'])
 
-    # if torch.cuda.is_available():
-    #    model.cuda()
- 
+    # Wrap model for multi-GPU training if available
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs for parallel training - number of batches should be a multiple of {torch.cuda.device_count()}")
+        model = nn.DataParallel(model)
+    else:
+        print("Using single GPU or CPU")
+
+    # Move model to device (DataParallel handles GPU placement automatically)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    #model = nn.DataParallel(model)
     model.to(device)
+
     n_params = count_parameters(model)
     print(f"Number of Parameters: {n_params}")
 

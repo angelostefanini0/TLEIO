@@ -175,7 +175,7 @@ def get_optimizer(params, args):
 
     # load checkpoint
     if args["checkpoint"] is not None:
-        checkpoint = torch.load(os.path.join(args["checkpoint_path"], args["checkpoint"]))
+        checkpoint = torch.load(os.path.join(args["checkpoint_path"], args["checkpoint"]), weights_only=False)
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     return optimizer
