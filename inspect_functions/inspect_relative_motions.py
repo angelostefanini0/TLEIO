@@ -328,7 +328,7 @@ def main():
     for i in range(3):
         axes[i].plot(t_gt, gt_pos[:, i], label="raw stamped GT")
         axes[i].plot(t_anchor, ref_pos[:, i], "--", label="GT at anchor times")
-        axes[i].scatter(t_anchor, recon_pos[:, i], s=12, label="trajectory from relative motions")
+        axes[i].plot(t_anchor, recon_pos[:, i], label="trajectory from relative motions")
         axes[i].set_ylabel(f"p{labels[i]} [m]")
         axes[i].grid(True)
     axes[0].legend()
@@ -338,7 +338,7 @@ def main():
     fig2, ax = plt.subplots(figsize=(8, 8))
     ax.plot(gt_pos[:, 0], gt_pos[:, 1], label="raw stamped GT")
     ax.plot(ref_pos[:, 0], ref_pos[:, 1], "--", label="GT at anchor times")
-    ax.scatter(recon_pos[:, 0], recon_pos[:, 1], s=12, label="trajectory from relative motions")
+    ax.plot(recon_pos[:, 0], recon_pos[:, 1], label="trajectory from relative motions")
     ax.set_xlabel("x [m]")
     ax.set_ylabel("y [m]")
     ax.grid(True)
@@ -349,11 +349,10 @@ def main():
     ax3d = fig3.add_subplot(111, projection="3d")
     ax3d.plot(gt_pos[:, 0], gt_pos[:, 1], gt_pos[:, 2], label="raw stamped GT")
     ax3d.plot(ref_pos[:, 0], ref_pos[:, 1], ref_pos[:, 2], "--", label="GT at anchor times")
-    ax3d.scatter(
+    ax3d.plot(
         recon_pos[:, 0],
         recon_pos[:, 1],
         recon_pos[:, 2],
-        s=12,
         label="trajectory from relative motions",
     )
     ax3d.set_xlabel("x [m]")
