@@ -39,8 +39,8 @@ def parse_args():
                         help="Spatial downsampling factor applied before voxelization")
                        
     # optimization
-    parser.add_argument("--optimizer", type=str, default="Adam",
-                        choices=["Adam", "SGD", "Adagrad", "RAdam"])
+    parser.add_argument("--optimizer", type=str, default="AdamW",
+                        choices=["Adam", "AdamW", "SGD", "Adagrad", "RAdam"])
     parser.add_argument("--lr", type=float, default=1e-5,
                         help="learning rate")
     parser.add_argument("--momentum", type=float, default=0.9,

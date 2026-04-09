@@ -162,7 +162,9 @@ def get_optimizer(params, args):
 
     # initialize the optimizer
     if method == "Adam":
-        optimizer = optim.Adam(params, lr=args["lr"])
+        optimizer = optim.Adam(params, lr=args["lr"], weight_decay=args["weight_decay"])
+    elif method == "AdamW":
+        optimizer = optim.AdamW(params, lr=args["lr"], weight_decay=args["weight_decay"])
     elif method == "SGD":
         optimizer = optim.SGD(params, lr=args["lr"],
                               momentum=args["momentum"],
