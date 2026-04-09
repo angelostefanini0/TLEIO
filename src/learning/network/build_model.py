@@ -2,8 +2,8 @@ import torch
 import numpy as np
 import os
 import torch.nn as nn
-from src.learning.network.models.vit import VisionTransformer
-from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
+from .models.vit import VisionTransformer
+from ..dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 from functools import partial
 
 
