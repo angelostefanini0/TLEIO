@@ -27,17 +27,21 @@ A new HDF5 file is created as output for each input sequence. This file contains
 - The computed `ms_to_idx` dataset stored at the root level
 Additionally, supplementary files such as `imu.csv` and `stamped_groundtruth.txt` are copied to the output directory if they exist.
 Command to run:
-python scripts/processing.py data/eds/raw   \
---save-path data/eds/processed   \
+python scripts/processing.py data/eds/raw \
+--save-path data/eds/processed_train \
+--save_path_validation data/eds/processed_validation \
+--validation-seq 3 \
 --save_path_testing data/eds/processed_testing \
 --test-seq 0,6 \
---overwrite  \
+--overwrite \
 --timestamps-key t \
---process_gt imu.csv stamped_groundtruth.txt\
+--process_gt imu.csv stamped_groundtruth.txt \
 --delta_t_ms 50 \
 --anchor_hz 20
 
-python scripts/processing.py data/eds/raw --save-path data/eds/processed --save_path_testing data/eds/processed_testing --test-seq 0,6 --timestamps-key t --process_gt imu.csv stamped_groundtruth.txt --delta_t_ms 50 --anchor_hz 20
+
+python scripts/processing.py data/eds/raw --save-path data/eds/processed_train --save_path_validation data/eds/processed_validation --validation-seq 3 --save_path_testing data/eds/processed_testing --test-seq 0,6 --overwrite --timestamps-key t --process_gt imu.csv stamped_groundtruth.txt --delta_t_ms 50 --anchor_hz 20
+
 """
 
 def parse_args() -> argparse.Namespace:
@@ -68,6 +72,12 @@ def parse_args() -> argparse.Namespace:
         help="Path where the testing sequence output files will be saved.",
     )
     parser.add_argument(
+        "--save_path_validation",
+        type=Path,
+        default=None,
+        help="Path where the validation sequence output files will be saved.",
+    )
+    parser.add_argument(
         "--test-seq",
         type=str,
         default="",
@@ -75,6 +85,16 @@ def parse_args() -> argparse.Namespace:
             "Comma-separated list of sequences to save under --save_path_testing. "
             "You can use indices like '0,6' or sequence names like "
             "'00_peanuts_dark,06_ziggy_and_fuzz'."
+        ),
+    )
+    parser.add_argument(
+        "--validation-seq",
+        type=str,
+        default="",
+        help=(
+            "Comma-separated list of sequences to save under --save_path_validation. "
+            "You can use indices like '1,3' or sequence names like "
+            "'01_peanuts_light,03_rocket_earth_dark'."
         ),
     )
     parser.add_argument(
@@ -377,9 +397,17 @@ def main() -> None:
     sequence_dirs = sorted([p for p in input_path.iterdir() if p.is_dir()])
     sequence_names = sorted([p.name for p in input_path.iterdir() if p.is_dir()])
     testing_sequences = parse_sequence_selection(args.test_seq, sequence_names)
+    validation_sequences = parse_sequence_selection(args.validation_seq, sequence_names)
 
     if testing_sequences and args.save_path_testing is None:
         raise ValueError("Provide --save_path_testing when using --test-seq.")
+    if validation_sequences and args.save_path_validation is None:
+        raise ValueError("Provide --save_path_validation when using --validation-seq.")
+    overlap = testing_sequences & validation_sequences
+    if overlap:
+        raise ValueError(
+            f"Sequences cannot be both testing and validation: {', '.join(sorted(overlap))}"
+        )
 
     for seq, seq_name in zip(sequence_dirs, sequence_names): 
         event_path = seq / "events.h5"
@@ -394,6 +422,8 @@ def main() -> None:
             base_save_path = args.save_path
             if seq_name in testing_sequences:
                 base_save_path = args.save_path_testing
+            elif seq_name in validation_sequences:
+                base_save_path = args.save_path_validation
 
             if base_save_path is None:
                 raise ValueError(
