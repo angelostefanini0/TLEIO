@@ -44,6 +44,16 @@ def parse_args():
     parser.add_argument("--num_bins", type=int, default=5, help="number of bins in voxel grid")
     parser.add_argument("--downsampling_factor", type=float, default=1.0, 
                         help="downsampling factor for events image")
+    parser.add_argument("--denoising", type=str2bool, default=False,
+                        help="apply background-activity filtering before voxelization")
+    parser.add_argument("--denoise_dt_us", type=int, default=1000,
+                        help="temporal support window in microseconds for denoising")
+    parser.add_argument("--denoise_radius", type=int, default=1,
+                        help="spatial neighborhood radius for denoising")
+    parser.add_argument("--denoise_min_supporters", type=int, default=1,
+                        help="minimum recent neighboring events required to keep an event")
+    parser.add_argument("--denoise_same_polarity_only", type=str2bool, default=False,
+                        help="require denoising support to come from the same polarity")
                        
     # optimization
     parser.add_argument("--optimizer", type=str, default="Adam",
@@ -140,6 +150,11 @@ if __name__ == "__main__":
         clip_len=args["clip_len"],
         downsampling_factor=args["downsampling_factor"],
         patch_size=args["patch_size"],
+        denoising=args["denoising"],
+        denoise_dt_us=args["denoise_dt_us"],
+        denoise_radius=args["denoise_radius"],
+        denoise_min_supporters=args["denoise_min_supporters"],
+        denoise_same_polarity_only=args["denoise_same_polarity_only"],
     )
     
     nb_val = round(args["val_split"] * len(dataset))

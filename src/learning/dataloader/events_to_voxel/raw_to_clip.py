@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import Dataset
 import bisect
 
+from ..representation.event_denoising import background_activity_filter_raw
 from ..representation.voxel_grid import VoxelGrid
 from .reader import EDSReader
 
@@ -64,7 +65,12 @@ class MultiEventVoxelClipDataset(Dataset):
                  num_bins: int=5, 
                  clip_len: int = 3, 
                  downsampling_factor: float = 1.0,
-                 patch_size: int = 16):
+                 patch_size: int = 16,
+                 denoising: bool = False,
+                 denoise_dt_us: int = 1000,
+                 denoise_radius: int = 1,
+                 denoise_min_supporters: int = 1,
+                 denoise_same_polarity_only: bool = False):
         
         assert num_bins >= 1
         assert clip_len >= 1
@@ -93,6 +99,11 @@ class MultiEventVoxelClipDataset(Dataset):
         self.scale_x = self.new_width / self.original_width
         self.num_bins = num_bins
         self.clip_len = clip_len
+        self.denoising = denoising
+        self.denoise_dt_us = denoise_dt_us
+        self.denoise_radius = denoise_radius
+        self.denoise_min_supporters = denoise_min_supporters
+        self.denoise_same_polarity_only = denoise_same_polarity_only
         #the duration of a voxel
         self.delta_t_us = delta_t_ms * 1000
 
@@ -183,6 +194,22 @@ class MultiEventVoxelClipDataset(Dataset):
     def events_to_voxel_grid(self, x, y, p, t):
         if len(t) == 0:
             return self._empty_voxel()
+
+        if self.denoising:
+            x, y, p, t, _ = background_activity_filter_raw(
+                x=x,
+                y=y,
+                p=p,
+                t_us=t,
+                height=self.original_height,
+                width=self.original_width,
+                dt_us=self.denoise_dt_us,
+                radius=self.denoise_radius,
+                min_supporters=self.denoise_min_supporters,
+                same_polarity_only=self.denoise_same_polarity_only,
+            )
+            if len(t) == 0:
+                return self._empty_voxel()
 
         t = t.astype(np.float32)
         t = t - t[0]

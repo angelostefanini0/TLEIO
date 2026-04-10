@@ -15,6 +15,17 @@ if str(REPO_ROOT) not in sys.path:
 from scripts.viz.eds_loader import EdsDataLoader
 from inspect_functions.inspect_relative_motions import *
 from scripts.viz.matplotlib_utils import create_live_trajectory_viewer, update_live_trajectory_viewer
+from src.learning.dataloader.representation.event_denoising import background_activity_filter_events
+
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in {"true", "1", "yes", "y"}:
+        return True
+    if v.lower() in {"false", "0", "no", "n"}:
+        return False
+    raise argparse.ArgumentTypeError(f"Invalid boolean value: {v}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,6 +45,36 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.4,
         help="Overlay strength for the RGB frame background in [0, 1].",
+    )
+    parser.add_argument(
+        "--denoising",
+        type=str2bool,
+        default=False,
+        help="Apply background-activity filtering before visualization.",
+    )
+    parser.add_argument(
+        "--denoise-dt-us",
+        type=int,
+        default=1000,
+        help="Temporal support window in microseconds for background-activity filtering.",
+    )
+    parser.add_argument(
+        "--denoise-radius",
+        type=int,
+        default=1,
+        help="Spatial neighborhood radius for background-activity filtering.",
+    )
+    parser.add_argument(
+        "--denoise-min-supporters",
+        type=int,
+        default=1,
+        help="Minimum number of recent neighboring events required to keep an event.",
+    )
+    parser.add_argument(
+        "--denoise-same-polarity-only",
+        type=str2bool,
+        default=False,
+        help="Require supporting events to have the same polarity.",
     )
     return parser.parse_args()
 
@@ -203,9 +244,22 @@ def main() -> None:
             i0 = loader.time_to_index(t0)
             i1 = loader.time_to_index(t1)
             ev = loader.load_event(i0, i1)
+            num_raw = len(ev)
+
+            if args.denoising:
+                ev, _ = background_activity_filter_events(
+                    events=ev,
+                    height=args.height,
+                    width=args.width,
+                    dt_us=args.denoise_dt_us,
+                    radius=args.denoise_radius,
+                    min_supporters=args.denoise_min_supporters,
+                    same_polarity_only=args.denoise_same_polarity_only,
+                )
 
             frame = overlay_events_on_image(img, ev, loader.maps, args.event_alpha)
-            print(f"Frame {imgi} | events: {len(ev)} | dt: {t1 - t0:.6f} s", end="\r", flush=True)
+            events_text = f"{len(ev)}/{num_raw}" if args.denoising else f"{num_raw}"
+            print(f"Frame {imgi} | events: {events_text} | dt: {t1 - t0:.6f} s", end="\r", flush=True)
 
             # TRAJECTORY PLOTTING
             anchor_idx = find_latest_anchor_index(anchor_ts, relative_ft1)
