@@ -579,6 +579,10 @@ def test_filter(
 
     raw_gyro = imu_table[:, 1:4].astype(np.float64)
     raw_accel = imu_table[:, 4:7].astype(np.float64)
+    calib_array = np.array([-1.0, -1.0, 1.0])  #180 deg rotation on Z to align gyro axes
+
+    raw_gyro = raw_gyro * calib_array
+    raw_accel = raw_accel * calib_array
 
     initial_rotation = Rotation.from_quat(anchor_quaternions[0]).as_matrix()
     initial_position = anchor_positions[0]
@@ -609,7 +613,8 @@ def test_filter(
         gyro_mean = np.mean(raw_gyro[mask], axis=0)
         bias_estimates.append(gyro_mean - omega_true)
 
-    initial_bg = np.mean(bias_estimates, axis=0) if bias_estimates else np.zeros(3)
+    # initial_bg = np.mean(bias_estimates, axis=0) if bias_estimates else np.zeros(3)
+    initial_bg = np.zeros(3)
     initial_ba = np.zeros(3)
     accel_mean_body = np.mean(raw_accel[:200], axis=0)
     g_world_estimated = initial_rotation @ (-accel_mean_body)
