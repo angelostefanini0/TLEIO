@@ -292,10 +292,10 @@ def make_filter_args(sigma_rel_t: float, sigma_rel_r_rad: float) -> SimpleNamesp
     """Create the small argument namespace needed by the current EKF implementation."""
 
     return SimpleNamespace(
-        sigma_na=0.5,       
-        sigma_ng=0.05,       
-        sigma_nba=1e-3,      
-        sigma_nbg=5e-2,      
+        sigma_na=0.1,       #TUNE!
+        sigma_ng=0.01,      #TUNE! 
+        sigma_nba=1e-3,     #TUNE! 
+        sigma_nbg=5e-2,     #TUNE! 
         sigma_rel_t=sigma_rel_t,
         sigma_rel_r=sigma_rel_r_rad,
         meas_cov_scale=1.0,
