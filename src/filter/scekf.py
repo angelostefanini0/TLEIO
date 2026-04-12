@@ -69,7 +69,7 @@ class ImuMSCKF:
         self.g = np.array([0.0, 0.0, -9.80665])
         self.state = State()
         self.default_measurement_covariance = make_default_joint_covariance(
-            self.sigma_rel_t, self.sigma_rel_r
+            self.sigma_rel_t
         )
         self.t = 0.0
 

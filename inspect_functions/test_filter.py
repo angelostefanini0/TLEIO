@@ -136,8 +136,8 @@ def build_anchor_times_from_relative_motions(relative_motion_table: np.ndarray) 
         )
 
     anchor_times_s = np.concatenate([edge_start_times_s[:1], edge_end_times_s], axis=0)
-    relative_measurements = relative_motion_table[:, 2:9].copy()
-    relative_measurements[:, 3:7] = normalize_quaternions(relative_measurements[:, 3:7])
+    relative_measurements = relative_motion_table[:, 2:5].copy()
+    # relative_measurements[:, 3:7] = normalize_quaternions(relative_measurements[:, 3:7])
     # relative_measurements = normalize_quaternions(relative_motion_table[:, 2:9])
     return anchor_times_s, relative_measurements
 
@@ -214,12 +214,10 @@ def interpolate_poses(gt_times_s: np.ndarray, gt_positions: np.ndarray, gt_quate
 
 
 def compute_relative_pose(position_i: np.ndarray, rotation_i: np.ndarray, position_j: np.ndarray, rotation_j: np.ndarray) -> np.ndarray:
-    """Convert two world-frame poses into one `7D` body-frame relative pose `t_ij, q_ij`."""
+    """Convert two world-frame poses into one `3D` body-frame relative pose `t_ij, q_ij`."""
 
     translation = rotation_i.T @ (position_j - position_i)
-    relative_rotation = rotation_i.T @ rotation_j
-    quaternion = Rotation.from_matrix(relative_rotation).as_quat()
-    return np.concatenate([translation, quaternion], axis=0)
+    return translation
 
 
 def build_triplet_measurement(positions: np.ndarray, quaternions_xyzw: np.ndarray) -> np.ndarray:
@@ -231,17 +229,12 @@ def build_triplet_measurement(positions: np.ndarray, quaternions_xyzw: np.ndarra
     return np.stack([rel_12, rel_23], axis=0)
 
 
-def perturb_triplet_measurement(clean_measurement_2x7: np.ndarray, rng: np.random.Generator, sigma_translation: float, sigma_rotation_rad: float) -> np.ndarray:
+def perturb_triplet_measurement(clean_measurement_2x3: np.ndarray, rng: np.random.Generator, sigma_translation: float) -> np.ndarray:
     """Add Gaussian translation noise and small-angle rotation noise to a `2 x 7` triplet."""
 
-    noisy = np.asarray(clean_measurement_2x7, dtype=np.float64).copy()
+    noisy = np.asarray(clean_measurement_2x3, dtype=np.float64).copy()
     for edge_idx in range(2):
         noisy[edge_idx, :3] += rng.normal(scale=sigma_translation, size=3)
-
-        base_rotation = Rotation.from_quat(noisy[edge_idx, 3:7])
-        perturbation = Rotation.from_rotvec(rng.normal(scale=sigma_rotation_rad, size=3))
-        noisy[edge_idx, 3:7] = (perturbation * base_rotation).as_quat()
-
     return noisy
 
 
@@ -444,8 +437,8 @@ def test_filter(
     frame_timestamps_path: Path | None = ROOT / "data/eds/images_timestamps.txt",
     measurement_dt_ms: float = 75.0,
     use_frame_timestamps: bool = False,
-    sigma_rel_t: float = 0.03,
-    sigma_rel_r_deg: float = 2.0,
+    sigma_rel_t: float = 0.1,
+    sigma_rel_r_deg: float = 3.0,
     assumed_sigma_rel_t: float | None = None,
     assumed_sigma_rel_r_deg: float | None = None,
     zero_measurement_noise: bool = False,
@@ -591,27 +584,27 @@ def test_filter(
     )
 
 
-    anchor_poses_path = Path(imu_path).parent / "anchor_poses.txt"
-    anchor_poses_table = np.loadtxt(anchor_poses_path, comments="#",skiprows=1, ndmin=2)
-    ap_times_s = anchor_poses_table[:, 0] * 1e-6
-    ap_quaternions = normalize_quaternions(anchor_poses_table[:, 4:8].astype(np.float64))
-    # ap_quaternions = normalize_quaternions(ap_quaternions_xyzw)
-    ap_quaternions = fix_quaternion_signs(ap_quaternions)
+    # anchor_poses_path = Path(imu_path).parent / "anchor_poses.txt"
+    # anchor_poses_table = np.loadtxt(anchor_poses_path, comments="#",skiprows=1, ndmin=2)
+    # ap_times_s = anchor_poses_table[:, 0] * 1e-6
+    # ap_quaternions = normalize_quaternions(anchor_poses_table[:, 4:8].astype(np.float64))
+    # # ap_quaternions = normalize_quaternions(ap_quaternions_xyzw)
+    # ap_quaternions = fix_quaternion_signs(ap_quaternions)
 
-    from filter.utils.math_utils import mat_log
-    bias_estimates = []
-    for i in range(len(ap_times_s) - 1):
-        dt = ap_times_s[i+1] - ap_times_s[i]
-        if dt < 1e-6:
-            continue
-        R_i = Rotation.from_quat(ap_quaternions[i]).as_matrix()
-        R_j = Rotation.from_quat(ap_quaternions[i+1]).as_matrix()
-        omega_true = mat_log(R_i.T @ R_j) / dt
-        mask = (imu_times_s >= ap_times_s[i]) & (imu_times_s < ap_times_s[i+1])
-        if mask.sum() == 0:
-            continue
-        gyro_mean = np.mean(raw_gyro[mask], axis=0)
-        bias_estimates.append(gyro_mean - omega_true)
+    # from filter.utils.math_utils import mat_log
+    # bias_estimates = []
+    # for i in range(len(ap_times_s) - 1):
+    #     dt = ap_times_s[i+1] - ap_times_s[i]
+    #     if dt < 1e-6:
+    #         continue
+    #     R_i = Rotation.from_quat(ap_quaternions[i]).as_matrix()
+    #     R_j = Rotation.from_quat(ap_quaternions[i+1]).as_matrix()
+    #     omega_true = mat_log(R_i.T @ R_j) / dt
+    #     mask = (imu_times_s >= ap_times_s[i]) & (imu_times_s < ap_times_s[i+1])
+    #     if mask.sum() == 0:
+    #         continue
+    #     gyro_mean = np.mean(raw_gyro[mask], axis=0)
+    #     bias_estimates.append(gyro_mean - omega_true)
 
     # initial_bg = np.mean(bias_estimates, axis=0) if bias_estimates else np.zeros(3)
     initial_bg = np.zeros(3)
@@ -639,7 +632,7 @@ def test_filter(
     
     ekf.augment_clone()
 
-    joint_covariance = make_default_joint_covariance(assumed_sigma_rel_t, assumed_sigma_rel_r_rad)
+    joint_covariance = make_default_joint_covariance(assumed_sigma_rel_t)
 
 
     estimated_positions = [ekf.state.p.copy()]
@@ -708,7 +701,6 @@ def test_filter(
                 clean_measurement,
                 rng,
                 measurement_sigma_rel_t,
-                measurement_sigma_rel_r_rad,
             )
             update_info = ekf.update(
                 {

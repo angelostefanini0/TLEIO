@@ -20,24 +20,24 @@ def extract_raw_triplet_measurement(network_output):
     """
 
     if isinstance(network_output, dict):
-        for key in ("relative_pose", "rel_pose", "poses", "mean", "mean_2x7"):
+        for key in ("relative_pose", "rel_pose", "poses", "mean", "mean_2x3"):
             if key in network_output and network_output[key] is not None:
                 raw = network_output[key]
                 break
         else:
             raise KeyError(
-                "network_output must provide a `2x7` relative-pose mean under "
-                "one of: relative_pose, rel_pose, poses, mean, mean_2x7."
+                "network_output must provide a `2x3` relative-pose mean under "
+                "one of: relative_pose, rel_pose, poses, mean, mean_2x3."
             )
     else:
         raw = network_output
 
     raw = np.asarray(raw, dtype=float)
-    if raw.shape == (14,):
-        raw = raw.reshape(2, 7)
-    if raw.shape != (2, 7):
+    if raw.shape == (6,):
+        raw = raw.reshape(2, 3)
+    if raw.shape != (2, 3):
         raise ValueError(
-            f"Expected raw relative-pose means with shape (2, 7), got {raw.shape}."
+            f"Expected raw relative-pose means with shape (2, 3), got {raw.shape}."
         )
     return raw.copy()
 
@@ -56,9 +56,9 @@ def normalize_triplet_measurement(raw_measurement):
 
 
 def extract_joint_measurement_covariance(network_output):
-    """Extract an optional joint 12x12 covariance from the network output.
+    """Extract an optional joint 6x6 covariance from the network output.
 
-    The EKF update operates in the stacked 12D residual space, so the provided
+    The EKF update operates in the stacked 6D residual space, so the provided
     covariance is expected to already live in that space.
     """
 
@@ -66,7 +66,7 @@ def extract_joint_measurement_covariance(network_output):
         return None
 
     covariance = None
-    for key in ("joint_covariance", "joint_cov", "covariance", "cov12", "R"):
+    for key in ("joint_covariance", "joint_cov", "covariance", "cov6", "R"):
         if key in network_output and network_output[key] is not None:
             covariance = network_output[key]
             break
@@ -75,24 +75,23 @@ def extract_joint_measurement_covariance(network_output):
         return None
 
     covariance = np.asarray(covariance, dtype=float)
-    if covariance.shape == (144,):
-        covariance = covariance.reshape(12, 12)
-    if covariance.shape != (12, 12):
+    if covariance.shape == (36,):
+        covariance = covariance.reshape(6, 6)
+    if covariance.shape != (6, 6):
         raise ValueError(
-            f"Expected a joint measurement covariance with shape (12, 12), got {covariance.shape}."
+            f"Expected a joint measurement covariance with shape (6, 6), got {covariance.shape}."
         )
     return covariance
 
 
-def make_default_joint_covariance(sigma_translation, sigma_rotation):
+def make_default_joint_covariance(sigma_translation):
     """Build a conservative block-diagonal joint covariance for both pose edges."""
 
     pair_cov = np.diag(
-        [sigma_translation**2] * 3 + [sigma_rotation**2] * 3
-    )
-    joint_cov = np.zeros((12, 12), dtype=float)
-    joint_cov[0:6, 0:6] = pair_cov
-    joint_cov[6:12, 6:12] = pair_cov
+        [sigma_translation**2] * 3 )
+    joint_cov = np.zeros((6, 6), dtype=float)
+    joint_cov[0:3, 0:3] = pair_cov
+    joint_cov[3:6, 3:6] = pair_cov
     return joint_cov
 
 
@@ -106,7 +105,7 @@ def predict_relative_pose(R_i, p_i, R_j, p_j):
 
 
 def build_pair_residual_and_local_jacobian(R_i, p_i, R_j, p_j, measurement_7d):
-    """Build one 6D residual and its local 6x12 Jacobian for clones `(i, j)`.
+    """Build one 3D residual and its local 3x12 Jacobian for clones `(i, j)`.
 
     The local Jacobian is ordered as:
     `(delta_theta_i, delta_p_i, delta_theta_j, delta_p_j)`.
@@ -118,31 +117,23 @@ def build_pair_residual_and_local_jacobian(R_i, p_i, R_j, p_j, measurement_7d):
     """
 
     t_meas = measurement_7d[:3]
-    R_meas = Rotation.from_quat(measurement_7d[3:7]).as_matrix()
 
     t_hat, R_hat, delta_p = predict_relative_pose(R_i, p_i, R_j, p_j)
 
-    residual_t = t_meas - t_hat
-    residual_R = mat_log( R_hat.T @ R_meas )
-    residual = np.concatenate([residual_t, residual_R], axis=0)
+    residual = t_meas - t_hat
+    local_jacobian = np.zeros((3, 12), dtype=float)
 
-    local_jacobian = np.zeros((6, 12), dtype=float)
-
-    local_jacobian[0:3, 0:3] = -hat(R_i.T @ delta_p)
-    local_jacobian[0:3, 3:6] = R_i.T
+    local_jacobian[0:3, 0:3] = -hat(R_i.T @ delta_p)  
+    local_jacobian[0:3, 3:6] = R_i.T                  
     local_jacobian[0:3, 9:12] = -R_i.T
-
-    left_jacobian_inv = Jl_SO3_inv(residual_R)
-    local_jacobian[3:6, 0:3] = left_jacobian_inv @ R_j.T @ R_i
-    local_jacobian[3:6, 6:9] = -left_jacobian_inv
 
     return residual, local_jacobian
 
 
 def embed_pair_jacobian(local_jacobian, clone_i, clone_j, state_dim, imu_dim=15):
-    """Embed one local 6x12 pairwise Jacobian into the global filter state."""
+    """Embed one local 3x12 pairwise Jacobian into the global filter state."""
 
-    global_jacobian = np.zeros((6, state_dim), dtype=float)
+    global_jacobian = np.zeros((3, state_dim), dtype=float)
 
     i0 = imu_dim + 6 * clone_i
     j0 = imu_dim + 6 * clone_j
@@ -168,8 +159,8 @@ def build_triplet_update(state, network_output, default_covariance, covariance_s
             "TLEIO update requires exactly three clones before building the triplet measurement."
         )
 
-    raw_measurement = extract_raw_triplet_measurement(network_output)
-    measurement = normalize_triplet_measurement(raw_measurement)
+    measurement = extract_raw_triplet_measurement(network_output)
+    # measurement = normalize_triplet_measurement(raw_measurement)
     covariance = extract_joint_measurement_covariance(network_output)
 
     residual_12, jacobians = [], []
