@@ -33,8 +33,15 @@ class State:
 
         self.clone_Rs = []       # cloned body-to-world rotations, oldest first
         self.clone_ps = []       # cloned world positions, oldest first
-        self.P = np.eye(15) * 1e-6
-        self.P[9:15, 9:15] = np.eye(6) * 1e-3
+        self.P = np.zeros((15, 15))
+        # Posa: possiamo fidarci degli anchor iniziali
+        self.P[0:3, 0:3] = np.eye(3) * (0.01)**2  
+        self.P[6:9, 6:9] = np.eye(3) * (0.01)**2  
+        # Velocità: è calcolata male, diamo grande incertezza!
+        self.P[3:6, 3:6] = np.eye(3) * (0.5)**2   
+        # Bias: diamo al filtro il permesso di cambiarli
+        self.P[9:12, 9:12] = np.eye(3) * (0.05)**2 # Bias gyro
+        self.P[12:15, 12:15] = np.eye(3) * (0.2)**2 # Bias accel
 
     def get_clone_count(self):
         """Return how many stochastic clones are currently stored."""
@@ -78,8 +85,12 @@ class ImuMSCKF:
         self.state.clone_Rs = []
         self.state.clone_ps = []
         if P is None:
-            self.state.P = np.eye(15) * 1e-6
-            self.state.P[9:15, 9:15] = np.eye(6) * 1e-3
+            self.state.P = np.zeros((15, 15))
+            self.state.P[0:3, 0:3] = np.eye(3) * (0.01)**2  
+            self.state.P[6:9, 6:9] = np.eye(3) * (0.01)**2  
+            self.state.P[3:6, 3:6] = np.eye(3) * (0.5)**2   
+            self.state.P[9:12, 9:12] = np.eye(3) * (0.05)**2
+            self.state.P[12:15, 12:15] = np.eye(3) * (0.2)**2
         else:
             self.state.P = P.copy()
 

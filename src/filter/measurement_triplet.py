@@ -123,17 +123,18 @@ def build_pair_residual_and_local_jacobian(R_i, p_i, R_j, p_j, measurement_7d):
     t_hat, R_hat, delta_p = predict_relative_pose(R_i, p_i, R_j, p_j)
 
     residual_t = t_meas - t_hat
-    residual_R = mat_log(R_hat.T @ R_meas)
+    residual_R = mat_log( R_hat.T @ R_meas )
     residual = np.concatenate([residual_t, residual_R], axis=0)
 
     local_jacobian = np.zeros((6, 12), dtype=float)
-    local_jacobian[0:3, 0:3] = -R_i.T @ hat(delta_p)
+
+    local_jacobian[0:3, 0:3] = -hat(R_i.T @ delta_p)
     local_jacobian[0:3, 3:6] = R_i.T
     local_jacobian[0:3, 9:12] = -R_i.T
 
     left_jacobian_inv = Jl_SO3_inv(residual_R)
-    local_jacobian[3:6, 0:3] = left_jacobian_inv @ R_j.T
-    local_jacobian[3:6, 6:9] = -left_jacobian_inv @ R_j.T
+    local_jacobian[3:6, 0:3] = left_jacobian_inv @ R_j.T @ R_i
+    local_jacobian[3:6, 6:9] = -left_jacobian_inv
 
     return residual, local_jacobian
 

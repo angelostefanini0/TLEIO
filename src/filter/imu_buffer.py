@@ -113,7 +113,7 @@ class ImuBuffer:
 
         assert isinstance(t_begin_us, int)
         assert isinstance(t_us_end, int)
-        begin_idx = np.where(self.net_t_us == t_begin_us)[0][0]
+        begin_idx = np.searchsorted(self.net_t_us, t_begin_us)
         end_idx = np.where(self.net_t_us == t_us_end)[0][0]
         net_acc = self.net_acc[begin_idx : end_idx + 1, :]
         net_gyr = self.net_gyr[begin_idx : end_idx + 1, :]

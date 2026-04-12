@@ -79,7 +79,8 @@ class ImuCalib:
         ret.gyroBias = np.array(calib_json["Gyroscope"]["Bias"]["Offset"]).reshape((3, 1))
         q_Device_Imu = calib_json["T_Device_Imu"]["UnitQuaternion"]
         # scipy expects xyzw quat
-        q_Device_Imu = np.array([*q_Device_Imu[1], q_Device_Imu[0]])
+        # q_Device_Imu = np.array([*q_Device_Imu[1], q_Device_Imu[0]])
+        q_Device_Imu = np.array([q_Device_Imu[1], q_Device_Imu[2], q_Device_Imu[3], q_Device_Imu[0]])
         ret.T_Device_Imu[:3,:3] = Rotation.from_quat(q_Device_Imu).as_matrix()
         ret.T_Device_Imu[:3,3] = calib_json["T_Device_Imu"]["Translation"]
         return ret
@@ -124,7 +125,7 @@ class ImuCalib:
         N = acc.shape[1]
         assert acc.shape == (3, N)
         assert gyr.shape == (3, N)
-        acc_cal = self.accelScaleInv @ acc - self.accelBias
+        acc_cal = self.accelScaleInv @ (acc - self.accelBias)
         gyr_cal = (
             self.gyroScaleInv @ gyr
             - self.gyroGSense @ acc

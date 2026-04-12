@@ -77,7 +77,13 @@ mat_exp_vec = np.vectorize(mat_exp, signature="(3)->(3,3)")
 
 
 def mat_log(R):
-    q = compute_q_from_matrix(R)
+    q = np.array(compute_q_from_matrix(R))
+    
+    # --- AGGIUNTA: Forza il percorso più breve (shortest path) ---
+    if q[3] < 0:
+        q = -q
+    # -------------------------------------------------------------
+        
     w = q[3]
     vec = q[0:3]
     n = np.linalg.norm(vec)
@@ -94,7 +100,6 @@ def mat_log(R):
             else:
                 atn = -np.pi / n
         else:
-            #atn = 2.0 * np.arctan(n / w) / n
             atn = 2.0 * np.arctan2(n, w) / n
     tangent = atn * vec
     return tangent
