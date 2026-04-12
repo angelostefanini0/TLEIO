@@ -285,10 +285,10 @@ def make_filter_args(sigma_rel_t: float, sigma_rel_r_rad: float) -> SimpleNamesp
     """Create the small argument namespace needed by the current EKF implementation."""
 
     return SimpleNamespace(
-        sigma_na=0.1,       #TUNE!
-        sigma_ng=0.01,      #TUNE! 
-        sigma_nba=1e-3,     #TUNE! 
-        sigma_nbg=5e-2,     #TUNE! 
+        sigma_na=0.005,       #TUNE!
+        sigma_ng=0.0001,      #TUNE! 
+        sigma_nba=1e-4,     #TUNE! 
+        sigma_nbg=5e-3,     #TUNE! 
         sigma_rel_t=sigma_rel_t,
         sigma_rel_r=sigma_rel_r_rad,
         meas_cov_scale=1.0,
@@ -429,6 +429,18 @@ def fix_quaternion_signs(quaternions_xyzw: np.ndarray) -> np.ndarray:
             q[i] = -q[i]
     return q
 
+import numpy as np
+
+def estimate_roll_pitch_from_gravity(accel_vector: np.ndarray) -> tuple[float, float]:
+    """
+    Estimates Roll and Pitch [rad].
+    """
+    ax, ay, az = accel_vector[0], accel_vector[1], accel_vector[2]
+    
+    roll = np.arctan2(ay, az)
+    pitch = np.arctan2(-ax, np.sqrt(ay**2 + az**2))
+    
+    return roll, pitch
 
 def test_filter(
     imu_path: Path = ROOT / "data/eds/processed/00_peanuts_dark/imu.csv",
@@ -609,8 +621,12 @@ def test_filter(
     # initial_bg = np.mean(bias_estimates, axis=0) if bias_estimates else np.zeros(3)
     initial_bg = np.zeros(3)
     initial_ba = np.zeros(3)
-    accel_mean_body = np.mean(raw_accel[:200], axis=0)
-    g_world_estimated = initial_rotation @ (-accel_mean_body)
+    accel_mean = np.mean(raw_accel[:50], axis=0)
+    roll_init, pitch_init = estimate_roll_pitch_from_gravity(accel_mean)
+    print(f"\n[INIT] IMU Estimate       -> Roll: {np.rad2deg(roll_init):.2f}°, Pitch: {np.rad2deg(pitch_init):.2f}°")
+    gt_euler_deg = Rotation.from_matrix(initial_rotation).as_euler('xyz', degrees=True)
+    print(f"[INIT] Ground Truth  -> Roll: {gt_euler_deg[0]:.2f}°, Pitch: {gt_euler_deg[1]:.2f}°")
+    g_world_estimated = initial_rotation @ (-accel_mean)
     g_world_normalized = g_world_estimated / np.linalg.norm(g_world_estimated) * 9.80665
     ekf.g = g_world_normalized
 
