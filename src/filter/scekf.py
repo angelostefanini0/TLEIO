@@ -34,12 +34,9 @@ class State:
         self.clone_Rs = []       # cloned body-to-world rotations, oldest first
         self.clone_ps = []       # cloned world positions, oldest first
         self.P = np.zeros((15, 15))
-        # Posa: possiamo fidarci degli anchor iniziali
         self.P[0:3, 0:3] = np.eye(3) * (0.01)**2  
         self.P[6:9, 6:9] = np.eye(3) * (0.01)**2  
-        # Velocità: è calcolata male, diamo grande incertezza!
         self.P[3:6, 3:6] = np.eye(3) * (0.5)**2   
-        # Bias: diamo al filtro il permesso di cambiarli
         self.P[9:12, 9:12] = np.eye(3) * (0.001)**2 # Bias gyro
         self.P[12:15, 12:15] = np.eye(3) * (0.01)**2 # Bias accel
 
