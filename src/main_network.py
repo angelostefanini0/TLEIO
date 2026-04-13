@@ -1,22 +1,14 @@
 import os
-import sys
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
-from torch.utils.data import random_split
 import pickle
 import json
+from learning.network.train import *
+from learning.network.build_model import *
+from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 import argparse
 from pathlib import Path
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from src.learning.network.train import get_optimizer, train
-from src.learning.network.build_model import build_model
-from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 
 
 def str2bool(v):
@@ -34,6 +26,7 @@ def parse_args():
 
     # general/data
     parser.add_argument("--root_dir", type=str, default="data/eds/processed")
+    parser.add_argument("--val_root_dir", type=str, default="data/eds/processed_validation")
     parser.add_argument("--b_size", type=int, default=4, help="batch size")
     parser.add_argument("--val_split", type=float, default=0.1,
                         help="percentage to use as validation data")
@@ -56,8 +49,8 @@ def parse_args():
                         help="require denoising support to come from the same polarity")
                        
     # optimization
-    parser.add_argument("--optimizer", type=str, default="Adam",
-                        choices=["Adam", "SGD", "Adagrad", "RAdam"])
+    parser.add_argument("--optimizer", type=str, default="AdamW",
+                        choices=["Adam", "AdamW", "SGD", "Adagrad", "RAdam"])
     parser.add_argument("--lr", type=float, default=1e-5,
                         help="learning rate")
     parser.add_argument("--momentum", type=float, default=0.9,
@@ -143,7 +136,7 @@ if __name__ == "__main__":
     print("Using CUDA: ", torch.cuda.is_available())
     print("Loading data...")
     
-    dataset = MultiEventVoxelClipDataset(
+    train_data = MultiEventVoxelClipDataset(
         root_path=Path(args["root_dir"]),
         delta_t_ms=args["delta_t_ms"],
         num_bins=args["num_bins"],
@@ -156,15 +149,24 @@ if __name__ == "__main__":
         denoise_min_supporters=args["denoise_min_supporters"],
         denoise_same_polarity_only=args["denoise_same_polarity_only"],
     )
-    
-    nb_val = round(args["val_split"] * len(dataset))
 
-    train_data, val_data = random_split(dataset, [len(dataset) - nb_val, nb_val]) #generator=torch.Generator().manual_seed(2))
-    
-    #Compute the mean and std of the train split to normalize targets
-    dataset.compute_stats(train_data.indices)
-    stats = {"mean": dataset.train_mean, 
-             "std": dataset.train_std}
+    val_data = MultiEventVoxelClipDataset(
+        root_path=Path(args["val_root_dir"]),
+        delta_t_ms=args["delta_t_ms"],
+        num_bins=args["num_bins"],
+        clip_len=args["clip_len"],
+        downsampling_factor=args["downsampling_factor"],
+        patch_size=args["patch_size"],
+    )
+
+    # Compute the mean and std only on training data
+    train_data.compute_stats(list(range(len(train_data))))
+    stats = {"mean": train_data.train_mean, 
+             "std": train_data.train_std}
+
+    # Normalize validation targets with training statistics
+    val_data.train_mean = train_data.train_mean
+    val_data.train_std = train_data.train_std
 
     train_loader = DataLoader(
         train_data,
@@ -187,7 +189,6 @@ if __name__ == "__main__":
     # build and load model
     print("Building model...")
     model, args = build_model(args, model_params)
-    
 
     # loss and optimizer
     criterion = torch.nn.MSELoss()
