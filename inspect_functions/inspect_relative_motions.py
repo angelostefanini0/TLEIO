@@ -310,13 +310,38 @@ def main():
     ref_pos, ref_quat = interpolate_gt_pose(gt_ts, gt_pos, gt_quat, anchor_ts)
     ref_quat = normalize_quat(ref_quat)
 
-    pos_err = np.linalg.norm(recon_pos - ref_pos, axis=1)
-    rot_err = rotation_error_deg(ref_quat, recon_quat)
+    if gt_rel is not None:
+        rel_eval = rel.copy()
+        if args.gt_rel_mode == "rotation":
+            rel_eval[:, 5:8] = gt_rel[:, 5:8]
+        elif args.gt_rel_mode == "translation":
+            rel_eval[:, 2:5] = gt_rel[:, 2:5]
+        elif args.gt_rel_mode == "both":
+            rel_eval[:, 2:8] = gt_rel[:, 2:8]
+
+        pos_err = np.linalg.norm(rel_eval[:, 2:5] - gt_rel[:, 2:5], axis=1)
+        rel_quat = normalize_quat(
+            np.stack(
+                [rotmat_to_quat(rotvec_to_rotmat(rv)) for rv in rel_eval[:, 5:8]],
+                axis=0,
+            )
+        )
+        gt_rel_quat = normalize_quat(
+            np.stack(
+                [rotmat_to_quat(rotvec_to_rotmat(rv)) for rv in gt_rel[:, 5:8]],
+                axis=0,
+            )
+        )
+        rot_err = rotation_error_deg(gt_rel_quat, rel_quat)
+    else:
+        pos_err = np.linalg.norm(recon_pos - ref_pos, axis=1)
+        rot_err = rotation_error_deg(ref_quat, recon_quat)
 
     rel_format = describe_rel_format(rel.shape[1])
     gt_rel_format = "none" if gt_rel is None else describe_rel_format(gt_rel.shape[1])
+    error_ref_label = "GT relative motions" if gt_rel is not None else "source GT"
 
-    print("Relative motions vs source GT")
+    print(f"Relative motions vs {error_ref_label}")
     print(f"GT poses:                 {len(gt_ts)}")
     print(f"Relative motions:         {len(rel)}")
     print(f"Relative format:          {rel_format}")
@@ -324,19 +349,18 @@ def main():
     print(f"GT rel fusion mode:       {args.gt_rel_mode}")
     print(f"Reconstructed anchors:    {len(anchor_ts)}")
     print(f"Position RMSE [m]:        {np.sqrt(np.mean(pos_err ** 2)):.6e}")
-    print(f"Position max  [m]:        {np.max(pos_err):.6e}")
     print(f"Rotation RMSE [deg]:      {np.sqrt(np.mean(rot_err ** 2)):.6e}")
-    print(f"Rotation max  [deg]:      {np.max(rot_err):.6e}")
 
     t_gt = (gt_ts - gt_ts[0]) * 1e-6
     t_anchor = (anchor_ts - gt_ts[0]) * 1e-6
+    t_err = (rel_t1 - gt_ts[0]) * 1e-6 if gt_rel is not None else t_anchor
 
     fig1, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
     labels = ["x", "y", "z"]
     for i in range(3):
         axes[i].plot(t_gt, gt_pos[:, i], label="raw stamped GT")
         axes[i].plot(t_anchor, ref_pos[:, i], "--", label="GT at anchor times")
-        axes[i].scatter(t_anchor, recon_pos[:, i], s=12, label="trajectory from relative motions")
+        axes[i].plot(t_anchor, recon_pos[:, i], label="trajectory from relative motions")
         axes[i].set_ylabel(f"p{labels[i]} [m]")
         axes[i].grid(True)
     axes[0].legend()
@@ -346,7 +370,7 @@ def main():
     fig2, ax = plt.subplots(figsize=(8, 8))
     ax.plot(gt_pos[:, 0], gt_pos[:, 1], label="raw stamped GT")
     ax.plot(ref_pos[:, 0], ref_pos[:, 1], "--", label="GT at anchor times")
-    ax.scatter(recon_pos[:, 0], recon_pos[:, 1], s=12, label="trajectory from relative motions")
+    ax.plot(recon_pos[:, 0], recon_pos[:, 1], label="trajectory from relative motions")
     ax.set_xlabel("x [m]")
     ax.set_ylabel("y [m]")
     ax.grid(True)
@@ -357,11 +381,10 @@ def main():
     ax3d = fig3.add_subplot(111, projection="3d")
     ax3d.plot(gt_pos[:, 0], gt_pos[:, 1], gt_pos[:, 2], label="raw stamped GT")
     ax3d.plot(ref_pos[:, 0], ref_pos[:, 1], ref_pos[:, 2], "--", label="GT at anchor times")
-    ax3d.scatter(
+    ax3d.plot(
         recon_pos[:, 0],
         recon_pos[:, 1],
         recon_pos[:, 2],
-        s=12,
         label="trajectory from relative motions",
     )
     ax3d.set_xlabel("x [m]")
@@ -373,14 +396,14 @@ def main():
     ax3d.legend()
 
     fig4, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
-    axes[0].plot(t_anchor, pos_err)
+    axes[0].plot(t_err, pos_err)
     axes[0].set_ylabel("pos err [m]")
     axes[0].grid(True)
-    axes[1].plot(t_anchor, rot_err)
+    axes[1].plot(t_err, rot_err)
     axes[1].set_ylabel("rot err [deg]")
     axes[1].set_xlabel("time [s]")
     axes[1].grid(True)
-    fig4.suptitle("Reconstructed trajectory error vs source GT")
+    fig4.suptitle(f"Error vs {error_ref_label}")
 
     plt.tight_layout()
 

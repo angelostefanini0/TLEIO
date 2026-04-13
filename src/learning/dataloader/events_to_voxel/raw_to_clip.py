@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import Dataset
 import bisect
 
+from ..representation.event_denoising import background_activity_filter_raw
 from ..representation.voxel_grid import VoxelGrid
 from .reader import EDSReader
 
@@ -27,12 +28,49 @@ class MultiEventVoxelClipDataset(Dataset):
     # ├──seq_name (e.g. 02_rocket_earth_light)
     # ...
 
+    @staticmethod
+    def get_downsampled_size(
+        original_height: int,
+        original_width: int,
+        downsampling_factor: float,
+        patch_size: int,
+    ) -> tuple[int, int]:
+        if downsampling_factor <= 0:
+            raise ValueError("downsampling_factor must be > 0.")
+        if patch_size <= 0:
+            raise ValueError("patch_size must be > 0.")
+
+        new_height = int(round(original_height * downsampling_factor))
+        new_width = int(round(original_width * downsampling_factor))
+
+        if new_height <= 0 or new_width <= 0:
+            raise ValueError(
+                "Downsampled spatial size must stay positive, "
+                f"got ({new_height}, {new_width})."
+            )
+
+        if new_height % patch_size != 0 or new_width % patch_size != 0:
+            raise ValueError(
+                "Downsampled size must be divisible by patch size. "
+                f"factor={downsampling_factor} gives "
+                f"({new_height}, {new_width}) with patch_size={patch_size}."
+            )
+
+        return new_height, new_width
+
 
     def __init__(self, 
                  root_path: Path, 
                  delta_t_ms: int=50, 
                  num_bins: int=5, 
-                 clip_len: int = 3):
+                 clip_len: int = 3, 
+                 downsampling_factor: float = 1.0,
+                 patch_size: int = 16,
+                 denoising: bool = False,
+                 denoise_dt_us: int = 1000,
+                 denoise_radius: int = 1,
+                 denoise_min_supporters: int = 1,
+                 denoise_same_polarity_only: bool = False):
         
         assert num_bins >= 1
         assert clip_len >= 1
@@ -46,16 +84,31 @@ class MultiEventVoxelClipDataset(Dataset):
         total = 0
 
         # Set constants
+        self.patch_size = patch_size
         self.root_path = root_path
-        self.height = 480
-        self.width = 640
+        self.original_height = 480
+        self.original_width = 640
+        self.downsampling_factor = downsampling_factor
+        self.new_height, self.new_width = self.get_downsampled_size(
+            self.original_height,
+            self.original_width,
+            self.downsampling_factor,
+            self.patch_size,
+        )
+        self.scale_y = self.new_height / self.original_height
+        self.scale_x = self.new_width / self.original_width
         self.num_bins = num_bins
         self.clip_len = clip_len
+        self.denoising = denoising
+        self.denoise_dt_us = denoise_dt_us
+        self.denoise_radius = denoise_radius
+        self.denoise_min_supporters = denoise_min_supporters
+        self.denoise_same_polarity_only = denoise_same_polarity_only
         #the duration of a voxel
         self.delta_t_us = delta_t_ms * 1000
 
         # Set event representation
-        self.voxel_grid = VoxelGrid(self.num_bins, self.height, self.width, normalize=True)
+        self.voxel_grid = VoxelGrid(self.num_bins, self.new_height, self.new_width, normalize=True)
 
         #Set the normalization stats to None: 
         self.train_std = None
@@ -134,13 +187,29 @@ class MultiEventVoxelClipDataset(Dataset):
     
     def _empty_voxel(self):
         return torch.zeros(
-            (self.num_bins, self.height, self.width),
+            (self.num_bins, self.new_height, self.new_width),
             dtype=torch.float32
         )
 
     def events_to_voxel_grid(self, x, y, p, t):
         if len(t) == 0:
             return self._empty_voxel()
+
+        if self.denoising:
+            x, y, p, t, _ = background_activity_filter_raw(
+                x=x,
+                y=y,
+                p=p,
+                t_us=t,
+                height=self.original_height,
+                width=self.original_width,
+                dt_us=self.denoise_dt_us,
+                radius=self.denoise_radius,
+                min_supporters=self.denoise_min_supporters,
+                same_polarity_only=self.denoise_same_polarity_only,
+            )
+            if len(t) == 0:
+                return self._empty_voxel()
 
         t = t.astype(np.float32)
         t = t - t[0]
@@ -150,9 +219,11 @@ class MultiEventVoxelClipDataset(Dataset):
         else:
             t = np.zeros_like(t, dtype=np.float32)
         
+        downsampled_x = x * self.scale_x
+        downsampled_y = y * self.scale_y
         event_data = {
-            'x': x.astype(np.float32),
-            'y': y.astype(np.float32),
+            'x': downsampled_x.astype(np.float32),
+            'y': downsampled_y.astype(np.float32),
             'p': p.astype(np.float32),
             't': t
         }
@@ -249,4 +320,3 @@ class MultiEventVoxelClipDataset(Dataset):
         self.train_std = np.std(targets, axis=0)
         self.train_std = np.maximum(self.train_std, self.eps)
         self.train_mean = np.mean(targets, axis=0)
-
