@@ -330,13 +330,9 @@ def save_trajectory_comparison_plot(
     gt_times_s: np.ndarray,
     gt_positions: np.ndarray,
     estimated_positions_at_gt_times: np.ndarray,
+    noisy_gt_positions: np.ndarray | None = None,
 ) -> Path:
-    """Save four time-series plots on the processed GT timestamp grid.
-
-    The time axis comes directly from the processed `stamped_groundtruth.txt`
-    file, so the plots compare `x`, `y`, `z`, and total position error against
-    the same reference timestamps used by the processed sequence.
-    """
+    """Save four time-series plots on the processed GT timestamp grid."""
 
     import matplotlib.pyplot as plt
 
@@ -349,8 +345,13 @@ def save_trajectory_comparison_plot(
         row = axis_idx // 2
         col = axis_idx % 2
         axis = axes[row, col]
-        axis.plot(t_rel, gt_positions[:, axis_idx], label=f"GT {label}")
-        axis.plot(t_rel, estimated_positions_at_gt_times[:, axis_idx], label=f"EKF {label}")
+        axis.plot(t_rel, gt_positions[:, axis_idx], label=f"GT {label}", color="tab:blue")
+        
+        # Plot della GT rumorosa
+        if noisy_gt_positions is not None:
+            axis.plot(t_rel, noisy_gt_positions[:, axis_idx], label=f"Noisy GT {label}", color="tab:orange", alpha=0.5, linestyle="--")
+            
+        axis.plot(t_rel, estimated_positions_at_gt_times[:, axis_idx], label=f"EKF {label}", color="tab:green")
         axis.set_title(f"{label.upper()} Position")
         axis.set_xlabel("time [s]")
         axis.set_ylabel(f"{label} [m]")
@@ -358,11 +359,18 @@ def save_trajectory_comparison_plot(
         axis.legend()
 
     position_error = np.linalg.norm(estimated_positions_at_gt_times - gt_positions, axis=1)
-    axes[1, 1].plot(t_rel, position_error, color="tab:red")
+    
+    # Plot dell'errore della GT rumorosa
+    if noisy_gt_positions is not None:
+        noisy_error = np.linalg.norm(noisy_gt_positions - gt_positions, axis=1)
+        axes[1, 1].plot(t_rel, noisy_error, color="tab:orange", alpha=0.5, linestyle="--", label="Noisy GT Error")
+        
+    axes[1, 1].plot(t_rel, position_error, color="tab:red", label="EKF Error")
     axes[1, 1].set_title("Total Position Error")
     axes[1, 1].set_xlabel("time [s]")
     axes[1, 1].set_ylabel("||p_est - p_gt|| [m]")
     axes[1, 1].grid(True)
+    axes[1, 1].legend()
 
     fig.tight_layout()
     fig.savefig(path, dpi=150)
@@ -374,6 +382,7 @@ def save_rotation_comparison_plot(
     times_s: np.ndarray,
     gt_quaternions_xyzw: np.ndarray,
     estimated_quaternions_xyzw: np.ndarray,
+    noisy_gt_quaternions_xyzw: np.ndarray | None = None,
 ) -> Path:
     """Save four time-series plots for Roll, Pitch, Yaw and absolute rotation error."""
 
@@ -390,6 +399,10 @@ def save_rotation_comparison_plot(
     gt_euler_deg = np.rad2deg(np.unwrap(gt_euler_rad, axis=0))
     est_euler_deg = np.rad2deg(np.unwrap(est_euler_rad, axis=0))
 
+    if noisy_gt_quaternions_xyzw is not None:
+        noisy_euler_rad = Rotation.from_quat(noisy_gt_quaternions_xyzw).as_euler('xyz', degrees=False)
+        noisy_euler_deg = np.rad2deg(np.unwrap(noisy_euler_rad, axis=0))
+
     # Compute absolute rotation error point-by-point
     rot_errors_deg = np.array([
         rotation_error_deg(q_gt, q_est) 
@@ -403,19 +416,31 @@ def save_rotation_comparison_plot(
         row = axis_idx // 2
         col = axis_idx % 2
         axis = axes[row, col]
-        axis.plot(t_rel, gt_euler_deg[:, axis_idx], label=f"GT {label}")
-        axis.plot(t_rel, est_euler_deg[:, axis_idx], label=f"EKF {label}")
+        axis.plot(t_rel, gt_euler_deg[:, axis_idx], label=f"GT {label}", color="tab:blue")
+        
+        if noisy_gt_quaternions_xyzw is not None:
+            axis.plot(t_rel, noisy_euler_deg[:, axis_idx], label=f"Noisy GT {label}", color="tab:orange", alpha=0.5, linestyle="--")
+            
+        axis.plot(t_rel, est_euler_deg[:, axis_idx], label=f"EKF {label}", color="tab:green")
         axis.set_title(f"{label} Angle")
         axis.set_xlabel("time [s]")
         axis.set_ylabel("angle [deg]")
         axis.grid(True)
         axis.legend()
 
-    axes[1, 1].plot(t_rel, rot_errors_deg, color="tab:red")
+    if noisy_gt_quaternions_xyzw is not None:
+        noisy_rot_errors_deg = np.array([
+            rotation_error_deg(q_gt, q_noise) 
+            for q_gt, q_noise in zip(gt_quaternions_xyzw, noisy_gt_quaternions_xyzw)
+        ])
+        axes[1, 1].plot(t_rel, noisy_rot_errors_deg, color="tab:orange", alpha=0.5, linestyle="--", label="Noisy GT Error")
+
+    axes[1, 1].plot(t_rel, rot_errors_deg, color="tab:red", label="EKF Error")
     axes[1, 1].set_title("Absolute Rotation Error")
     axes[1, 1].set_xlabel("time [s]")
     axes[1, 1].set_ylabel("Geodesic Error [deg]")
     axes[1, 1].grid(True)
+    axes[1, 1].legend()
 
     fig.tight_layout()
     fig.savefig(path, dpi=150)
@@ -792,6 +817,18 @@ def test_filter(
         dense_gt_positions,
         dense_gt_quaternions,
     )
+    plot_noisy_gt_positions = plot_gt_positions + rng.normal(
+        scale=measurement_sigma_rel_t, size=plot_gt_positions.shape
+    )
+
+    noise_axes = rng.normal(size=(dense_gt_quaternions.shape[0], 3))
+    noise_axes_norms = np.linalg.norm(noise_axes, axis=1, keepdims=True)
+    noise_axes = np.divide(noise_axes, noise_axes_norms, out=np.zeros_like(noise_axes), where=noise_axes_norms!=0)
+    
+    noise_angles = rng.normal(scale=measurement_sigma_rel_r_rad, size=(dense_gt_quaternions.shape[0], 1))
+    noise_quats = np.concatenate([noise_axes * np.sin(noise_angles / 2), np.cos(noise_angles / 2)], axis=1)
+    
+    dense_noisy_gt_quaternions = (Rotation.from_quat(noise_quats) * Rotation.from_quat(dense_gt_quaternions)).as_quat()
 
     saved_files = {}
     if output_dir is not None:
@@ -817,12 +854,14 @@ def test_filter(
             plot_gt_times_s,
             plot_gt_positions,
             plot_estimated_positions,
+            noisy_gt_positions=plot_noisy_gt_positions, 
         )
         saved_files["rotation_plot"] = save_rotation_comparison_plot(
             output_dir / "rotation_comparison.png",
             dense_times_s,
             dense_gt_quaternions,
             dense_estimated_quaternions,
+            noisy_gt_quaternions_xyzw=dense_noisy_gt_quaternions,
         )
 
     return {
