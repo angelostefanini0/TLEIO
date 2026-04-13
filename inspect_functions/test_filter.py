@@ -285,9 +285,9 @@ def make_filter_args(sigma_rel_t: float, sigma_rel_r_rad: float) -> SimpleNamesp
     """Create the small argument namespace needed by the current EKF implementation."""
 
     return SimpleNamespace(
-        sigma_na=0.005,       #TUNE!
+        sigma_na=0.1,       #TUNE!
         sigma_ng=0.0001,      #TUNE! 
-        sigma_nba=1e-4,     #TUNE! 
+        sigma_nba=5e-3,     #TUNE! 
         sigma_nbg=5e-3,     #TUNE! 
         sigma_rel_t=sigma_rel_t,
         sigma_rel_r=sigma_rel_r_rad,
@@ -447,6 +447,63 @@ def save_rotation_comparison_plot(
     plt.close(fig)
     return path
 
+def save_3d_trajectory_plot(
+    path: Path,
+    gt_positions: np.ndarray,
+    estimated_positions: np.ndarray,
+    noisy_gt_positions: np.ndarray | None = None,
+) -> Path:
+    """Save a 3D plot comparing the estimated trajectory against the ground truth."""
+    import matplotlib.pyplot as plt
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot GT
+    ax.plot(gt_positions[:, 0], gt_positions[:, 1], gt_positions[:, 2], 
+            label='Ground Truth', color='tab:blue', linewidth=2)
+    
+    # Plot Noisy GT (se disponibile) visualizzato come punti semitrasparenti
+    if noisy_gt_positions is not None:
+        ax.scatter(noisy_gt_positions[:, 0], noisy_gt_positions[:, 1], noisy_gt_positions[:, 2], 
+                   label='Noisy GT (Misurazioni)', color='tab:orange', alpha=0.3, s=5)
+        
+    # Plot Traiettoria Stimata (EKF)
+    ax.plot(estimated_positions[:, 0], estimated_positions[:, 1], estimated_positions[:, 2], 
+            label='EKF Estimated', color='tab:green', linewidth=2)
+
+    # Evidenzia il punto di Inizio e Fine
+    ax.scatter(*gt_positions[0], color='black', marker='o', s=60, label='Start', zorder=5)
+    ax.scatter(*gt_positions[-1], color='red', marker='x', s=60, label='End', zorder=5)
+
+    ax.set_title("3D Trajectory Comparison")
+    ax.set_xlabel("X [m]")
+    ax.set_ylabel("Y [m]")
+    ax.set_zlabel("Z [m]")
+    ax.legend()
+
+    # Rendi gli assi in scala 1:1 in modo che la traiettoria non sia deformata
+    max_range = np.array([
+        gt_positions[:, 0].max() - gt_positions[:, 0].min(),
+        gt_positions[:, 1].max() - gt_positions[:, 1].min(),
+        gt_positions[:, 2].max() - gt_positions[:, 2].min()
+    ]).max() / 2.0
+
+    mid_x = (gt_positions[:, 0].max() + gt_positions[:, 0].min()) * 0.5
+    mid_y = (gt_positions[:, 1].max() + gt_positions[:, 1].min()) * 0.5
+    mid_z = (gt_positions[:, 2].max() + gt_positions[:, 2].min()) * 0.5
+
+    ax.set_xlim(mid_x - max_range, mid_x + max_range)
+    ax.set_ylim(mid_y - max_range, mid_y + max_range)
+    ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return path
+
 def fix_quaternion_signs(quaternions_xyzw: np.ndarray) -> np.ndarray:
     q = quaternions_xyzw.copy()
     for i in range(1, len(q)):
@@ -470,7 +527,7 @@ def estimate_roll_pitch_from_gravity(accel_vector: np.ndarray) -> tuple[float, f
 def test_filter(
     imu_path: Path = ROOT / "data/eds/processed/00_peanuts_dark/imu.csv",
     gt_path: Path = ROOT / "data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt",
-    relative_motions_path: Path | None = ROOT / "data/eds/processed/00_peanuts_dark/relative_motions.txt",
+    relative_motions_path: Path | None = ROOT / "data/eds/processed/00_peanuts_dark/v1_predicted_relative_motions.txt",
     frame_timestamps_path: Path | None = ROOT / "data/eds/images_timestamps.txt",
     measurement_dt_ms: float = 75.0,
     use_frame_timestamps: bool = False,
@@ -863,6 +920,12 @@ def test_filter(
             dense_estimated_quaternions,
             noisy_gt_quaternions_xyzw=dense_noisy_gt_quaternions,
         )
+        saved_files["trajectory_3d_plot"] = save_3d_trajectory_plot(
+            output_dir / "trajectory_3d.png",
+            plot_gt_positions,
+            plot_estimated_positions,
+            noisy_gt_positions=plot_noisy_gt_positions,
+        )
 
     return {
         "times_s": measurement_times_s,
@@ -933,7 +996,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--relative_motions",
         type=Path,
-        default=ROOT / "data/eds/processed/00_peanuts_dark/relative_motions.txt",
+        default=ROOT / "data/eds/processed/00_peanuts_dark/v1_predicted_relative_motions.txt",
         help="Processed adjacent-anchor relative poses used to build overlapping `2 x 7` EKF updates.",
     )
     parser.add_argument("--frames", type=Path, default=ROOT / "data/eds/images_timestamps.txt")
@@ -1028,6 +1091,7 @@ def main() -> None:
         print(f"Anchor GT trajectory:        {results['saved_files']['anchor_ground_truth_trajectory']}")
         print(f"Trajectory plot:             {results['saved_files']['trajectory_plot']}")
         print(f"Rotation plot:               {results['saved_files']['rotation_plot']}")
+        print(f"3D Trajectory plot:          {results['saved_files']['trajectory_3d_plot']}")
 
 if __name__ == "__main__":
     main()
