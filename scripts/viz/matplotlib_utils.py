@@ -27,6 +27,10 @@ class LiveTrajectoryViewer:
     gt_line: any
     pred_point: any
     gt_point: any
+    pred_heading: any
+    pred_lateral: any
+    gt_heading: any
+    gt_lateral: any
     status_text: any
     closed: bool = False
     quit_requested: bool = False
@@ -63,7 +67,7 @@ def create_live_trajectory_plot(title: str = "Live Trajectory") -> LiveTrajector
     )
 
 
-def _set_equal_xy_limits(ax: plt.Axes, pred_xy: np.ndarray, gt_xy: np.ndarray) -> None:
+def _set_equal_xy_limits(ax: plt.Axes, pred_xy: np.ndarray, gt_xy: np.ndarray) -> float:
     all_xy = np.vstack([pred_xy, gt_xy])
     mins = all_xy.min(axis=0)
     maxs = all_xy.max(axis=0)
@@ -74,6 +78,53 @@ def _set_equal_xy_limits(ax: plt.Axes, pred_xy: np.ndarray, gt_xy: np.ndarray) -
 
     ax.set_xlim(center[0] - radius - pad, center[0] + radius + pad)
     ax.set_ylim(center[1] - radius - pad, center[1] + radius + pad)
+    return radius + pad
+
+
+def _update_axis_arrow(
+    arrow: any,
+    origin_xy: np.ndarray,
+    direction_xy: np.ndarray | None,
+    plot_radius: float,
+) -> None:
+    if direction_xy is None:
+        arrow.set_offsets(np.asarray(origin_xy, dtype=np.float64)[None, :])
+        arrow.set_UVC([0.0], [0.0])
+        return
+
+    direction_xy = np.asarray(direction_xy, dtype=np.float64)
+    norm = np.linalg.norm(direction_xy)
+    if norm < 1e-12:
+        vec_xy = np.zeros(2, dtype=np.float64)
+    else:
+        arrow_len = max(0.12 * plot_radius, 5e-2)
+        vec_xy = arrow_len * direction_xy / norm
+
+    arrow.set_offsets(np.asarray(origin_xy, dtype=np.float64)[None, :])
+    arrow.set_UVC([vec_xy[0]], [vec_xy[1]])
+
+
+def _make_axis_quiver(
+    ax: plt.Axes,
+    color: str,
+    alpha: float,
+    width: float,
+) -> any:
+    return ax.quiver(
+        [0.0],
+        [0.0],
+        [0.0],
+        [0.0],
+        angles="xy",
+        scale_units="xy",
+        scale=1.0,
+        color=color,
+        alpha=alpha,
+        width=width,
+        headwidth=4.0,
+        headlength=5.0,
+        headaxislength=4.5,
+    )
 
 
 def update_live_trajectory_plot(
@@ -125,6 +176,10 @@ def create_live_trajectory_viewer(
     gt_line, = ax_traj.plot([], [], color="red", linewidth=2.0, label="ground truth")
     pred_point, = ax_traj.plot([], [], "o", color="blue", markersize=6)
     gt_point, = ax_traj.plot([], [], "o", color="red", markersize=6)
+    pred_heading = _make_axis_quiver(ax_traj, color="blue", alpha=1.0, width=0.004)
+    pred_lateral = _make_axis_quiver(ax_traj, color="blue", alpha=0.45, width=0.003)
+    gt_heading = _make_axis_quiver(ax_traj, color="red", alpha=1.0, width=0.004)
+    gt_lateral = _make_axis_quiver(ax_traj, color="red", alpha=0.45, width=0.003)
     status_text = ax_traj.text(0.02, 0.98, "", transform=ax_traj.transAxes, va="top")
 
     ax_traj.set_title("XY trajectory")
@@ -146,6 +201,10 @@ def create_live_trajectory_viewer(
         gt_line=gt_line,
         pred_point=pred_point,
         gt_point=gt_point,
+        pred_heading=pred_heading,
+        pred_lateral=pred_lateral,
+        gt_heading=gt_heading,
+        gt_lateral=gt_lateral,
         status_text=status_text,
     )
 
@@ -167,6 +226,10 @@ def update_live_trajectory_viewer(
     frame: np.ndarray,
     pred_pos: np.ndarray,
     gt_pos: np.ndarray,
+    pred_dir_xy: np.ndarray | None = None,
+    pred_perp_xy: np.ndarray | None = None,
+    gt_dir_xy: np.ndarray | None = None,
+    gt_perp_xy: np.ndarray | None = None,
     frame_idx: int | None = None,
     timestamp_s: float | None = None,
     pause_s: float = 0.001,
@@ -189,7 +252,11 @@ def update_live_trajectory_viewer(
     viewer.status_text.set_text(" | ".join(status_parts))
     viewer.ax_image.set_title("Events on RGB" if not status_parts else "Events on RGB | " + " | ".join(status_parts))
 
-    _set_equal_xy_limits(viewer.ax_traj, pred_xy, gt_xy)
+    plot_radius = _set_equal_xy_limits(viewer.ax_traj, pred_xy, gt_xy)
+    _update_axis_arrow(viewer.pred_heading, pred_xy[-1], pred_dir_xy, plot_radius)
+    _update_axis_arrow(viewer.pred_lateral, pred_xy[-1], pred_perp_xy, plot_radius)
+    _update_axis_arrow(viewer.gt_heading, gt_xy[-1], gt_dir_xy, plot_radius)
+    _update_axis_arrow(viewer.gt_lateral, gt_xy[-1], gt_perp_xy, plot_radius)
     viewer.fig.canvas.draw_idle()
     viewer.fig.canvas.flush_events()
     plt.pause(max(pause_s, 0.001))

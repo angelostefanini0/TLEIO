@@ -155,6 +155,31 @@ def find_latest_anchor_index(anchor_ts: np.ndarray, query_ts: float) -> int:
     return int(np.clip(idx, 0, len(anchor_ts) - 1))
 
 
+def quat_to_xy_camera_axes(quat_xyzw: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    camera_x_xy = np.empty((len(quat_xyzw), 2), dtype=np.float64)
+    camera_y_xy = np.empty((len(quat_xyzw), 2), dtype=np.float64)
+
+    for i, quat in enumerate(quat_xyzw):
+        R_world_from_camera = quat_to_rotmat(quat)
+        x_axis_xy = R_world_from_camera[:2, 0]
+        y_axis_xy = R_world_from_camera[:2, 1]
+
+        x_norm = np.linalg.norm(x_axis_xy)
+        y_norm = np.linalg.norm(y_axis_xy)
+
+        if x_norm < 1e-12:
+            camera_x_xy[i] = np.array([1.0, 0.0], dtype=np.float64)
+        else:
+            camera_x_xy[i] = x_axis_xy / x_norm
+
+        if y_norm < 1e-12:
+            camera_y_xy[i] = np.array([0.0, -1.0], dtype=np.float64)
+        else:
+            camera_y_xy[i] = -y_axis_xy / y_norm
+
+    return camera_x_xy, camera_y_xy
+
+
 def main() -> None:
     args = parse_args()
     # SET UP VISUALIZATION OF FRAMES + EVENTS
@@ -176,6 +201,8 @@ def main() -> None:
     frame_delay_s = 0.001 if args.fps <= 0 else 1.0 / args.fps
     end_img = min(args.start_img + args.num_frames, loader._len_image - 1)
     
+    #FOR 9 
+    end_img = 1000
     # SET UP GROUND TRUTH AND PREDICTED TRAJECTORY PLOTTING
     gt = load_table(args.gt)
     rel = load_table(args.rel_model)
@@ -213,25 +240,43 @@ def main() -> None:
     # Anchor timestamps implied by relative motions
     anchor_ts = np.concatenate([rel_t0[:1], rel_t1])
 
-    # Initial pose from source GT at first anchor
-    init_pos, init_quat = interpolate_gt_pose(
-        gt_ts, gt_pos, gt_quat, np.array([anchor_ts[0]], dtype=np.int64)
-    )
+    if args.start_img >= end_img:
+        raise ValueError("No frames available to visualize with the requested --start-img/--num-frames.")
 
-    recon_pos_pred, recon_quat_pred = build_reconstructed_trajectory(
-        rel, gt_rel, init_pos[0], init_quat[0], "rotation"
+    _, start_t1 = loader.load_image(args.start_img + 1)
+    start_anchor_query_us = int(round((start_t1 - min_event_ts) * 1e6))
+    start_anchor_idx = find_latest_anchor_index(anchor_ts, start_anchor_query_us)
+    start_anchor_ts = anchor_ts[start_anchor_idx]
+
+    # Re-anchor the reconstruction at the first plotted frame instead of the
+    # first GT pose in the full sequence.
+    init_pos, init_quat = interpolate_gt_pose(
+        gt_ts, gt_pos, gt_quat, np.array([start_anchor_ts], dtype=np.int64)
     )
-    recon_pos_gt, recon_quat_gt = interpolate_gt_pose(gt_ts, gt_pos, gt_quat, anchor_ts)
-    recon_quat_gt = normalize_quat(recon_quat_gt)
+    rel_partial = rel[start_anchor_idx:]
+    gt_rel_partial = None if gt_rel is None else gt_rel[start_anchor_idx:]
+
+    recon_pos_pred_partial, recon_quat_pred_partial = build_reconstructed_trajectory(
+        rel_partial, gt_rel_partial, init_pos[0], init_quat[0], "rotation"
+    )
+    recon_pos_gt_partial, recon_quat_gt_partial = interpolate_gt_pose(
+        gt_ts, gt_pos, gt_quat, anchor_ts[start_anchor_idx:]
+    )
+    pred_heading_xy_partial, pred_lateral_xy_partial = quat_to_xy_camera_axes(recon_quat_pred_partial)
+    gt_heading_xy_partial, gt_lateral_xy_partial = quat_to_xy_camera_axes(recon_quat_gt_partial)
 
     blank_frame = np.full((args.height, args.width, 3), 255, dtype=np.uint8)
     update_live_trajectory_viewer(
         viewer,
         blank_frame,
-        recon_pos_pred[:1],
-        recon_pos_gt[:1],
+        recon_pos_pred_partial[:1],
+        recon_pos_gt_partial[:1],
+        pred_dir_xy=pred_heading_xy_partial[0],
+        pred_perp_xy=pred_lateral_xy_partial[0],
+        gt_dir_xy=gt_heading_xy_partial[0],
+        gt_perp_xy=gt_lateral_xy_partial[0],
         frame_idx=args.start_img,
-        timestamp_s=float(anchor_ts[0]) * 1e-6,
+        timestamp_s=float(start_anchor_ts) * 1e-6,
         pause_s=0.001,
     )
 
@@ -240,7 +285,7 @@ def main() -> None:
             # IMAGE VISUALIZATION 
             img, t0 = loader.load_image(imgi)
             _, t1 = loader.load_image(imgi + 1)
-            relative_ft1 = (t1 - min_event_ts) * 1e6
+            relative_ft1 = int(round((t1 - min_event_ts) * 1e6))
             i0 = loader.time_to_index(t0)
             i1 = loader.time_to_index(t1)
             ev = loader.load_event(i0, i1)
@@ -263,14 +308,19 @@ def main() -> None:
 
             # TRAJECTORY PLOTTING
             anchor_idx = find_latest_anchor_index(anchor_ts, relative_ft1)
+            partial_anchor_idx = anchor_idx - start_anchor_idx
 
             update_live_trajectory_viewer(
                 viewer,
                 frame,
-                recon_pos_pred[: anchor_idx + 1],
-                recon_pos_gt[: anchor_idx + 1],
+                recon_pos_pred_partial[: partial_anchor_idx + 1],
+                recon_pos_gt_partial[: partial_anchor_idx + 1],
+                pred_dir_xy=pred_heading_xy_partial[partial_anchor_idx],
+                pred_perp_xy=pred_lateral_xy_partial[partial_anchor_idx],
+                gt_dir_xy=gt_heading_xy_partial[partial_anchor_idx],
+                gt_perp_xy=gt_lateral_xy_partial[partial_anchor_idx],
                 frame_idx=imgi,
-                timestamp_s=t1,
+                timestamp_s=float(anchor_ts[anchor_idx]) * 1e-6,
                 pause_s=frame_delay_s,
             )
 
