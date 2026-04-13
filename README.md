@@ -117,20 +117,20 @@ The model build step now prints the effective image size, patch grid, and result
 Example training command:
 
  ```bash
- python src/main_network.py \
-  --root_dir data/eds/processed_train \
-  --val_root_dir data/eds/processed_validation \
-  --checkpoint_path checkpoints/eds_ds07_denoise_wl0 \
-  --b_size 2 \
-  --depth 12 \
-  --heads 6 \
-  --num_workers 4 \
-  --downsampling_factor 0.7 \
-  --denoising true \
-  --denoise_dt_us 1000 \
-  --denoise_radius 1 \
-  --denoise_min_supporters 1 \ 
-  --weighted_loss 0.0
+python src/main_network.py \
+--root_dir data/eds/processed_train \
+--val_root_dir data/eds/processed_validation \
+--checkpoint_path checkpoints/eds_ds07_denoise_wl0 \
+--b_size 2 \
+--depth 12 \
+--heads 6 \
+--num_workers 4 \
+--downsampling_factor 0.7 \
+--denoising true \
+--denoise_dt_us 1000 \
+--denoise_radius 1 \
+--denoise_min_supporters 1 \ 
+--weighted_loss 0.0
 
 ```
 
