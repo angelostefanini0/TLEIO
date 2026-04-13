@@ -60,15 +60,18 @@ Run the `processing.py` script to process the event stream and the ground truth 
 CURRENTLY WORKING FOR EDS ONLY, NEEDS MINOR FIXES TO WORK WITH THE TARTAN AIR DATASET AS WELL
 
 ```bash
-python scripts/processing.py data/eds/raw   \
---save-path data/eds/processed   \
+python scripts/processing.py data/eds/raw \
+--save-path data/eds/processed_train \
+--save_path_validation data/eds/processed_validation \
+--validation-seq 3 \
 --save_path_testing data/eds/processed_testing \
 --test-seq 0,6 \
---overwrite  \
+--overwrite \
 --timestamps-key t \
 --process_gt imu.csv stamped_groundtruth.txt \
 --delta_t_ms 50 \
 --anchor_hz 20
+
 ```
 ## 4. Visualization of event data: 
 Run the `scripts/viz/play_events_on_rgb.py` script to playback the input video with events overlayed onto RGB frames. `root` expects the absolute path to the dataset root, `sequence` expects the name of the sequence to inspect, and `height` / `width` are the image dimensions to display. To have the playback uncapped, set `fps` to `0`.
