@@ -71,7 +71,7 @@ python scripts/processing.py data/eds/raw   \
 --anchor_hz 20
 ```
 ## 4. Visualization of event data: 
-Run the `scripts/viz/play_events_on_rgb.py` script to playback the input video with events overlayed onto RGB frames. `root` argument expects the absolute path to the root folder, `sequence` expects the name of the sequence to inspect, `height` and `width` are the input dimensions of the images to display. To have the playback uncapped, set `fps` to 0.
+Run the `scripts/viz/play_events_on_rgb.py` script to playback the input video with events overlayed onto RGB frames. `root` expects the absolute path to the dataset root, `sequence` expects the name of the sequence to inspect, and `height` / `width` are the image dimensions to display. To have the playback uncapped, set `fps` to `0`.
 
 ```bash
 python scripts/viz/play_events_on_rgb.py \
@@ -84,7 +84,66 @@ python scripts/viz/play_events_on_rgb.py \
 --fps 12.5
 ```
 
-## 5. Inspection of model output: 
+The script also supports visualizing the shared background-activity denoiser used by the training pipeline:
+
+```bash
+python scripts/viz/play_events_on_rgb.py \
+--root /home/alessandro/Desktop/TLEIO/data/eds/raw \
+--sequence 01_peanuts_light \
+--height 480 \
+--width 640 \
+--start-img 1 \
+--num-frames 300 \
+--fps 0 \
+--denoising true \
+--denoise-dt-us 1000 \
+--denoise-radius 1 \
+--denoise-min-supporters 1
+```
+
+When denoising is enabled, the overlay shows `kept/raw` event counts so it is easier to check whether the filter is doing what you expect.
+
+## 5. Training the model: 
+Run the `main_network.py` script to train the model. A bunch of arguments can be passed for general data handling, optimization strategies and model parameters.
+
+Important parameters:
+- `weighted_loss` has to be set to `0` if we only want to regress translation.
+- `downsampling_factor` decreases the event image resolution before voxelization.
+- The downsampled spatial size must stay divisible by `patch_size`. For example, with `patch_size=16`, `downsampling_factor=0.7` gives `336x448`, which is valid.
+- `denoising` enables the shared background-activity filter before voxelization.
+
+The model build step now prints the effective image size, patch grid, and resulting token count, so you can verify the downsampling is doing what you expect.
+
+Example training command:
+
+```bash
+python src/main_network.py \
+--b_size 2 \
+--depth 12 \
+--heads 6 \
+--num_workers 4 \
+--downsampling_factor 0.7 \
+--denoising true \
+--denoise_dt_us 1000 \
+--denoise_radius 1 \
+--denoise_min_supporters 1 \
+--weighted_loss 0.0
+```
+
+## 6. Testing the model: 
+Run the `test.py` script to test the model and save the motions into a file.
+
+The script reads `args.txt` from the checkpoint directory, so the same training-time settings for downsampling and denoising are reused automatically during inference. You can also enable `--average_overlaps` to average multiple predictions that correspond to the same relative motion.
+
+```bash
+python test.py \
+--sequence_dir data/eds/processed_testing \
+--checkpoint_file checkpoints/checkpoint_best.pth \
+--output_file data/eds/path/to/save/outputs.txt \
+--average_overlaps
+```
+
+## 7. Inspection of model output: 
 Run the `inspect_relative_motions.py` script to see how the model predicition compares to the GT. `gt` argument expects the stamped groundtruth, `rel` expects the predicted motions from the network, `gt_rel` expects the groundtruth relative motions, `gt_rel_mode` expects one of `[rotation, translation, both,]`. If `rotation` is used, the output will be the model predicted translation with gt rotation, if `translation` is used, the output will be the model predicted rotation, with gt translation, if `both` is used, the output will be the full gt relative motion.
 
 ```bash
@@ -95,8 +154,8 @@ python inspect_functions/inspect_relative_motions.py \
 --gt_rel_mode rotation
 ```
 
-## 6. Live visualization and inspection of results: 
-Run the `scripts/viz/test_trajectory_with_events.py` script to playback the input video with events overlayed onto RGB frames, and get the corresponding trajectory plot live (gt against predicted from the model). 
+## 8. Live visualization and inspection of results: 
+Run the `scripts/viz/test_trajectory_with_events.py` script to playback the input video with events overlayed onto RGB frames, and get the corresponding trajectory plot live (gt against predicted from the model). It supports the same optional background-activity denoising controls as `play_events_on_rgb.py`.
 ```bash
 python scripts/viz/test_trajectory_with_events.py \
 --root /home/alessandro/Desktop/TLEIO/data/eds/raw \
@@ -107,4 +166,13 @@ python scripts/viz/test_trajectory_with_events.py \
 --rel-model data/eds/predicted_relative_motions/sequence_03/big_relative_motions_averaged.txt \
 --rel-gt data/eds/processed_testing/03_rocket_earth_dark/relative_motions.txt \
 --gt data/eds/processed_testing/03_rocket_earth_dark/stamped_groundtruth.txt
+```
+
+To enable denoising during live playback, add for example:
+
+```bash
+--denoising true \
+--denoise-dt-us 1000 \
+--denoise-radius 1 \
+--denoise-min-supporters 1
 ```

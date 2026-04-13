@@ -2,7 +2,6 @@ import os
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
-from torch.utils.data import random_split
 import pickle
 import json
 from learning.network.train import *
@@ -27,6 +26,7 @@ def parse_args():
 
     # general/data
     parser.add_argument("--root_dir", type=str, default="data/eds/processed")
+    parser.add_argument("--val_root_dir", type=str, default="data/eds/processed_validation")
     parser.add_argument("--b_size", type=int, default=4, help="batch size")
     parser.add_argument("--val_split", type=float, default=0.1,
                         help="percentage to use as validation data")
@@ -35,10 +35,22 @@ def parse_args():
     parser.add_argument("--delta_t_ms", type=int, default=50,
                         help="Duration of event aggregation for voxel creation") 
     parser.add_argument("--num_bins", type=int, default=5, help="number of bins in voxel grid")
+    parser.add_argument("--downsampling_factor", type=float, default=1.0, 
+                        help="downsampling factor for events image")
+    parser.add_argument("--denoising", type=str2bool, default=False,
+                        help="apply background-activity filtering before voxelization")
+    parser.add_argument("--denoise_dt_us", type=int, default=1000,
+                        help="temporal support window in microseconds for denoising")
+    parser.add_argument("--denoise_radius", type=int, default=1,
+                        help="spatial neighborhood radius for denoising")
+    parser.add_argument("--denoise_min_supporters", type=int, default=1,
+                        help="minimum recent neighboring events required to keep an event")
+    parser.add_argument("--denoise_same_polarity_only", type=str2bool, default=False,
+                        help="require denoising support to come from the same polarity")
                        
     # optimization
-    parser.add_argument("--optimizer", type=str, default="Adam",
-                        choices=["Adam", "SGD", "Adagrad", "RAdam"])
+    parser.add_argument("--optimizer", type=str, default="AdamW",
+                        choices=["Adam", "AdamW", "SGD", "Adagrad", "RAdam"])
     parser.add_argument("--lr", type=float, default=1e-5,
                         help="learning rate")
     parser.add_argument("--momentum", type=float, default=0.9,
@@ -124,21 +136,37 @@ if __name__ == "__main__":
     print("Using CUDA: ", torch.cuda.is_available())
     print("Loading data...")
     
-    dataset = MultiEventVoxelClipDataset(
+    train_data = MultiEventVoxelClipDataset(
         root_path=Path(args["root_dir"]),
         delta_t_ms=args["delta_t_ms"],
         num_bins=args["num_bins"],
         clip_len=args["clip_len"],
+        downsampling_factor=args["downsampling_factor"],
+        patch_size=args["patch_size"],
+        denoising=args["denoising"],
+        denoise_dt_us=args["denoise_dt_us"],
+        denoise_radius=args["denoise_radius"],
+        denoise_min_supporters=args["denoise_min_supporters"],
+        denoise_same_polarity_only=args["denoise_same_polarity_only"],
     )
-    
-    nb_val = round(args["val_split"] * len(dataset))
 
-    train_data, val_data = random_split(dataset, [len(dataset) - nb_val, nb_val]) #generator=torch.Generator().manual_seed(2))
-    
-    #Compute the mean and std of the train split to normalize targets
-    dataset.compute_stats(train_data.indices)
-    stats = {"mean": dataset.train_mean, 
-             "std": dataset.train_std}
+    val_data = MultiEventVoxelClipDataset(
+        root_path=Path(args["val_root_dir"]),
+        delta_t_ms=args["delta_t_ms"],
+        num_bins=args["num_bins"],
+        clip_len=args["clip_len"],
+        downsampling_factor=args["downsampling_factor"],
+        patch_size=args["patch_size"],
+    )
+
+    # Compute the mean and std only on training data
+    train_data.compute_stats(list(range(len(train_data))))
+    stats = {"mean": train_data.train_mean, 
+             "std": train_data.train_std}
+
+    # Normalize validation targets with training statistics
+    val_data.train_mean = train_data.train_mean
+    val_data.train_std = train_data.train_std
 
     train_loader = DataLoader(
         train_data,

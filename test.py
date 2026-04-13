@@ -1,22 +1,34 @@
 import argparse
 import json
 from pathlib import Path
+import sys
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from src.learning.network.build_model import *
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.learning.network.build_model import build_model
 from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 
 "python test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
 
 ARGS = {
     "root_dir": "data/eds/processed",
-    "b_size": 6,
+    "b_size": 2,
     "val_split": 0.1,
     "clip_len": 3,
     "delta_t_ms": 50,
     "num_bins": 5,
+    "downsampling_factor": 0.7,
+    "denoising": False,
+    "denoise_dt_us": 2000,
+    "denoise_radius": 1,
+    "denoise_min_supporters": 2,
+    "denoise_same_polarity_only": False,
     "optimizer": "Adam",
     "lr": 2e-05,
     "momentum": 0.9,
@@ -94,6 +106,12 @@ def load_inference_args(checkpoint_file: Path):
             "time_only": loaded["time_only"],
         }
 
+    loaded.setdefault("downsampling_factor", 1.0)
+    loaded.setdefault("denoising", False)
+    loaded.setdefault("denoise_dt_us", 1000)
+    loaded.setdefault("denoise_radius", 1)
+    loaded.setdefault("denoise_min_supporters", 1)
+    loaded.setdefault("denoise_same_polarity_only", False)
     loaded["checkpoint"] = None
     loaded["checkpoint_path"] = str(checkpoint_file.parent)
     return loaded
@@ -113,6 +131,13 @@ def build_inference_dataset(sequence_dir: Path, args_dict):
         delta_t_ms=args_dict["delta_t_ms"],
         num_bins=args_dict["num_bins"],
         clip_len=args_dict["clip_len"],
+        downsampling_factor=args_dict["downsampling_factor"],
+        patch_size=args_dict["patch_size"],
+        denoising=args_dict["denoising"],
+        denoise_dt_us=args_dict["denoise_dt_us"],
+        denoise_radius=args_dict["denoise_radius"],
+        denoise_min_supporters=args_dict["denoise_min_supporters"],
+        denoise_same_polarity_only=args_dict["denoise_same_polarity_only"],
     )
 
     if requested_sequence is None:
