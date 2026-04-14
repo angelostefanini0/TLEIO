@@ -285,7 +285,7 @@ def make_filter_args(sigma_rel_t: float, sigma_rel_r_rad: float) -> SimpleNamesp
     """Create the small argument namespace needed by the current EKF implementation."""
 
     return SimpleNamespace(
-        sigma_na=0.1,       #TUNE!
+        sigma_na=0.01,       #TUNE!
         sigma_ng=0.0001,      #TUNE! 
         sigma_nba=5e-3,     #TUNE! 
         sigma_nbg=5e-3,     #TUNE! 
@@ -711,6 +711,10 @@ def test_filter(
     g_world_estimated = initial_rotation @ (-accel_mean)
     g_world_normalized = g_world_estimated / np.linalg.norm(g_world_estimated) * 9.80665
     ekf.g = g_world_normalized
+    accel_world = initial_rotation @ accel_mean
+    gravity_world = -ekf.g  # gravity = -g_vector
+    accel_bias_world = accel_world - gravity_world
+    initial_ba = initial_rotation.T @ accel_bias_world
 
     ekf.initialize_with_state(
         measurement_times_s[0],
@@ -720,13 +724,6 @@ def test_filter(
         initial_bg,
         initial_ba,
     )
-    
-    accel_mean = np.mean(raw_accel[:50], axis=0)
-    gravity_in_world = initial_rotation @ accel_mean
-    gravity_norm = np.linalg.norm(gravity_in_world)
-    
-    ekf.g = -gravity_in_world * (9.80665 / gravity_norm)
-    #print(f"\n[INIT] Gravity: {ekf.g}")
     
     ekf.augment_clone()
 
