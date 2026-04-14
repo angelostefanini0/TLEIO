@@ -525,9 +525,9 @@ def estimate_roll_pitch_from_gravity(accel_vector: np.ndarray) -> tuple[float, f
     return roll, pitch
 
 def test_filter(
-    imu_path: Path = ROOT / "data/eds/processed/00_peanuts_dark/imu.csv",
-    gt_path: Path = ROOT / "data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt",
-    relative_motions_path: Path | None = ROOT / "data/eds/processed/00_peanuts_dark/relative_motions.txt",
+    imu_path: Path = ROOT / "data/eds/processed/01_peanuts_light/imu.csv",
+    gt_path: Path = ROOT / "data/eds/processed/01_peanuts_light/stamped_groundtruth.txt",
+    relative_motions_path: Path | None = ROOT / "data/eds/processed/01_peanuts_light/relative_motions.txt",
     frame_timestamps_path: Path | None = ROOT / "data/eds/images_timestamps.txt",
     measurement_dt_ms: float = 75.0,
     use_frame_timestamps: bool = False,
@@ -778,7 +778,6 @@ def test_filter(
             residual_norms.append(float(np.linalg.norm(update_info["residual"])))
             delta_norms.append(float(np.linalg.norm(update_info["delta_x"])))
             ekf.marginalize_oldest_clone()
-            ekf.marginalize_oldest_clone() #Added a marginalization to protect the independence assumption and avoid drift
 
         corrected_position_errors.append(
             float(np.linalg.norm(ekf.state.p - anchor_positions[frame_idx]))
@@ -963,16 +962,16 @@ def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for the processed-sequence filter smoke test."""
 
     parser = argparse.ArgumentParser(description="Run a noisy processed-sequence test of the TLEIO filter.")
-    parser.add_argument("--imu", type=Path, default=ROOT / "data/eds/processed/00_peanuts_dark/imu.csv")
+    parser.add_argument("--imu", type=Path, default=ROOT / "data/eds/processed/01_peanuts_light/imu.csv")
     parser.add_argument(
         "--gt",
         type=Path,
-        default=ROOT / "data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt",
+        default=ROOT / "data/eds/processed/01_peanuts_light/stamped_groundtruth.txt",
     )
     parser.add_argument(
         "--relative_motions",
         type=Path,
-        default=ROOT / "data/eds/processed/00_peanuts_dark/relative_motions.txt",
+        default=ROOT / "data/eds/processed/01_peanuts_light/relative_motions.txt",
         help="Processed adjacent-anchor relative poses used to build overlapping `2 x 7` EKF updates.",
     )
     parser.add_argument("--frames", type=Path, default=ROOT / "data/eds/images_timestamps.txt")
