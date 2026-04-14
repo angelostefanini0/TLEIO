@@ -8,6 +8,17 @@ import torch.nn.functional as F
 torch.manual_seed(2026)
 
 
+def reshape_predictions(y_hat, batch_size, args):
+    expected_dim = (args["clip_len"] - 1) * 9
+    if y_hat.ndim != 2 or y_hat.shape[1] != expected_dim:
+        raise ValueError(
+            "Model output dimension mismatch: "
+            f"expected [B, {expected_dim}] for clip_len={args['clip_len']}, "
+            f"got {tuple(y_hat.shape)}."
+        )
+    return y_hat.view(batch_size, args["clip_len"] - 1, 9)
+
+
 def val_epoch(model, val_loader, criterion, args):
     epoch_loss = 0
     epoch_tr_loss = 0
@@ -24,7 +35,7 @@ def val_epoch(model, val_loader, criterion, args):
 
             # predict transformation
             estimated_transf = model(x.float()) # model returns [B, (T-1)*9]
-            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 9) #safe reshaping
+            estimated_transf = reshape_predictions(estimated_transf, x.shape[0], args)
 
             # compute loss
             tr_loss, rot_loss = compute_loss(estimated_transf, y, criterion, args)
@@ -67,7 +78,7 @@ def train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_wr
 
             # predict transformation
             estimated_transf = model(x.float())
-            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 9)
+            estimated_transf = reshape_predictions(estimated_transf, x.shape[0], args)
 
             # compute loss
             tr_loss, rot_loss = compute_loss(estimated_transf, y, criterion, args)

@@ -51,7 +51,7 @@ def build_model(args, model_params):
     model = VisionTransformer(
                 img_size=img_size,
                 in_chans=args["num_bins"],
-                num_classes=(args["clip_len"] - 1) * 7,
+                num_classes=model_params["num_classes"],
                 patch_size=model_params["patch_size"],
                 embed_dim=model_params["embed_dim"],
                 depth=model_params["depth"],
