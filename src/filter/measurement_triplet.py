@@ -1,6 +1,6 @@
 """Build TLEIO triplet measurements for the clone-based EKF update.
 
-This file converts the transformer's raw `2 x 7` output into the stacked EKF
+This file converts the transformer's raw `2 x 3` output into the stacked EKF
 objects that the filter needs: normalized relative poses, a minimal 12D
 residual, sparse clone-only Jacobians, and a single joint measurement
 covariance for the `(1 -> 2, 2 -> 3)` update.
@@ -13,7 +13,7 @@ from filter.utils.math_utils import Jl_SO3_inv, hat, mat_log
 
 
 def extract_raw_triplet_measurement(network_output):
-    """Extract the raw `2 x 7` relative-pose means from a flexible input format.
+    """Extract the raw `2 x 3` relative-pose means from a flexible input format.
 
     The filter accepts either a bare NumPy array or a dictionary so that the
     runner can stay simple while the learned model interface is still evolving.

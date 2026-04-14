@@ -21,6 +21,16 @@ def inv_SE3(T):
     Tinv[:3,3:4] = - T[:3,:3].T @ T[:3,3:4]
     return Tinv
 
+def Jr_exp(v):
+    theta = np.linalg.norm(v)
+    K = hat(v)
+    I = np.eye(3)
+    if theta < 1e-6:
+        return I - 0.5 * K + (1/6) * K @ K
+    
+    K2 = K @ K
+    return I - ((1 - np.cos(theta)) / (theta**2)) * K + ((theta - np.sin(theta)) / (theta**3)) * K2
+
 
 def hat(v):
     v = np.squeeze(v)

@@ -3,14 +3,14 @@
 This file is the core of the filter branch. It keeps the current IMU state,
 manages stochastic pose clones at the three frame times, propagates with IMU
 measurements, and performs the stacked `(1 -> 2, 2 -> 3)` relative-pose update
-using the transformer's `2 x 7` output after converting it to a minimal 12D
+using the transformer's `2 x 3` output after converting it to a minimal 12D
 EKF residual.
 """
 
 import numpy as np
 
 from filter.measurement_triplet import build_triplet_update, make_default_joint_covariance
-from filter.utils.math_utils import hat, mat_exp
+from filter.utils.math_utils import hat, mat_exp,Jr_exp
 
 eps=1e-9
 
@@ -69,8 +69,6 @@ class ImuMSCKF:
             self.sigma_rel_t
         )
         self.t = 0.0
-        self.last_gyro_raw = None
-        self.last_accel_raw = None
 
     def initialize_with_state(self, t, R, v, p, bg, ba, P=None):
         """Reset the filter to a known nominal state and clear all clones."""
@@ -83,8 +81,6 @@ class ImuMSCKF:
         self.state.ba = ba.copy()
         self.state.clone_Rs = []
         self.state.clone_ps = []
-        self.last_gyro_raw = None
-        self.last_accel_raw = None
         if P is None:
             self.state.P = np.zeros((15, 15))
             self.state.P[0:3, 0:3] = np.eye(3) * (0.01)**2  
@@ -96,29 +92,21 @@ class ImuMSCKF:
             self.state.P = P.copy()
 
     def propagate(self, imu_data):
-        """Propagate the current IMU state using Mid-Point integration."""
+        """Propagate the current IMU state and covariance through queued IMU samples."""
+
         if len(imu_data) == 0:
             return
 
         for meas in imu_data:
             dt = meas.dt
-
-            if self.last_gyro_raw is None:
-                self.last_gyro_raw = meas.gyro
-                self.last_accel_raw = meas.accel
-
-            w_mid_raw = 0.5 * (self.last_gyro_raw + meas.gyro)
-            a_mid_raw = 0.5 * (self.last_accel_raw + meas.accel)
-
-            wm = w_mid_raw - self.state.bg
-            am = a_mid_raw - self.state.ba
+            wm = meas.gyro - self.state.bg
+            am = meas.accel - self.state.ba
 
             R_prev = self.state.R.copy()
             v_prev = self.state.v.copy()
             p_prev = self.state.p.copy()
 
             dR = mat_exp(wm * dt)
-            
             specific_force_world = R_prev @ am + self.g
 
             self.state.R = R_prev @ dR
@@ -128,8 +116,8 @@ class ImuMSCKF:
             self.state.P = propagate_covariance(
                 self.state.P,
                 R_prev,
-                wm,  
-                am, 
+                wm,
+                am,
                 dt,
                 self.sigma_ng,
                 self.sigma_na,
@@ -137,13 +125,7 @@ class ImuMSCKF:
                 self.sigma_nba,
             )
 
-            self.last_gyro_raw = meas.gyro
-            self.last_accel_raw = meas.accel
-
         self.t = imu_data[-1].timestamp
-        from filter.utils.math_utils import enforce_orthogonality
-        self.state.R = enforce_orthogonality(self.state.R)
-
 
     def augment_clone(self):
         """Append the current pose as a stochastic clone and expand covariance."""
@@ -192,8 +174,8 @@ class ImuMSCKF:
     def update(self, network_output):
         """Run the stacked TLEIO relative-pose EKF update on the three clones.
 
-        The input is expected to contain the transformer's raw `2 x 7` mean
-        output and, optionally, one joint `12 x 12` covariance for the stacked
+        The input is expected to contain the transformer's raw `2 x 3` mean
+        output and, optionally, one joint `6 x 6` covariance for the stacked
         residual space.
 
         `build_triplet_update()` returns the Jacobian of the residual itself,
@@ -262,19 +244,23 @@ def propagate_rvt_and_jac(R, v, p, bg, ba, wm_raw, am_raw, dt, g):
 
     wm = wm_raw - bg
     am = am_raw - ba
-    dR = mat_exp(wm * dt)
+
+    phi = wm * dt
+    dR = mat_exp(phi)
+    
     R_new = R @ dR
     v_new = v + (R @ am + g) * dt
     p_new = p + v * dt + 0.5 * (R @ am + g) * dt**2
 
-    F = np.zeros((15, 15))
-    F[0:3, 0:3] = -hat(wm)
-    F[0:3, 9:12] = -np.eye(3)
-    F[3:6, 0:3] = -R @ hat(am)
-    F[3:6, 12:15] = -R
-    F[6:9, 3:6] = np.eye(3)
+    Phi = np.eye(15)
+    Phi[0:3, 9:12] = -Jr_exp(phi) * dt
+    Phi[3:6, 0:3] = -R @ hat(am) * dt
+    Phi[3:6, 12:15] = -R * dt
+    Phi[6:9, 3:6] = np.eye(3) * dt
+    Phi[6:9, 0:3] = -0.5 * R @ hat(am) * dt**2
+    Phi[6:9, 12:15] = -0.5 * R * dt**2
+    Phi[0:3, 0:3] = dR.T 
 
-    Phi = np.eye(15) + F * dt
     return R_new, v_new, p_new, Phi
 
 
@@ -318,3 +304,4 @@ def propagate_covariance(P, R, wm, am, dt, sg, sa, sbg, sba):
     P_sym = 0.5 * (P_new + P_new.T)
     
     return P_sym + eps * np.eye(P_sym.shape[0])
+

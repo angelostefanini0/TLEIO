@@ -285,7 +285,7 @@ def make_filter_args(sigma_rel_t: float, sigma_rel_r_rad: float) -> SimpleNamesp
     """Create the small argument namespace needed by the current EKF implementation."""
 
     return SimpleNamespace(
-        sigma_na=0.01,       #TUNE!
+        sigma_na=0.1,       #TUNE!
         sigma_ng=0.0001,      #TUNE! 
         sigma_nba=5e-3,     #TUNE! 
         sigma_nbg=5e-3,     #TUNE! 
@@ -677,32 +677,7 @@ def test_filter(
         measurement_times_s[1] - measurement_times_s[0], 1e-9
     )
 
-
-    # anchor_poses_path = Path(imu_path).parent / "anchor_poses.txt"
-    # anchor_poses_table = np.loadtxt(anchor_poses_path, comments="#",skiprows=1, ndmin=2)
-    # ap_times_s = anchor_poses_table[:, 0] * 1e-6
-    # ap_quaternions = normalize_quaternions(anchor_poses_table[:, 4:8].astype(np.float64))
-    # # ap_quaternions = normalize_quaternions(ap_quaternions_xyzw)
-    # ap_quaternions = fix_quaternion_signs(ap_quaternions)
-
-    # from filter.utils.math_utils import mat_log
-    # bias_estimates = []
-    # for i in range(len(ap_times_s) - 1):
-    #     dt = ap_times_s[i+1] - ap_times_s[i]
-    #     if dt < 1e-6:
-    #         continue
-    #     R_i = Rotation.from_quat(ap_quaternions[i]).as_matrix()
-    #     R_j = Rotation.from_quat(ap_quaternions[i+1]).as_matrix()
-    #     omega_true = mat_log(R_i.T @ R_j) / dt
-    #     mask = (imu_times_s >= ap_times_s[i]) & (imu_times_s < ap_times_s[i+1])
-    #     if mask.sum() == 0:
-    #         continue
-    #     gyro_mean = np.mean(raw_gyro[mask], axis=0)
-    #     bias_estimates.append(gyro_mean - omega_true)
-
-    # initial_bg = np.mean(bias_estimates, axis=0) if bias_estimates else np.zeros(3)
     initial_bg = np.zeros(3)
-    initial_ba = np.zeros(3)
     accel_mean = np.mean(raw_accel[:50], axis=0)
     roll_init, pitch_init = estimate_roll_pitch_from_gravity(accel_mean)
     print(f"\n[INIT] IMU Estimate       -> Roll: {np.rad2deg(roll_init):.2f}°, Pitch: {np.rad2deg(pitch_init):.2f}°")
