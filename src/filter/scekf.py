@@ -69,6 +69,8 @@ class ImuMSCKF:
             self.sigma_rel_t
         )
         self.t = 0.0
+        self.last_gyro_raw = None
+        self.last_accel_raw = None
 
     def initialize_with_state(self, t, R, v, p, bg, ba, P=None):
         """Reset the filter to a known nominal state and clear all clones."""
@@ -90,23 +92,41 @@ class ImuMSCKF:
             self.state.P[12:15, 12:15] = np.eye(3) * (0.01)**2
         else:
             self.state.P = P.copy()
+        self.last_gyro_raw = None
+        self.last_accel_raw = None
 
     def propagate(self, imu_data):
-        """Propagate the current IMU state and covariance through queued IMU samples."""
-
+        """Propagate the current IMU state using Mid-Point integration."""
         if len(imu_data) == 0:
             return
 
         for meas in imu_data:
             dt = meas.dt
-            wm = meas.gyro - self.state.bg
-            am = meas.accel - self.state.ba
+            
+            # Se è la prima misurazione in assoluto, non abbiamo un "passato",
+            # usiamo la misurazione attuale due volte.
+            if self.last_gyro_raw is None:
+                self.last_gyro_raw = meas.gyro
+                self.last_accel_raw = meas.accel
+
+            # 1. Calcolo del punto medio per il giroscopio e l'accelerometro
+            w_mid_raw = 0.5 * (self.last_gyro_raw + meas.gyro)
+            a_mid_raw = 0.5 * (self.last_accel_raw + meas.accel)
+
+            # 2. Sottrazione dei Bias dal punto medio
+            wm = w_mid_raw - self.state.bg
+            am = a_mid_raw - self.state.ba
 
             R_prev = self.state.R.copy()
             v_prev = self.state.v.copy()
             p_prev = self.state.p.copy()
 
+            # 3. Integrazione della rotazione usando il Mid-Point (wm)
             dR = mat_exp(wm * dt)
+            
+            # 4. Approssimazione della rotazione intermedia per accelerazione e gravità
+            # (R_prev @ dR calcola la R finale, usiamo la R_prev per l'accelerazione come standard, 
+            #  oppure R_mid = R_prev @ mat_exp(wm * dt * 0.5))
             specific_force_world = R_prev @ am + self.g
 
             self.state.R = R_prev @ dR
@@ -116,8 +136,8 @@ class ImuMSCKF:
             self.state.P = propagate_covariance(
                 self.state.P,
                 R_prev,
-                wm,
-                am,
+                wm,  # Passiamo il wm mediato anche alla covarianza
+                am,  # Passiamo l'am mediato anche alla covarianza
                 dt,
                 self.sigma_ng,
                 self.sigma_na,
@@ -125,7 +145,15 @@ class ImuMSCKF:
                 self.sigma_nba,
             )
 
+            # Salva la misurazione attuale per il prossimo ciclo
+            self.last_gyro_raw = meas.gyro
+            self.last_accel_raw = meas.accel
+
         self.t = imu_data[-1].timestamp
+        
+        # IMPORTANTE: Applica il Punto 1 alla fine!
+        from filter.utils.math_utils import enforce_orthogonality
+        self.state.R = enforce_orthogonality(self.state.R)
 
     def augment_clone(self):
         """Append the current pose as a stochastic clone and expand covariance."""
