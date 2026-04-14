@@ -285,10 +285,10 @@ def make_filter_args(sigma_rel_t: float, sigma_rel_r_rad: float) -> SimpleNamesp
     """Create the small argument namespace needed by the current EKF implementation."""
 
     return SimpleNamespace(
-        sigma_na=0.1,       #TUNE!
-        sigma_ng=0.0001,      #TUNE! 
-        sigma_nba=5e-3,     #TUNE! 
-        sigma_nbg=5e-3,     #TUNE! 
+        sigma_na  = 5.90e-03,   # accelerometer_noise_density (Accel Noise)
+        sigma_ng  = 3.19e-03,  # gyroscope_noise_density (Gyro Noise)
+        sigma_nba = 8.81e-05,   # accelerometer_random_walk (Accel Bias)
+        sigma_nbg = 3.99e-05,   # gyroscope_random_walk (Gyro Bias)    
         sigma_rel_t=sigma_rel_t,
         sigma_rel_r=sigma_rel_r_rad,
         meas_cov_scale=1.0,
@@ -527,7 +527,7 @@ def estimate_roll_pitch_from_gravity(accel_vector: np.ndarray) -> tuple[float, f
 def test_filter(
     imu_path: Path = ROOT / "data/eds/processed/00_peanuts_dark/imu.csv",
     gt_path: Path = ROOT / "data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt",
-    relative_motions_path: Path | None = ROOT / "data/eds/processed/00_peanuts_dark/v1_predicted_relative_motions.txt",
+    relative_motions_path: Path | None = ROOT / "data/eds/processed/00_peanuts_dark/relative_motions.txt",
     frame_timestamps_path: Path | None = ROOT / "data/eds/images_timestamps.txt",
     measurement_dt_ms: float = 75.0,
     use_frame_timestamps: bool = False,
@@ -678,18 +678,7 @@ def test_filter(
     )
 
     initial_bg = np.zeros(3)
-    accel_mean = np.mean(raw_accel[:50], axis=0)
-    roll_init, pitch_init = estimate_roll_pitch_from_gravity(accel_mean)
-    print(f"\n[INIT] IMU Estimate       -> Roll: {np.rad2deg(roll_init):.2f}°, Pitch: {np.rad2deg(pitch_init):.2f}°")
-    gt_euler_deg = Rotation.from_matrix(initial_rotation).as_euler('xyz', degrees=True)
-    print(f"[INIT] Ground Truth  -> Roll: {gt_euler_deg[0]:.2f}°, Pitch: {gt_euler_deg[1]:.2f}°")
-    g_world_estimated = initial_rotation @ (-accel_mean)
-    g_world_normalized = g_world_estimated / np.linalg.norm(g_world_estimated) * 9.80665
-    ekf.g = g_world_normalized
-    accel_world = initial_rotation @ accel_mean
-    gravity_world = -ekf.g  # gravity = -g_vector
-    accel_bias_world = accel_world - gravity_world
-    initial_ba = initial_rotation.T @ accel_bias_world
+    initial_ba=np.zeros(3)
 
     ekf.initialize_with_state(
         measurement_times_s[0],
@@ -968,7 +957,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--relative_motions",
         type=Path,
-        default=ROOT / "data/eds/processed/00_peanuts_dark/v1_predicted_relative_motions.txt",
+        default=ROOT / "data/eds/processed/00_peanuts_dark/relative_motions.txt",
         help="Processed adjacent-anchor relative poses used to build overlapping `2 x 7` EKF updates.",
     )
     parser.add_argument("--frames", type=Path, default=ROOT / "data/eds/images_timestamps.txt")
