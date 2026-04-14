@@ -76,14 +76,9 @@ def mat_exp(omega):
 mat_exp_vec = np.vectorize(mat_exp, signature="(3)->(3,3)")
 
 def enforce_orthogonality(R):
-    """
-    Forza una matrice 3x3 a tornare una matrice di rotazione ortogonale valida.
-    Usa la decomposizione SVD per trovare la matrice SO(3) più vicina.
-    """
     U, _, Vt = np.linalg.svd(R)
     R_ortho = U @ Vt
     
-    # Verifica che sia una rotazione e non una riflessione (determinante deve essere +1, non -1)
     if np.linalg.det(R_ortho) < 0:
         U[:, 2] *= -1
         R_ortho = U @ Vt
