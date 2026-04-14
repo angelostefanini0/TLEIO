@@ -86,7 +86,7 @@ class ImuMSCKF:
             self.state.P[0:3, 0:3] = np.eye(3) * (0.01)**2  
             self.state.P[6:9, 6:9] = np.eye(3) * (0.01)**2  
             self.state.P[3:6, 3:6] = np.eye(3) * (0.5)**2   
-            self.state.P[9:12, 9:12] = np.eye(3) * (0.01)**2
+            self.state.P[9:12, 9:12] = np.eye(3) * (0.05)**2
             self.state.P[12:15, 12:15] = np.eye(3) * (0.2)**2
         else:
             self.state.P = P.copy()
@@ -260,6 +260,8 @@ def propagate_rvt_and_jac(R, v, p, bg, ba, wm_raw, am_raw, dt, g):
     Phi[6:9, 0:3] = -0.5 * R @ hat(am) * dt**2
     Phi[6:9, 12:15] = -0.5 * R * dt**2
     Phi[0:3, 0:3] = dR.T 
+    Phi[3:6, 9:12] = 0.5 * R @ hat(am) * dt**2
+    Phi[6:9, 9:12] = (1.0 / 6.0) * R @ hat(am) * dt**3
 
     return R_new, v_new, p_new, Phi
 
