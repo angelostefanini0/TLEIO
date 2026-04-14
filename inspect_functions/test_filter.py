@@ -286,7 +286,7 @@ def make_filter_args(sigma_rel_t: float, sigma_rel_r_rad: float) -> SimpleNamesp
 
     return SimpleNamespace(
         sigma_na  = 5.90e-03,   # accelerometer_noise_density (Accel Noise)
-        sigma_ng  = 3.19e-03,  # gyroscope_noise_density (Gyro Noise)
+        sigma_ng  = 9.57e-03,  # gyroscope_noise_density (Gyro Noise)
         sigma_nba = 8.81e-05,   # accelerometer_random_walk (Accel Bias)
         sigma_nbg = 3.99e-05,   # gyroscope_random_walk (Gyro Bias)    
         sigma_rel_t=sigma_rel_t,
@@ -699,6 +699,7 @@ def test_filter(
     dense_times_s = [measurement_times_s[0]]
     dense_estimated_positions = [ekf.state.p.copy()]
     dense_estimated_quaternions = [Rotation.from_matrix(ekf.state.R).as_quat()]
+    propagated_quaternions = [Rotation.from_matrix(ekf.state.R).as_quat()]
     propagated_position_errors = [0.0]
     corrected_position_errors = [0.0]
     propagated_rotation_errors = [0.0]
@@ -731,6 +732,7 @@ def test_filter(
         propagated_rotation_errors.append(
             rotation_error_deg(gt_quaternion, Rotation.from_matrix(ekf.state.R).as_quat())
         )
+        propagated_quaternions.append(Rotation.from_matrix(ekf.state.R).as_quat())
 
         ekf.augment_clone()
         # if frame_idx <= 3:
@@ -792,6 +794,12 @@ def test_filter(
 
     estimated_positions = np.asarray(estimated_positions)
     estimated_quaternions = np.asarray(estimated_quaternions)
+    propagated_quaternions = np.asarray(propagated_quaternions)
+    gt_euler = np.rad2deg(np.unwrap(Rotation.from_quat(anchor_quaternions).as_euler('xyz', degrees=False), axis=0))
+    est_euler = np.rad2deg(np.unwrap(Rotation.from_quat(estimated_quaternions).as_euler('xyz', degrees=False), axis=0))
+    prop_euler = np.rad2deg(np.unwrap(Rotation.from_quat(propagated_quaternions).as_euler('xyz', degrees=False), axis=0))
+    corr_rpy_rmse = np.sqrt(np.mean((est_euler - gt_euler)**2, axis=0))
+    prop_rpy_rmse = np.sqrt(np.mean((prop_euler - gt_euler)**2, axis=0))
     dense_times_s = np.asarray(dense_times_s)
     dense_estimated_positions = np.asarray(dense_estimated_positions)
     dense_estimated_quaternions = np.asarray(dense_estimated_quaternions)
@@ -918,6 +926,13 @@ def test_filter(
         "rotation_rmse_deg": float(np.sqrt(np.mean(corrected_rotation_errors**2))),
         "propagated_rotation_final_error_deg": float(propagated_rotation_errors[-1]),
         "rotation_final_error_deg": float(corrected_rotation_errors[-1]),
+        "propagated_roll_rmse_deg": float(prop_rpy_rmse[0]),
+        "propagated_pitch_rmse_deg": float(prop_rpy_rmse[1]),
+        "propagated_yaw_rmse_deg": float(prop_rpy_rmse[2]),
+        "roll_rmse_deg": float(corr_rpy_rmse[0]),
+        "pitch_rmse_deg": float(corr_rpy_rmse[1]),
+        "yaw_rmse_deg": float(corr_rpy_rmse[2]),
+        "propagated_rotation_final_error_deg": float(propagated_rotation_errors[-1]),
         "mean_position_improvement_m": float(np.mean(propagated_position_errors - corrected_position_errors)),
         "mean_rotation_improvement_deg": float(np.mean(propagated_rotation_errors - corrected_rotation_errors)),
         "num_frames": int(measurement_times_s.size),
@@ -1036,6 +1051,13 @@ def main() -> None:
     print(f"Rotation RMSE [deg]:         {results['rotation_rmse_deg']:.6f}")
     print(f"Propagated final rot [deg]:  {results['propagated_rotation_final_error_deg']:.6f}")
     print(f"Final rotation error [deg]:  {results['rotation_final_error_deg']:.6f}")
+    print(f"Propagated Roll RMSE [deg]:  {results['propagated_roll_rmse_deg']:.6f}")
+    print(f"Propagated Pitch RMSE [deg]: {results['propagated_pitch_rmse_deg']:.6f}")
+    print(f"Propagated Yaw RMSE [deg]:   {results['propagated_yaw_rmse_deg']:.6f}")
+    print(f"Roll RMSE [deg]:             {results['roll_rmse_deg']:.6f}")
+    print(f"Pitch RMSE [deg]:            {results['pitch_rmse_deg']:.6f}")
+    print(f"Yaw RMSE [deg]:              {results['yaw_rmse_deg']:.6f}")
+    print(f"Propagated final rot [deg]:  {results['propagated_rotation_final_error_deg']:.6f}")
     print(f"Mean pos improvement [m]:    {results['mean_position_improvement_m']:.6f}")
     print(f"Mean rot improvement [deg]:  {results['mean_rotation_improvement_deg']:.6f}")
     print(f"Mean residual norm:          {results['mean_residual_norm']:.6f}")
