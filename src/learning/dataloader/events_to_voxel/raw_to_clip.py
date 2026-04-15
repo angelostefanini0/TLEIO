@@ -118,10 +118,11 @@ class MultiEventVoxelClipDataset(Dataset):
         self.delta_t_us = delta_t_ms * 1000
 
         # Set event representation
+        # Set normalization to FALSE FOR testing
         self.voxel_grid = VoxelGrid(self.num_bins,
                                     self.new_height,
                                     self.new_width, 
-                                    normalize=True, 
+                                    normalize=False, 
                                     derotate=derotate)
 
         #Set the normalization stats to None: 
