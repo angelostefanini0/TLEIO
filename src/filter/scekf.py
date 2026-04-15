@@ -193,6 +193,18 @@ class ImuMSCKF:
 
         P = self.state.P
         innovation_covariance = H @ P @ H.T + R
+        mahalanobis_sq = residual.T @ np.linalg.solve(innovation_covariance, residual)
+        chi2_threshold=12.59 #95% accuracy
+        if mahalanobis_sq>chi2_threshold:
+            return {
+                "residual": residual,
+                "jacobian": H,
+                "measurement_covariance": R,
+                "innovation_covariance": innovation_covariance,
+                "kalman_gain": None,
+                "delta_x": None,
+                "rejected": True 
+            }
         PHt = P @ H.T
         K = np.linalg.solve(innovation_covariance.T, PHt.T).T
         delta_x = -K @ residual
