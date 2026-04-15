@@ -26,6 +26,11 @@ SEQUENCES = [
 ]
 
 BASE_URL = "https://download.ifi.uzh.ch/rpg/eds/dataset"
+CALIB_URL = (
+    "https://raw.githubusercontent.com/uzh-rpg/bundles-eds/refs/heads/master/"
+    "config/data/dual_setup/03_calib/"
+    "camchain-mediajaviJAVISdatasetshwdscalibratione2kalibr.yaml"
+)
 
 
 def parse_sequence_arg(value: str, allowed_names: list[str]) -> list[str]:
@@ -117,6 +122,15 @@ def maybe_strip_single_top_level_dir(seq_dir: Path) -> None:
     inner.rmdir()
 
 
+def ensure_calibration_file(seq_dir: Path) -> None:
+    calibration_path = seq_dir / "K.yaml"
+    if calibration_path.exists():
+        return
+
+    print(f"Downloading calibration to {calibration_path} ...")
+    download_file(CALIB_URL, calibration_path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download EDS dataset sequences.")
     parser.add_argument(
@@ -168,6 +182,7 @@ def main() -> None:
         seq_dir = raw_root / seq
 
         if seq_dir.exists() and any(seq_dir.iterdir()):
+            ensure_calibration_file(seq_dir)
             print(f"Skipping {seq}: already extracted at {seq_dir}")
             continue
 
@@ -179,6 +194,7 @@ def main() -> None:
         print(f"Extracting to {seq_dir} ...")
         extract_tgz(archive_path, seq_dir)
         maybe_strip_single_top_level_dir(seq_dir)
+        ensure_calibration_file(seq_dir)
 
         if args.remove_images:
             images_dir = seq_dir / "images"

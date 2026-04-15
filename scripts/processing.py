@@ -274,7 +274,19 @@ def process_gt(
 
         print(f"Processing: {filename} -> {dest_dir}")
         offset_timestamps(s_file, dest_dir, d_file, t0, delta_t_ms, anchor_hz)
-        
+
+
+def copy_calibration_if_present(source_h5: Path, dest_h5: Path) -> None:
+    source_dir = source_h5.parent
+    dest_dir = dest_h5.parent
+    calibration_path = source_dir / "K.yaml"
+    if not calibration_path.exists():
+        return
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(calibration_path, dest_dir / calibration_path.name)
+    print(f"Copied calibration: {calibration_path.name} -> {dest_dir}")
+
 
 def offset_timestamps(s_file: Path,
                       d_folder: Path, 
@@ -444,6 +456,7 @@ def main() -> None:
             
             if args.process_gt:
                 process_gt(event_path, output_path, args.process_gt, t0, args.delta_t_ms, args.anchor_hz)
+            copy_calibration_if_present(event_path, output_path)
         
         # delete recursively the raw input files if specified
         if args.remove_raw:

@@ -114,12 +114,12 @@ def T_to_pose(T: np.ndarray):
 def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
     """
     Supported row formats:
+    - Translation only: t0_us t1_us px py pz
     - Axis-vector: t0_us t1_us px py pz rx ry rz
     """
 
-    if row.shape[0] == 8:
+    if row.shape[0] == 5:
         T = np.eye(4, dtype=np.float64)
-        T[:3, :3] = rotvec_to_rotmat(row[5:8])
         T[:3, 3] = row[2:5]
         return T
 
@@ -130,11 +130,13 @@ def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
         return T
 
     raise ValueError(
-        f"Unsupported relative motion row with {row.shape[0]} columns. Expected 8"
+        f"Unsupported relative motion row with {row.shape[0]} columns. Expected 5 or 8."
     )
 
 
 def describe_rel_format(num_cols: int) -> str:
+    if num_cols == 5:
+        return "translation only"
     if num_cols == 8:
         return "axis-vector + translation"
     return f"unknown ({num_cols} cols)"
@@ -236,13 +238,13 @@ def main():
                         help="stamped_groundtruth.txt with columns: timestamp_us px py pz qx qy qz qw")
     parser.add_argument("--rel", type=Path, required=True,
                         help="relative_motions.txt with columns either: "
-                             "[t0_us t1_us px py pz rx ry rz]")
+                             "[t0_us t1_us px py pz] or [t0_us t1_us px py pz rx ry rz]")
     parser.add_argument("--save_dir", type=Path, default=None,
                         help="Optional directory to save figures instead of showing them")
     
     parser.add_argument("--gt_rel", type=Path, default=None,
                         help="Optional GT relative motions used to inspect partial network results.")
-    parser.add_argument("--gt_rel_mode", type=str, default="none",
+    parser.add_argument("--gt_rel_mode", type=str, default="rotation",
                         choices=["none", "rotation", "translation", "both"],
                         help="How to combine --rel with --gt_rel before integration. "
                              "Default 'rotation' keeps predicted translation and uses GT rotation.")
@@ -255,8 +257,8 @@ def main():
 
     if gt.shape[1] != 8:
         raise ValueError(f"{args.gt} has {gt.shape[1]} columns, expected 8.")
-    if rel.shape[1] != 8:
-        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 8")
+    if rel.shape[1] not in {5, 8}:
+        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 5 or 8")
     if gt_rel is not None and gt_rel.shape[1] != 8:
         raise ValueError(f"{args.gt_rel} has {gt_rel.shape[1]} columns, expected 8")
 
@@ -311,18 +313,24 @@ def main():
     ref_quat = normalize_quat(ref_quat)
 
     if gt_rel is not None:
-        rel_eval = rel.copy()
-        if args.gt_rel_mode == "rotation":
-            rel_eval[:, 5:8] = gt_rel[:, 5:8]
-        elif args.gt_rel_mode == "translation":
-            rel_eval[:, 2:5] = gt_rel[:, 2:5]
-        elif args.gt_rel_mode == "both":
-            rel_eval[:, 2:8] = gt_rel[:, 2:8]
+        rel_eval_trans = rel[:, 2:5].copy()
+        if rel.shape[1] == 8:
+            rel_eval_rot = rel[:, 5:8].copy()
+        else:
+            rel_eval_rot = np.zeros((len(rel), 3), dtype=np.float64)
 
-        pos_err = np.linalg.norm(rel_eval[:, 2:5] - gt_rel[:, 2:5], axis=1)
+        if args.gt_rel_mode == "rotation":
+            rel_eval_rot = gt_rel[:, 5:8].copy()
+        elif args.gt_rel_mode == "translation":
+            rel_eval_trans = gt_rel[:, 2:5].copy()
+        elif args.gt_rel_mode == "both":
+            rel_eval_trans = gt_rel[:, 2:5].copy()
+            rel_eval_rot = gt_rel[:, 5:8].copy()
+
+        pos_err = np.linalg.norm(rel_eval_trans - gt_rel[:, 2:5], axis=1)
         rel_quat = normalize_quat(
             np.stack(
-                [rotmat_to_quat(rotvec_to_rotmat(rv)) for rv in rel_eval[:, 5:8]],
+                [rotmat_to_quat(rotvec_to_rotmat(rv)) for rv in rel_eval_rot],
                 axis=0,
             )
         )
