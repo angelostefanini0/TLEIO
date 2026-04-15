@@ -9,11 +9,14 @@ from torch.utils.data import DataLoader
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+SRC_DIR = REPO_ROOT / "src"
+for path in (REPO_ROOT, SRC_DIR):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
 
-from src.learning.network.build_model import build_model
-from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
+from learning.network.build_model import build_model
+from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 
 "python test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
 
@@ -85,6 +88,30 @@ def average_quaternions(quats):
     aligned = np.stack(aligned, axis=0)
     q = aligned.mean(axis=0)
     return q / np.linalg.norm(q)
+
+
+def rotvec_to_quat(rotvec):
+    rotvec = np.asarray(rotvec, dtype=np.float64)
+    theta = np.linalg.norm(rotvec, axis=-1, keepdims=True)
+    half_theta = 0.5 * theta
+
+    scale = np.empty_like(theta)
+    small = theta < 1e-12
+    scale[~small] = np.sin(half_theta[~small]) / theta[~small]
+    scale[small] = 0.5
+
+    quat_xyz = rotvec * scale
+    quat_w = np.cos(half_theta)
+
+    quat = np.concatenate([quat_xyz, quat_w], axis=-1)
+    return normalize_quat(quat)
+
+
+def pose6d_to_output_row(pose6d):
+    pose6d = np.asarray(pose6d, dtype=np.float64)
+    transl = pose6d[..., :3]
+    quat = rotvec_to_quat(pose6d[..., 3:])
+    return np.concatenate([transl, quat], axis=-1)
 
 
 def load_inference_args(checkpoint_file: Path):
@@ -170,7 +197,9 @@ def average_overlapping_predictions(prediction_store):
 
     for key in sorted(prediction_store.keys()):
         values = np.stack(prediction_store[key], axis=0)
-        rows.append(values.mean(axis=0))
+        avg_translation = values[:, :3].mean(axis=0)
+        avg_quat = average_quaternions(rotvec_to_quat(values[:, 3:6]))
+        rows.append(np.concatenate([avg_translation, avg_quat], axis=0))
         timestamps.append(key)
 
     rows_pred = np.asarray(rows, dtype=np.float64)
@@ -200,11 +229,11 @@ def collect_last_step_predictions(loader, model, device, infer_args, target_mean
                 anc_i = anchors[i]
 
                 if batch_idx == 0 and i == 0:
-                    preds.append(y_hat_tr[i, 0])
+                    preds.append(pose6d_to_output_row(y_hat_tr[i, 0]))
                     rel_t0_list.append(int(anc_i[0]))
                     rel_t1_list.append(int(anc_i[1]))
 
-                preds.append(y_hat_tr[i, -1])
+                preds.append(pose6d_to_output_row(y_hat_tr[i, -1]))
                 rel_t0_list.append(int(anc_i[-2]))
                 rel_t1_list.append(int(anc_i[-1]))
 
@@ -303,7 +332,7 @@ def main():
     np.savetxt(
         output_file,
         out,
-        fmt=["%d", "%d"] + ["%.10f"] * 9,
+        fmt=["%d", "%d"] + ["%.10f"] * 7,
         header="t0_us t1_us px py pz qx qy qz qw",
         comments=""
     )
