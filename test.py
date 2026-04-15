@@ -1,4 +1,5 @@
 import argparse
+import copy
 import json
 from pathlib import Path
 import sys
@@ -48,22 +49,25 @@ ARGS = {
     "attn_dropout": 0.1,
     "ff_dropout": 0.1,
     "time_only": False,
-    "model_params": {
-        "embed_dim": 384,
-        "patch_size": 16,
-        "attention_type": "divided_space_time",
-        "num_frames": 3,
-        "num_classes": 18,
-        "depth": 6,
-        "heads": 6,
-        "dim_head": 64,
-        "attn_dropout": 0.1,
-        "ff_dropout": 0.1,
-        "time_only": False,
-    },
     "epoch_init": 1,
     "best_val": float("inf"),
 }
+
+
+def build_model_params(args_dict):
+    return {
+        "embed_dim": args_dict["embed_dim"],
+        "patch_size": args_dict["patch_size"],
+        "attention_type": args_dict["attention_type"],
+        "num_frames": args_dict["clip_len"],
+        "num_classes": 9 * (args_dict["clip_len"] - 1),
+        "depth": args_dict["depth"],
+        "heads": args_dict["heads"],
+        "dim_head": args_dict["dim_head"],
+        "attn_dropout": args_dict["attn_dropout"],
+        "ff_dropout": args_dict["ff_dropout"],
+        "time_only": args_dict["time_only"],
+    }
 
 
 def normalize_quat(q):
@@ -85,36 +89,27 @@ def average_quaternions(quats):
 
 def load_inference_args(checkpoint_file: Path):
     args_file = checkpoint_file.parent / "args.txt"
+    defaults = copy.deepcopy(ARGS)
+
     if not args_file.exists():
-        return ARGS.copy()
+        defaults["model_params"] = build_model_params(defaults)
+        return defaults
 
     with open(args_file, "r") as f:
         loaded = json.load(f)
 
-    if "model_params" not in loaded:
-        loaded["model_params"] = {
-            "embed_dim": loaded["embed_dim"],
-            "patch_size": loaded["patch_size"],
-            "attention_type": loaded["attention_type"],
-            "num_frames": loaded["clip_len"],
-            "num_classes": 9 * (loaded["clip_len"] - 1),
-            "depth": loaded["depth"],
-            "heads": loaded["heads"],
-            "dim_head": loaded["dim_head"],
-            "attn_dropout": loaded["attn_dropout"],
-            "ff_dropout": loaded["ff_dropout"],
-            "time_only": loaded["time_only"],
-        }
+    defaults.update(loaded)
 
-    loaded.setdefault("downsampling_factor", 1.0)
-    loaded.setdefault("denoising", False)
-    loaded.setdefault("denoise_dt_us", 1000)
-    loaded.setdefault("denoise_radius", 1)
-    loaded.setdefault("denoise_min_supporters", 1)
-    loaded.setdefault("denoise_same_polarity_only", False)
-    loaded["checkpoint"] = None
-    loaded["checkpoint_path"] = str(checkpoint_file.parent)
-    return loaded
+    defaults.setdefault("downsampling_factor", 1.0)
+    defaults.setdefault("denoising", False)
+    defaults.setdefault("denoise_dt_us", 1000)
+    defaults.setdefault("denoise_radius", 1)
+    defaults.setdefault("denoise_min_supporters", 1)
+    defaults.setdefault("denoise_same_polarity_only", False)
+    defaults["model_params"] = build_model_params(defaults)
+    defaults["checkpoint"] = None
+    defaults["checkpoint_path"] = str(checkpoint_file.parent)
+    return defaults
 
 
 def build_inference_dataset(sequence_dir: Path, args_dict):
@@ -252,6 +247,12 @@ def main():
     parser.add_argument("--checkpoint_file", type=str, required=True)
     parser.add_argument("--output_file", type=str, required=True)
     parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=0,
+        help="Number of dataloader workers to use during inference.",
+    )
+    parser.add_argument(
         "--average_overlaps",
         action="store_true",
         help="Average predictions that correspond to the same displacement across overlapping clips.",
@@ -263,14 +264,14 @@ def main():
     output_file = Path(args_cli.output_file)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    infer_args = ARGS.copy()
+    infer_args = load_inference_args(checkpoint_file)
     dataset = build_inference_dataset(sequence_dir, infer_args)
 
     loader = DataLoader(
         dataset,
-        batch_size=2,
+        batch_size=infer_args["b_size"],
         shuffle=False,
-        num_workers=0,
+        num_workers=max(args_cli.num_workers, 0),
         pin_memory=torch.cuda.is_available(),
         drop_last=False,
     )
@@ -302,7 +303,7 @@ def main():
     np.savetxt(
         output_file,
         out,
-        fmt=["%d", "%d"] + ["%.10f"] * 7,
+        fmt=["%d", "%d"] + ["%.10f"] * 9,
         header="t0_us t1_us px py pz qx qy qz qw",
         comments=""
     )
