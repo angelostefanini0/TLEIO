@@ -1,4 +1,5 @@
 import argparse
+import copy
 import json
 from pathlib import Path
 import sys
@@ -8,11 +9,14 @@ from torch.utils.data import DataLoader
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+SRC_DIR = REPO_ROOT / "src"
+for path in (REPO_ROOT, SRC_DIR):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
 
-from src.learning.network.build_model import build_model
-from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
+from learning.network.build_model import build_model
+from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 
 "python test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
 
@@ -66,6 +70,22 @@ ARGS = {
 }
 
 
+def build_model_params(args_dict):
+    return {
+        "embed_dim": args_dict["embed_dim"],
+        "patch_size": args_dict["patch_size"],
+        "attention_type": args_dict["attention_type"],
+        "num_frames": args_dict["clip_len"],
+        "num_classes": 9 * (args_dict["clip_len"] - 1),
+        "depth": args_dict["depth"],
+        "heads": args_dict["heads"],
+        "dim_head": args_dict["dim_head"],
+        "attn_dropout": args_dict["attn_dropout"],
+        "ff_dropout": args_dict["ff_dropout"],
+        "time_only": args_dict["time_only"],
+    }
+
+
 def normalize_quat(q):
     n = np.linalg.norm(q, axis=-1, keepdims=True)
     n = np.maximum(n, 1e-12)
@@ -83,10 +103,37 @@ def average_quaternions(quats):
     return q / np.linalg.norm(q)
 
 
+def rotvec_to_quat(rotvec):
+    rotvec = np.asarray(rotvec, dtype=np.float64)
+    theta = np.linalg.norm(rotvec, axis=-1, keepdims=True)
+    half_theta = 0.5 * theta
+
+    scale = np.empty_like(theta)
+    small = theta < 1e-12
+    scale[~small] = np.sin(half_theta[~small]) / theta[~small]
+    scale[small] = 0.5
+
+    quat_xyz = rotvec * scale
+    quat_w = np.cos(half_theta)
+
+    quat = np.concatenate([quat_xyz, quat_w], axis=-1)
+    return normalize_quat(quat)
+
+
+def pose6d_to_output_row(pose6d):
+    pose6d = np.asarray(pose6d, dtype=np.float64)
+    transl = pose6d[..., :3]
+    quat = rotvec_to_quat(pose6d[..., 3:])
+    return np.concatenate([transl, quat], axis=-1)
+
+
 def load_inference_args(checkpoint_file: Path):
     args_file = checkpoint_file.parent / "args.txt"
+    defaults = copy.deepcopy(ARGS)
+
     if not args_file.exists():
-        return ARGS.copy()
+        defaults["model_params"] = build_model_params(defaults)
+        return defaults
 
     with open(args_file, "r") as f:
         loaded = json.load(f)
@@ -188,7 +235,9 @@ def average_overlapping_predictions(prediction_store):
 
     for key in sorted(prediction_store.keys()):
         values = np.stack(prediction_store[key], axis=0)
-        rows.append(values.mean(axis=0))
+        avg_translation = values[:, :3].mean(axis=0)
+        avg_quat = average_quaternions(rotvec_to_quat(values[:, 3:6]))
+        rows.append(np.concatenate([avg_translation, avg_quat], axis=0))
         timestamps.append(key)
 
     rows_pred = np.asarray(rows, dtype=np.float64)
@@ -217,11 +266,11 @@ def collect_last_step_predictions(loader, model, device, infer_args, target_mean
                 anc_i = anchors[i]
 
                 if batch_idx == 0 and i == 0:
-                    preds.append(y_hat_tr[i, 0])
+                    preds.append(pose6d_to_output_row(y_hat_tr[i, 0]))
                     rel_t0_list.append(int(anc_i[0]))
                     rel_t1_list.append(int(anc_i[1]))
 
-                preds.append(y_hat_tr[i, -1])
+                preds.append(pose6d_to_output_row(y_hat_tr[i, -1]))
                 rel_t0_list.append(int(anc_i[-2]))
                 rel_t1_list.append(int(anc_i[-1]))
 
@@ -263,6 +312,12 @@ def main():
     parser.add_argument("--checkpoint_file", type=str, required=True)
     parser.add_argument("--output_file", type=str, required=True)
     parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=0,
+        help="Number of dataloader workers to use during inference.",
+    )
+    parser.add_argument(
         "--average_overlaps",
         action="store_true",
         help="Average predictions that correspond to the same displacement across overlapping clips.",
@@ -274,14 +329,14 @@ def main():
     output_file = Path(args_cli.output_file)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    infer_args = ARGS.copy()
+    infer_args = load_inference_args(checkpoint_file)
     dataset = build_inference_dataset(sequence_dir, infer_args)
 
     loader = DataLoader(
         dataset,
-        batch_size=2,
+        batch_size=infer_args["b_size"],
         shuffle=False,
-        num_workers=0,
+        num_workers=max(args_cli.num_workers, 0),
         pin_memory=torch.cuda.is_available(),
         drop_last=False,
     )
