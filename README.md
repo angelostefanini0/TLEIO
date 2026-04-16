@@ -110,7 +110,6 @@ When denoising is enabled, the overlay shows `kept/raw` event counts so it is ea
 Run the `main_network.py` script to train the model. A bunch of arguments can be passed for general data handling, optimization strategies and model parameters.
 
 Important parameters:
-- `weighted_loss` has to be set to `0` if we only want to regress translation.
 - `downsampling_factor` decreases the event image resolution before voxelization.
 - The downsampled spatial size must stay divisible by `patch_size`. For example, with `patch_size=16`, `downsampling_factor=0.7` gives `336x448`, which is valid.
 - `denoising` enables the shared background-activity filter before voxelization.
@@ -127,20 +126,20 @@ python src/main_network.py \
 --b_size 2 \
 --depth 12 \
 --heads 6 \
---num_workers 4 \
+--num_workers 8 \
 --downsampling_factor 0.7 \
 --denoising true \
---denoise_dt_us 1000 \
+--denoise_dt_us 2000 \
 --denoise_radius 1 \
---denoise_min_supporters 1 \ 
---weighted_loss 0.0
+--denoise_min_supporters 2 \
+--derotate true
 
 ```
 
 ## 6. Testing the model: 
 Run the `test.py` script to test the model and save the motions into a file.
 
-The script reads `args.txt` from the checkpoint directory, so the same training-time settings for downsampling and denoising are reused automatically during inference. You can also enable `--average_overlaps` to average multiple predictions that correspond to the same relative motion.
+The script reads `args.txt` from the checkpoint directory, so the same training-time settings for downsampling and denoising are reused automatically during inference. You can also enable `--average_overlaps` to average multiple predictions that correspond to the same relative motion. Translation-only checkpoints now save `t0_us t1_us px py pz`.
 
 ```bash
 python test.py \
@@ -151,7 +150,7 @@ python test.py \
 ```
 
 ## 7. Inspection of model output: 
-Run the `inspect_relative_motions.py` script to see how the model predicition compares to the GT. `gt` argument expects the stamped groundtruth, `rel` expects the predicted motions from the network, `gt_rel` expects the groundtruth relative motions, `gt_rel_mode` expects one of `[rotation, translation, both,]`. If `rotation` is used, the output will be the model predicted translation with gt rotation, if `translation` is used, the output will be the model predicted rotation, with gt translation, if `both` is used, the output will be the full gt relative motion.
+Run the `inspect_relative_motions.py` script to see how the model predicition compares to the GT. `gt` expects the stamped groundtruth, `rel` accepts either translation-only predictions `[t0_us t1_us px py pz]` or full relative motions `[t0_us t1_us px py pz rx ry rz]`, `gt_rel` expects the groundtruth relative motions, and `gt_rel_mode` expects one of `[rotation, translation, both]`. With translation-only predictions, `rotation` is usually the most useful mode because it fuses predicted translation with GT rotation.
 
 ```bash
 python inspect_functions/inspect_relative_motions.py \

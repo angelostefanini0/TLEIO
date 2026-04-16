@@ -1,14 +1,21 @@
 import os
+import sys
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 import pickle
 import json
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from learning.network.train import *
 from learning.network.build_model import *
 from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 import argparse
-from pathlib import Path
 
 
 def str2bool(v):
@@ -47,6 +54,8 @@ def parse_args():
                         help="minimum recent neighboring events required to keep an event")
     parser.add_argument("--denoise_same_polarity_only", type=str2bool, default=False,
                         help="require denoising support to come from the same polarity")
+    parser.add_argument("--derotate", type=str2bool, default=False,
+                        help="derotate events into a reference frame at the voxel anchor")
                        
     # optimization
     parser.add_argument("--optimizer", type=str, default="AdamW",
@@ -60,8 +69,6 @@ def parse_args():
     # training
     parser.add_argument("--epoch", type=int, default=100,
                         help="train iters each timestep")
-    parser.add_argument("--weighted_loss", type=float, default=None,
-                        help="float to weight angles in loss function")
     parser.add_argument("--pretrained_ViT", type=str2bool, default=False,
                         help="load weights from pre-trained ViT")
     parser.add_argument("--num_workers", type=int, default=0, 
@@ -93,7 +100,7 @@ def parse_args():
         "patch_size": args["patch_size"],
         "attention_type": args["attention_type"],
         "num_frames": args["clip_len"],
-        "num_classes": 9 * (args["clip_len"] - 1),
+        "num_classes": 3 * (args["clip_len"] - 1),
         "depth": args["depth"],
         "heads": args["heads"],
         "dim_head": args["dim_head"],
@@ -122,15 +129,6 @@ if __name__ == "__main__":
 
     # tensorboard writer
     TensorBoardWriter = SummaryWriter(log_dir=args["checkpoint_path"])
-    #TODO: Investigate if we need to do normalization within a batch or at the dataset level
-    # preprocessing operation
-    # preprocess = transforms.Compose([
-    #     transforms.Resize((model_params["image_size"])),
-    #     transforms.ToTensor(),
-    #     transforms.Normalize(
-    #         mean=[0.34721234, 0.36705238, 0.36066107],
-    #         std=[0.30737526, 0.31515116, 0.32020183]),
-    # ])
 
     # train and val dataloader
     print("Using CUDA: ", torch.cuda.is_available())
@@ -148,6 +146,7 @@ if __name__ == "__main__":
         denoise_radius=args["denoise_radius"],
         denoise_min_supporters=args["denoise_min_supporters"],
         denoise_same_polarity_only=args["denoise_same_polarity_only"],
+        derotate=args["derotate"]
     )
 
     val_data = MultiEventVoxelClipDataset(
@@ -157,6 +156,12 @@ if __name__ == "__main__":
         clip_len=args["clip_len"],
         downsampling_factor=args["downsampling_factor"],
         patch_size=args["patch_size"],
+        denoising=args["denoising"],
+        denoise_dt_us=args["denoise_dt_us"],
+        denoise_radius=args["denoise_radius"],
+        denoise_min_supporters=args["denoise_min_supporters"],
+        denoise_same_polarity_only=args["denoise_same_polarity_only"],
+        derotate=args["derotate"]
     )
 
     # Compute the mean and std only on training data

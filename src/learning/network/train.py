@@ -2,67 +2,44 @@ import os
 import torch
 import torch.optim as optim
 from tqdm import tqdm
-import torch.nn.functional as F
 
 
 torch.manual_seed(2026)
 
 
-def reshape_predictions(y_hat, batch_size, args):
-    expected_dim = (args["clip_len"] - 1) * 9
-    if y_hat.ndim != 2 or y_hat.shape[1] != expected_dim:
-        raise ValueError(
-            "Model output dimension mismatch: "
-            f"expected [B, {expected_dim}] for clip_len={args['clip_len']}, "
-            f"got {tuple(y_hat.shape)}."
-        )
-    return y_hat.view(batch_size, args["clip_len"] - 1, 9)
-
-
 def val_epoch(model, val_loader, criterion, args):
     epoch_loss = 0
-    epoch_tr_loss = 0
-    epoch_rot_loss = 0
 
     with tqdm(val_loader, unit="batch") as tepoch:
         for batch in tepoch:
             x = batch["representation" ] # B, C, T, H, W
-            y = batch["target"] #B, T - 1, 6
+            y = batch["target"] # B, T - 1, 3
             tepoch.set_description(f"Validating ")
             if torch.cuda.is_available():
                 x = x.cuda(non_blocking=True)
                 y = y.cuda(non_blocking=True)
 
             # predict transformation
-            estimated_transf = model(x.float()) # model returns [B, (T-1)*9]
-            estimated_transf = reshape_predictions(estimated_transf, x.shape[0], args)
+            estimated_transf = model(x.float()) # model returns [B, (T-1)*3]
+            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 3) # safe reshaping
 
             # compute loss
-            tr_loss, rot_loss = compute_loss(estimated_transf, y, criterion, args)
-            loss = tr_loss + rot_loss
+            loss = compute_loss(estimated_transf, y, criterion, args)
 
-            #log three losses
+            # log loss
             epoch_loss += loss.item()
-            epoch_tr_loss += tr_loss.item()
-            epoch_rot_loss += rot_loss.item()
 
             tepoch.set_postfix(
                 loss=f"{loss.item():.4f}",
-                tr=f"{tr_loss.item():.4f}",
-                rot=f"{rot_loss.item():.4f}",
             )
             
         avg_total = epoch_loss / len(val_loader)
-        avg_tr = epoch_tr_loss / len(val_loader)
-        avg_rot = epoch_rot_loss / len(val_loader)
 
-    return avg_total, avg_tr, avg_rot
+    return avg_total
 
 
 def train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_writer, args):
     epoch_loss = 0
-    epoch_tr_loss = 0
-    epoch_rot_loss = 0
     iter = (epoch - 1) * len(train_loader) + 1
 
     with tqdm(train_loader, unit="batch") as tepoch:
@@ -70,7 +47,7 @@ def train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_wr
             tepoch.set_description(f"Epoch {epoch}")
             
             x = batch["representation"] # B, C, T, H, W
-            y = batch["target"] #B, T - 1, 6
+            y = batch["target"] # B, T - 1, 3
             
             if torch.cuda.is_available():
                 x = x.cuda(non_blocking=True)
@@ -78,26 +55,21 @@ def train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_wr
 
             # predict transformation
             estimated_transf = model(x.float())
-            estimated_transf = reshape_predictions(estimated_transf, x.shape[0], args)
+            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 3)
 
             # compute loss
-            tr_loss, rot_loss = compute_loss(estimated_transf, y, criterion, args)
-            loss = tr_loss + rot_loss
+            loss = compute_loss(estimated_transf, y, criterion, args)
 
             # compute gradient and do optimizer step
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
 
-            #log three losses
+            # log loss
             epoch_loss += loss.item()
-            epoch_tr_loss += tr_loss.item()
-            epoch_rot_loss += rot_loss.item()
 
             tepoch.set_postfix(
                 loss=f"{loss.item():.4f}",
-                tr=f"{tr_loss.item():.4f}",
-                rot=f"{rot_loss.item():.4f}",
             )
             # log tensorboard
             tensorboard_writer.add_scalar('training_loss', loss.item(), iter)
@@ -105,10 +77,8 @@ def train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_wr
             
         
         avg_total = epoch_loss / len(train_loader)
-        avg_tr = epoch_tr_loss / len(train_loader)
-        avg_rot = epoch_rot_loss / len(train_loader)
    
-    return avg_total, avg_tr, avg_rot
+    return avg_total
   
 
 def train(model, train_loader, val_loader, criterion, optimizer, tensorboard_writer, args, stats):
@@ -120,18 +90,18 @@ def train(model, train_loader, val_loader, criterion, optimizer, tensorboard_wri
     for epoch in range(init, epochs +1):
         # training for one epoch
         model.train()
-        train_loss, train_tr_loss, train_rot_loss = train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_writer, args)
+        train_loss = train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_writer, args)
 
         # validate model
         if val_loader:
             with torch.no_grad():
                 model.eval()
-                val_loss, val_tr_loss, val_rot_loss = val_epoch(model, val_loader, criterion, args)
+                val_loss = val_epoch(model, val_loader, criterion, args)
 
             tqdm.write(
                 f"Epoch {epoch} | "
-                f"train total={train_loss:.4f} tr={train_tr_loss:.4f} rot={train_rot_loss:.4f} | "
-                f"val total={val_loss:.4f} tr={val_tr_loss:.4f} rot={val_rot_loss:.4f}"
+                f"train loss={train_loss:.4f} | "
+                f"val loss={val_loss:.4f}"
             )
 
             # if parallelized, you need to extract the raw model
@@ -195,19 +165,7 @@ def get_optimizer(params, args):
 
 
 def compute_loss(y_hat, y, criterion, args):
-    y = y.reshape(y.shape[0], args["clip_len"] - 1, 6).float()
-    y_hat = y_hat.reshape(y_hat.shape[0], args["clip_len"] - 1, 9)
-
-    gt_transl = y[..., :3]
-    gt_rotvec = y[..., 3:]
-
-    estimated_transl = y_hat[..., :3]
-    estimated_rotvec = y_hat[..., 3:6]
-    estimated_cov = y_hat[..., 6:]
-
-    loss_translation = criterion(estimated_transl, gt_transl)
-    loss_rot = criterion(estimated_rotvec, gt_rotvec)
-
-    k = 1.0 if args["weighted_loss"] is None else args["weighted_loss"]
-    return loss_translation , k * loss_rot
+    y = y.reshape(y.shape[0], args["clip_len"] - 1, 3).float()
+    y_hat = y_hat.reshape(y_hat.shape[0], args["clip_len"] - 1, 3)
+    return criterion(y_hat, y)
     

@@ -33,14 +33,14 @@ ARGS = {
     "denoise_radius": 1,
     "denoise_min_supporters": 2,
     "denoise_same_polarity_only": False,
-    "optimizer": "Adam",
-    "lr": 2e-05,
+    "derotate": True,
+    "optimizer": "AdamW",
+    "lr": 1e-05,
     "momentum": 0.9,
     "weight_decay": 0.0001,
     "epoch": 100,
-    "weighted_loss": 0.0,
     "pretrained_ViT": False,
-    "num_workers": 6,
+    "num_workers": 4,
     "checkpoint_path": "checkpoints",
     "checkpoint": None,
     "embed_dim": 384,
@@ -52,6 +52,19 @@ ARGS = {
     "attn_dropout": 0.1,
     "ff_dropout": 0.1,
     "time_only": False,
+    "model_params": {
+        "embed_dim": 384,
+        "patch_size": 16,
+        "attention_type": "divided_space_time",
+        "num_frames": 3,
+        "num_classes": 6,
+        "depth": 12,
+        "heads": 6,
+        "dim_head": 64,
+        "attn_dropout": 0.1,
+        "ff_dropout": 0.1,
+        "time_only": False,
+    },
     "epoch_init": 1,
     "best_val": float("inf"),
 }
@@ -125,18 +138,33 @@ def load_inference_args(checkpoint_file: Path):
     with open(args_file, "r") as f:
         loaded = json.load(f)
 
-    defaults.update(loaded)
+    if "model_params" not in loaded:
+        loaded["model_params"] = {
+            "embed_dim": loaded["embed_dim"],
+            "patch_size": loaded["patch_size"],
+            "attention_type": loaded["attention_type"],
+            "num_frames": loaded["clip_len"],
+            "num_classes": 3 * (loaded["clip_len"] - 1),
+            "depth": loaded["depth"],
+            "heads": loaded["heads"],
+            "dim_head": loaded["dim_head"],
+            "attn_dropout": loaded["attn_dropout"],
+            "ff_dropout": loaded["ff_dropout"],
+            "time_only": loaded["time_only"],
+        }
+    else:
+        loaded["model_params"]["num_classes"] = 3 * (loaded["clip_len"] - 1)
 
-    defaults.setdefault("downsampling_factor", 1.0)
-    defaults.setdefault("denoising", False)
-    defaults.setdefault("denoise_dt_us", 1000)
-    defaults.setdefault("denoise_radius", 1)
-    defaults.setdefault("denoise_min_supporters", 1)
-    defaults.setdefault("denoise_same_polarity_only", False)
-    defaults["model_params"] = build_model_params(defaults)
-    defaults["checkpoint"] = None
-    defaults["checkpoint_path"] = str(checkpoint_file.parent)
-    return defaults
+    loaded.setdefault("downsampling_factor", 1.0)
+    loaded.setdefault("denoising", False)
+    loaded.setdefault("denoise_dt_us", 1000)
+    loaded.setdefault("denoise_radius", 1)
+    loaded.setdefault("denoise_min_supporters", 1)
+    loaded.setdefault("denoise_same_polarity_only", False)
+    loaded.setdefault("derotate", False)
+    loaded["checkpoint"] = None
+    loaded["checkpoint_path"] = str(checkpoint_file.parent)
+    return loaded
 
 
 def build_inference_dataset(sequence_dir: Path, args_dict):
@@ -160,6 +188,7 @@ def build_inference_dataset(sequence_dir: Path, args_dict):
         denoise_radius=args_dict["denoise_radius"],
         denoise_min_supporters=args_dict["denoise_min_supporters"],
         denoise_same_polarity_only=args_dict["denoise_same_polarity_only"],
+        derotate=args_dict["derotate"],
     )
 
     if requested_sequence is None:
@@ -186,8 +215,17 @@ def load_target_stats(checkpoint, device):
     if target_mean is None or target_std is None:
         return None, None
 
-    target_mean = torch.as_tensor(target_mean, dtype=torch.float32, device=device).view(1, 1, 6)
-    target_std = torch.as_tensor(target_std, dtype=torch.float32, device=device).view(1, 1, 6)
+    target_mean = torch.as_tensor(target_mean, dtype=torch.float32, device=device).flatten()
+    target_std = torch.as_tensor(target_std, dtype=torch.float32, device=device).flatten()
+
+    if target_mean.numel() >= 3:
+        target_mean = target_mean[:3]
+        target_std = target_std[:3]
+    else:
+        raise ValueError("Checkpoint target statistics must have at least 3 elements.")
+
+    target_mean = target_mean.view(1, 1, 3)
+    target_std = target_std.view(1, 1, 3)
     return target_mean, target_std
 
 
@@ -217,8 +255,7 @@ def collect_last_step_predictions(loader, model, device, infer_args, target_mean
             x = batch["representation"].to(device).float()
             anchors = batch["anchors_us"].cpu().numpy()
             y_hat = model(x)
-            y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 9)
-            y_hat_tr = y_hat[..., 0:6]
+            y_hat_tr = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 3)
 
             if target_mean is not None and target_std is not None:
                 y_hat_tr = y_hat_tr * target_std + target_mean
@@ -253,8 +290,7 @@ def collect_averaged_predictions(loader, model, device, infer_args, target_mean,
             x = batch["representation"].to(device).float()
             anchors = batch["anchors_us"].cpu().numpy()
             y_hat = model(x)
-            y_hat = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 9)
-            y_hat_tr = y_hat[..., 0:6]
+            y_hat_tr = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 3)
 
             if target_mean is not None and target_std is not None:
                 y_hat_tr = y_hat_tr * target_std + target_mean
@@ -332,8 +368,8 @@ def main():
     np.savetxt(
         output_file,
         out,
-        fmt=["%d", "%d"] + ["%.10f"] * 7,
-        header="t0_us t1_us px py pz qx qy qz qw",
+        fmt=["%d", "%d"] + ["%.10f"] * 3,
+        header="t0_us t1_us px py pz",
         comments=""
     )
 

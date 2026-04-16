@@ -8,6 +8,11 @@ import bisect
 from ..representation.event_denoising import background_activity_filter_raw
 from ..representation.voxel_grid import VoxelGrid
 from .reader import EDSReader
+from .utils import (
+    build_derotation_context,
+    load_event_camera_matrix,
+    normalize_quaternions,
+)
 
 
 class MultiEventVoxelClipDataset(Dataset):
@@ -70,7 +75,8 @@ class MultiEventVoxelClipDataset(Dataset):
                  denoise_dt_us: int = 1000,
                  denoise_radius: int = 1,
                  denoise_min_supporters: int = 1,
-                 denoise_same_polarity_only: bool = False):
+                 denoise_same_polarity_only: bool = False, 
+                 derotate: bool = False):
         
         assert num_bins >= 1
         assert clip_len >= 1
@@ -104,11 +110,16 @@ class MultiEventVoxelClipDataset(Dataset):
         self.denoise_radius = denoise_radius
         self.denoise_min_supporters = denoise_min_supporters
         self.denoise_same_polarity_only = denoise_same_polarity_only
+        self.derotate = derotate
         #the duration of a voxel
         self.delta_t_us = delta_t_ms * 1000
 
         # Set event representation
-        self.voxel_grid = VoxelGrid(self.num_bins, self.new_height, self.new_width, normalize=True)
+        # Set normalization to FALSE FOR testing
+        self.voxel_grid = VoxelGrid(self.num_bins,
+                                    self.new_height,
+                                    self.new_width, 
+                                    derotate=derotate)
 
         #Set the normalization stats to None: 
         self.train_std = None
@@ -123,14 +134,45 @@ class MultiEventVoxelClipDataset(Dataset):
             gt_poses_fn = seq_path / "anchor_poses.txt"
             gt_rel_transf_fn = seq_path / "relative_motions.txt"
             events_file = seq_path / "events.h5"
+            gt_full_fn = seq_path / "stamped_groundtruth.txt"
 
             # skip folders that do not contain a valid processed sequence
             if not (gt_poses_fn.exists() and gt_rel_transf_fn.exists() and events_file.exists()):
                 continue
 
+            # stamped gt needed only when de-rotation happens 
+            if self.derotate and not gt_full_fn.exists():
+                raise FileNotFoundError(
+                    f"{seq_path}: derotation requires stamped_groundtruth.txt."
+                )
+
             anchor_poses = np.atleast_2d(np.loadtxt(gt_poses_fn, dtype=np.float64, skiprows=1))
             rel_transf = np.atleast_2d(np.loadtxt(gt_rel_transf_fn, dtype=np.float64, skiprows=1))
-            
+            seq_info = {
+                "seq_path": seq_path,
+                "events_file": events_file,
+                "anchors_us": anchor_poses[:, 0],
+                "rel_transf": rel_transf,
+            }
+
+            # De-rotation TRUE path
+            if self.derotate:
+                gt_full = np.atleast_2d(np.loadtxt(gt_full_fn, dtype=np.float64))
+                if gt_full.shape[1] < 8:
+                    raise ValueError(
+                        f"{gt_full_fn}: expected at least 8 columns, got {gt_full.shape[1]}"
+                    )
+                #Load timestamps, quaternions and camera matrix utilities for reprojection
+                seq_info["gt_timestamps_us"] = gt_full[:, 0].astype(np.int64)
+                seq_info["gt_quat_xyzw"] = normalize_quaternions(
+                    gt_full[:, 4:8].astype(np.float64)
+                )
+                seq_info["camera_matrix"] = load_event_camera_matrix(
+                    root_path=self.root_path,
+                    seq_path=seq_path,
+                    scale_x=self.scale_x,
+                    scale_y=self.scale_y,
+                )
 
             #Dimensionality checks
             if anchor_poses.shape[1] != 8:
@@ -143,15 +185,10 @@ class MultiEventVoxelClipDataset(Dataset):
                     f"{seq_path}: expected 8 columns in relative_motions.txt, got {rel_transf.shape[1]}"
                 )
 
-            anchors_us = anchor_poses[:, 0]
+            anchors_us = seq_info["anchors_us"]
             num_samples = max(0, len(anchors_us) - self.clip_len + 1)
-            self.seq_infos.append({
-                "seq_path": seq_path,
-                "events_file": events_file,
-                "anchors_us": anchors_us,
-                "rel_transf": rel_transf,
-                "num_samples": num_samples,
-            })
+            seq_info["num_samples"] = num_samples
+            self.seq_infos.append(seq_info)
 
             total += num_samples
             self.cum_lengths.append(total)
@@ -191,10 +228,11 @@ class MultiEventVoxelClipDataset(Dataset):
             dtype=torch.float32
         )
 
-    def events_to_voxel_grid(self, x, y, p, t):
+    def events_to_voxel_grid(self, x, y, p, t, ts_start_us=None, ts_end_us=None, seq_info=None):
         if len(t) == 0:
             return self._empty_voxel()
 
+        #Apply background consistency denoising
         if self.denoising:
             x, y, p, t, _ = background_activity_filter_raw(
                 x=x,
@@ -211,31 +249,54 @@ class MultiEventVoxelClipDataset(Dataset):
             if len(t) == 0:
                 return self._empty_voxel()
 
-        t = t.astype(np.float32)
-        t = t - t[0]
-
-        if t[-1] > 0:
-            t = t / t[-1]
-        else:
-            t = np.zeros_like(t, dtype=np.float32)
-        
+        #Apply downsampling to reduce per-frame token count
         downsampled_x = x * self.scale_x
         downsampled_y = y * self.scale_y
-        event_data = {
-            'x': downsampled_x.astype(np.float32),
-            'y': downsampled_y.astype(np.float32),
-            'p': p.astype(np.float32),
-            't': t
-        }
 
-        return self.voxel_grid.convert_events(event_data)
+        #Build de-rotation context for later
+        if self.derotate:
+            if ts_start_us is None or ts_end_us is None or seq_info is None:
+                raise ValueError("Derotation requires window bounds and sequence metadata.")
+
+            event_data = {
+                "x": downsampled_x.astype(np.float32),
+                "y": downsampled_y.astype(np.float32),
+                "p": p.astype(np.float32),
+                "t": (t - ts_start_us).astype(np.float32),
+            }
+            event_data.update(
+                build_derotation_context(
+                    seq_info=seq_info,
+                    ts_start_us=ts_start_us,
+                    ts_end_us=ts_end_us,
+                    num_bins=self.num_bins,
+                )
+            )
+        else:
+            t = t.astype(np.float32)
+            t = t - t[0]
+
+            if t[-1] > 0:
+                t = t / t[-1]
+            else:
+                t = np.zeros_like(t, dtype=np.float32)
+
+            event_data = {
+                "x": downsampled_x.astype(np.float32),
+                "y": downsampled_y.astype(np.float32),
+                "p": p.astype(np.float32),
+                "t": t,
+            }
+
+        voxel = self.voxel_grid.convert_events(event_data)
+        return voxel
     
     def get_relative_motion(self, rel_transf, t0_idx, t0, t1):
         
         #Check also the timestamps matches
         assert (t0 == rel_transf[t0_idx, 0]) and (t1 == rel_transf[t0_idx, 1])
         #Get the actual supervision data
-        return rel_transf[t0_idx, 2: ]
+        return rel_transf[t0_idx, 2:5]
 
 
     def __getitem__(self, index):
@@ -263,6 +324,9 @@ class MultiEventVoxelClipDataset(Dataset):
                     event_data["y"],
                     event_data["p"],
                     event_data["t"],
+                    ts_start_us=ts_start_us,
+                    ts_end_us=ts_end_us,
+                    seq_info=self.seq_infos[seq_idx],
                 )
 
             clip_voxels.append(voxel.float())
@@ -273,7 +337,7 @@ class MultiEventVoxelClipDataset(Dataset):
                 t0 = int(anchors[j])
                 t1 = int(anchors[j + 1])
                 rel_transf = self.seq_infos[seq_idx]["rel_transf"]
-                rel_target = self.get_relative_motion(rel_transf, t0_idx, t0, t1)   # shape [target_dim (6)]
+                rel_target = self.get_relative_motion(rel_transf, t0_idx, t0, t1)   # shape [target_dim (3)]
                 
                 #Normalize the target based on the training split mean and std
                 if self.train_mean is not None and self.train_std is not None: 

@@ -114,12 +114,12 @@ def T_to_pose(T: np.ndarray):
 def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
     """
     Supported row formats:
+    - Translation only: t0_us t1_us px py pz
     - Axis-vector: t0_us t1_us px py pz rx ry rz
     """
 
-    if row.shape[0] == 8:
+    if row.shape[0] == 5:
         T = np.eye(4, dtype=np.float64)
-        T[:3, :3] = rotvec_to_rotmat(row[5:8])
         T[:3, 3] = row[2:5]
         return T
 
@@ -130,11 +130,13 @@ def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
         return T
 
     raise ValueError(
-        f"Unsupported relative motion row with {row.shape[0]} columns. Expected 8"
+        f"Unsupported relative motion row with {row.shape[0]} columns. Expected 5 or 8."
     )
 
 
 def describe_rel_format(num_cols: int) -> str:
+    if num_cols == 5:
+        return "translation only"
     if num_cols == 8:
         return "axis-vector + translation"
     return f"unknown ({num_cols} cols)"
@@ -231,32 +233,34 @@ def set_axes_equal_3d(ax, points: np.ndarray) -> None:
 
 
 def main():
+    # PARSE ARGUMENTS 
     parser = argparse.ArgumentParser()
     parser.add_argument("--gt", type=Path, required=True,
                         help="stamped_groundtruth.txt with columns: timestamp_us px py pz qx qy qz qw")
     parser.add_argument("--rel", type=Path, required=True,
                         help="relative_motions.txt with columns either: "
-                             "[t0_us t1_us px py pz rx ry rz]")
+                             "[t0_us t1_us px py pz] or [t0_us t1_us px py pz rx ry rz]")
     parser.add_argument("--save_dir", type=Path, default=None,
                         help="Optional directory to save figures instead of showing them")
     
     parser.add_argument("--gt_rel", type=Path, default=None,
                         help="Optional GT relative motions used to inspect partial network results.")
-    parser.add_argument("--gt_rel_mode", type=str, default="none",
+    parser.add_argument("--gt_rel_mode", type=str, default="rotation",
                         choices=["none", "rotation", "translation", "both"],
                         help="How to combine --rel with --gt_rel before integration. "
                              "Default 'rotation' keeps predicted translation and uses GT rotation.")
     
     args = parser.parse_args()
 
+    # LOAD GT AND RELATIVE MOTIONS AND CHECK DIMENSIONS
     gt = load_table(args.gt)
     rel = load_table(args.rel)
     gt_rel = load_table(args.gt_rel) if args.gt_rel is not None else None
 
     if gt.shape[1] != 8:
         raise ValueError(f"{args.gt} has {gt.shape[1]} columns, expected 8.")
-    if rel.shape[1] != 8:
-        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 8")
+    if rel.shape[1] not in {5, 8}:
+        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 5 or 8")
     if gt_rel is not None and gt_rel.shape[1] != 8:
         raise ValueError(f"{args.gt_rel} has {gt_rel.shape[1]} columns, expected 8")
 
@@ -270,6 +274,7 @@ def main():
     rel_t0 = rel[:, 0].astype(np.int64)
     rel_t1 = rel[:, 1].astype(np.int64)
 
+    # CHECK FOR CONSISTENCY ACROSS COMPARED MOTIONS
     if not np.all(rel_t1 > rel_t0):
         raise ValueError("Each relative motion must satisfy t1_us > t0_us.")
     if len(rel) > 1 and not np.array_equal(rel_t0[1:], rel_t1[:-1]):
@@ -310,19 +315,26 @@ def main():
     ref_pos, ref_quat = interpolate_gt_pose(gt_ts, gt_pos, gt_quat, anchor_ts)
     ref_quat = normalize_quat(ref_quat)
 
+    # CALCULATE ERROR STATS
     if gt_rel is not None:
-        rel_eval = rel.copy()
-        if args.gt_rel_mode == "rotation":
-            rel_eval[:, 5:8] = gt_rel[:, 5:8]
-        elif args.gt_rel_mode == "translation":
-            rel_eval[:, 2:5] = gt_rel[:, 2:5]
-        elif args.gt_rel_mode == "both":
-            rel_eval[:, 2:8] = gt_rel[:, 2:8]
+        rel_eval_trans = rel[:, 2:5].copy()
+        if rel.shape[1] == 8:
+            rel_eval_rot = rel[:, 5:8].copy()
+        else:
+            rel_eval_rot = np.zeros((len(rel), 3), dtype=np.float64)
 
-        pos_err = np.linalg.norm(rel_eval[:, 2:5] - gt_rel[:, 2:5], axis=1)
+        if args.gt_rel_mode == "rotation":
+            rel_eval_rot = gt_rel[:, 5:8].copy()
+        elif args.gt_rel_mode == "translation":
+            rel_eval_trans = gt_rel[:, 2:5].copy()
+        elif args.gt_rel_mode == "both":
+            rel_eval_trans = gt_rel[:, 2:5].copy()
+            rel_eval_rot = gt_rel[:, 5:8].copy()
+
+        pos_err = np.linalg.norm(rel_eval_trans - gt_rel[:, 2:5], axis=1)
         rel_quat = normalize_quat(
             np.stack(
-                [rotmat_to_quat(rotvec_to_rotmat(rv)) for rv in rel_eval[:, 5:8]],
+                [rotmat_to_quat(rotvec_to_rotmat(rv)) for rv in rel_eval_rot],
                 axis=0,
             )
         )
@@ -337,6 +349,8 @@ def main():
         pos_err = np.linalg.norm(recon_pos - ref_pos, axis=1)
         rot_err = rotation_error_deg(ref_quat, recon_quat)
 
+    # LOG ERROR STATS 
+    
     rel_format = describe_rel_format(rel.shape[1])
     gt_rel_format = "none" if gt_rel is None else describe_rel_format(gt_rel.shape[1])
     error_ref_label = "GT relative motions" if gt_rel is not None else "source GT"

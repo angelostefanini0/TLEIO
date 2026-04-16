@@ -210,8 +210,8 @@ def main() -> None:
 
     if gt.shape[1] != 8:
         raise ValueError(f"{args.gt} has {gt.shape[1]} columns, expected 8.")
-    if rel.shape[1] != 8:
-        raise ValueError(f"{args.rel_model} has {rel.shape[1]} columns, expected 8")
+    if rel.shape[1] not in {5, 8}:
+        raise ValueError(f"{args.rel_model} has {rel.shape[1]} columns, expected 5 or 8")
     if gt_rel is not None and gt_rel.shape[1] != 8:
         raise ValueError(f"{args.gt_rel} has {gt_rel.shape[1]} columns, expected 8")
 
