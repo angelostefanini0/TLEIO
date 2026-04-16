@@ -129,15 +129,6 @@ if __name__ == "__main__":
 
     # tensorboard writer
     TensorBoardWriter = SummaryWriter(log_dir=args["checkpoint_path"])
-    #TODO: Investigate if we need to do normalization within a batch or at the dataset level
-    # preprocessing operation
-    # preprocess = transforms.Compose([
-    #     transforms.Resize((model_params["image_size"])),
-    #     transforms.ToTensor(),
-    #     transforms.Normalize(
-    #         mean=[0.34721234, 0.36705238, 0.36066107],
-    #         std=[0.30737526, 0.31515116, 0.32020183]),
-    # ])
 
     # train and val dataloader
     print("Using CUDA: ", torch.cuda.is_available())

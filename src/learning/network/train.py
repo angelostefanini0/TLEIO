@@ -1,5 +1,4 @@
 import os
-import time
 import torch
 import torch.optim as optim
 from tqdm import tqdm
@@ -10,19 +9,9 @@ torch.manual_seed(2026)
 
 def val_epoch(model, val_loader, criterion, args):
     epoch_loss = 0
-    debug_loader = os.getenv("TLEIO_DEBUG_DATALOADER", "0") == "1"
-    fetch_start = time.perf_counter()
-    first_batch_logged = False
 
     with tqdm(val_loader, unit="batch") as tepoch:
         for batch in tepoch:
-            if debug_loader and not first_batch_logged:
-                print(
-                    f"[train-debug] first validation batch fetched in "
-                    f"{time.perf_counter() - fetch_start:.3f}s",
-                    flush=True,
-                )
-                first_batch_logged = True
             x = batch["representation" ] # B, C, T, H, W
             y = batch["target"] # B, T - 1, 3
             tepoch.set_description(f"Validating ")
@@ -52,19 +41,9 @@ def val_epoch(model, val_loader, criterion, args):
 def train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_writer, args):
     epoch_loss = 0
     iter = (epoch - 1) * len(train_loader) + 1
-    debug_loader = os.getenv("TLEIO_DEBUG_DATALOADER", "0") == "1"
-    fetch_start = time.perf_counter()
-    first_batch_logged = False
 
     with tqdm(train_loader, unit="batch") as tepoch:
         for batch in tepoch:
-            if debug_loader and not first_batch_logged:
-                print(
-                    f"[train-debug] first training batch fetched in "
-                    f"{time.perf_counter() - fetch_start:.3f}s",
-                    flush=True,
-                )
-                first_batch_logged = True
             tepoch.set_description(f"Epoch {epoch}")
             
             x = batch["representation"] # B, C, T, H, W

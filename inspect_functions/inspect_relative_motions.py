@@ -233,6 +233,7 @@ def set_axes_equal_3d(ax, points: np.ndarray) -> None:
 
 
 def main():
+    # PARSE ARGUMENTS 
     parser = argparse.ArgumentParser()
     parser.add_argument("--gt", type=Path, required=True,
                         help="stamped_groundtruth.txt with columns: timestamp_us px py pz qx qy qz qw")
@@ -251,6 +252,7 @@ def main():
     
     args = parser.parse_args()
 
+    # LOAD GT AND RELATIVE MOTIONS AND CHECK DIMENSIONS
     gt = load_table(args.gt)
     rel = load_table(args.rel)
     gt_rel = load_table(args.gt_rel) if args.gt_rel is not None else None
@@ -272,6 +274,7 @@ def main():
     rel_t0 = rel[:, 0].astype(np.int64)
     rel_t1 = rel[:, 1].astype(np.int64)
 
+    # CHECK FOR CONSISTENCY ACROSS COMPARED MOTIONS
     if not np.all(rel_t1 > rel_t0):
         raise ValueError("Each relative motion must satisfy t1_us > t0_us.")
     if len(rel) > 1 and not np.array_equal(rel_t0[1:], rel_t1[:-1]):
@@ -312,6 +315,7 @@ def main():
     ref_pos, ref_quat = interpolate_gt_pose(gt_ts, gt_pos, gt_quat, anchor_ts)
     ref_quat = normalize_quat(ref_quat)
 
+    # CALCULATE ERROR STATS
     if gt_rel is not None:
         rel_eval_trans = rel[:, 2:5].copy()
         if rel.shape[1] == 8:
@@ -345,6 +349,8 @@ def main():
         pos_err = np.linalg.norm(recon_pos - ref_pos, axis=1)
         rot_err = rotation_error_deg(ref_quat, recon_quat)
 
+    # LOG ERROR STATS 
+    
     rel_format = describe_rel_format(rel.shape[1])
     gt_rel_format = "none" if gt_rel is None else describe_rel_format(gt_rel.shape[1])
     error_ref_label = "GT relative motions" if gt_rel is not None else "source GT"

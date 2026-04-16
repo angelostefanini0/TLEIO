@@ -1,11 +1,8 @@
 from pathlib import Path
-import os
-import time
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from torch.utils.data import get_worker_info
 import bisect
 
 from ..representation.event_denoising import background_activity_filter_raw
@@ -122,16 +119,12 @@ class MultiEventVoxelClipDataset(Dataset):
         self.voxel_grid = VoxelGrid(self.num_bins,
                                     self.new_height,
                                     self.new_width, 
-                                    normalize=False, 
                                     derotate=derotate)
 
         #Set the normalization stats to None: 
         self.train_std = None
         self.train_mean = None
         self.eps = 1e-7
-        self.debug_loader = os.getenv("TLEIO_DEBUG_DATALOADER", "0") == "1"
-        self.debug_max_logs = int(os.getenv("TLEIO_DEBUG_MAX_LOGS", "40"))
-        self._debug_log_count = 0
 
         #Load lightweight data
         total = 0
@@ -235,24 +228,12 @@ class MultiEventVoxelClipDataset(Dataset):
             dtype=torch.float32
         )
 
-    def _debug(self, message: str) -> None:
-        if not self.debug_loader or self._debug_log_count >= self.debug_max_logs:
-            return
-        worker_info = get_worker_info()
-        worker_id = "main" if worker_info is None else worker_info.id
-        print(
-            f"[loader-debug pid={os.getpid()} worker={worker_id}] {message}",
-            flush=True,
-        )
-        self._debug_log_count += 1
-
     def events_to_voxel_grid(self, x, y, p, t, ts_start_us=None, ts_end_us=None, seq_info=None):
         if len(t) == 0:
             return self._empty_voxel()
-        start_time = time.perf_counter()
 
+        #Apply background consistency denoising
         if self.denoising:
-            denoise_start = time.perf_counter()
             x, y, p, t, _ = background_activity_filter_raw(
                 x=x,
                 y=y,
@@ -267,13 +248,12 @@ class MultiEventVoxelClipDataset(Dataset):
             )
             if len(t) == 0:
                 return self._empty_voxel()
-            denoise_ms = 1e3 * (time.perf_counter() - denoise_start)
-        else:
-            denoise_ms = 0.0
 
+        #Apply downsampling to reduce per-frame token count
         downsampled_x = x * self.scale_x
         downsampled_y = y * self.scale_y
 
+        #Build de-rotation context for later
         if self.derotate:
             if ts_start_us is None or ts_end_us is None or seq_info is None:
                 raise ValueError("Derotation requires window bounds and sequence metadata.")
@@ -284,7 +264,6 @@ class MultiEventVoxelClipDataset(Dataset):
                 "p": p.astype(np.float32),
                 "t": (t - ts_start_us).astype(np.float32),
             }
-            ctx_start = time.perf_counter()
             event_data.update(
                 build_derotation_context(
                     seq_info=seq_info,
@@ -293,7 +272,6 @@ class MultiEventVoxelClipDataset(Dataset):
                     num_bins=self.num_bins,
                 )
             )
-            ctx_ms = 1e3 * (time.perf_counter() - ctx_start)
         else:
             t = t.astype(np.float32)
             t = t - t[0]
@@ -309,19 +287,8 @@ class MultiEventVoxelClipDataset(Dataset):
                 "p": p.astype(np.float32),
                 "t": t,
             }
-            ctx_ms = 0.0
 
-        convert_start = time.perf_counter()
         voxel = self.voxel_grid.convert_events(event_data)
-        convert_ms = 1e3 * (time.perf_counter() - convert_start)
-        total_ms = 1e3 * (time.perf_counter() - start_time)
-        self._debug(
-            "events_to_voxel_grid "
-            f"events={len(t)} derotate={self.derotate} "
-            f"denoise_ms={denoise_ms:.1f} ctx_ms={ctx_ms:.1f} "
-            f"convert_ms={convert_ms:.1f} total_ms={total_ms:.1f} "
-            f"window=[{ts_start_us},{ts_end_us}]"
-        )
         return voxel
     
     def get_relative_motion(self, rel_transf, t0_idx, t0, t1):
@@ -333,17 +300,12 @@ class MultiEventVoxelClipDataset(Dataset):
 
 
     def __getitem__(self, index):
-        item_start = time.perf_counter()
         seq_idx, local_idx = self.locate_index(index, self.cum_lengths)
         self._ensure_reader(seq_idx)
 
         #Get the anchor timestamps and build a voxel for each anchor
         seq_anchors = self.seq_infos[seq_idx]["anchors_us"]
         anchors = seq_anchors[local_idx : local_idx + self.clip_len]
-        self._debug(
-            f"getitem idx={index} seq={self.seq_infos[seq_idx]['seq_path'].name} "
-            f"local_idx={local_idx} anchors=[{int(anchors[0])},{int(anchors[-1])}]"
-        )
         clip_voxels = []
         clip_targets = []
 
@@ -353,9 +315,6 @@ class MultiEventVoxelClipDataset(Dataset):
 
             reader = self._readers[seq_idx]
             event_data = reader.get_events(ts_start_us, ts_end_us)
-            self._debug(
-                f"slice anchor={ts_end_us} events={0 if event_data is None else len(event_data['t'])}"
-            )
 
             if event_data is None:
                 voxel = self._empty_voxel()
@@ -397,11 +356,6 @@ class MultiEventVoxelClipDataset(Dataset):
             "anchors_us": torch.as_tensor(anchors, dtype=torch.int64),
             "target": target,                                    # [T-1, target_dim]
         }
-
-        self._debug(
-            f"getitem done idx={index} rep_shape={tuple(clip.shape)} "
-            f"target_shape={tuple(target.shape)} elapsed_ms={1e3 * (time.perf_counter() - item_start):.1f}"
-        )
 
         return output
     

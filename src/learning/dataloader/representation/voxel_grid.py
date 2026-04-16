@@ -53,11 +53,10 @@ class EventRepresentation:
 
 
 class VoxelGrid(EventRepresentation):
-    def __init__(self, channels: int, height: int, width: int, normalize: bool, derotate: bool):
+    def __init__(self, channels: int, height: int, width: int, derotate: bool):
         self.nb_channels = channels
         self.height = height
         self.width = width
-        self.normalize = normalize
         self.derotate = derotate
 
     def derotate_voxel_grid(
@@ -169,15 +168,5 @@ class VoxelGrid(EventRepresentation):
                     bin_quat_xyzw=np.asarray(metadata["bin_quat_xyzw"], dtype=np.float64),
                     ref_quat_xyzw=np.asarray(metadata["ref_quat_xyzw"], dtype=np.float64),
                 )
-
-            if self.normalize:
-                mask_nz = voxel_grid != 0
-                if mask_nz.any():
-                    mean = voxel_grid[mask_nz].mean()
-                    std = voxel_grid[mask_nz].std()
-                    if std > 1e-5:
-                        voxel_grid[mask_nz] = (voxel_grid[mask_nz] - mean) / std
-                    else:
-                        voxel_grid[mask_nz] = voxel_grid[mask_nz] - mean
-
+                
         return voxel_grid
