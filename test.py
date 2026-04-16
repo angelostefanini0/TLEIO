@@ -1,8 +1,8 @@
 import argparse
-import copy
 import json
 from pathlib import Path
 import sys
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -20,148 +20,23 @@ from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipD
 
 "python test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
 
-ARGS = {
-    "root_dir": "data/eds/processed",
-    "b_size": 2,
-    "val_split": 0.1,
-    "clip_len": 3,
-    "delta_t_ms": 50,
-    "num_bins": 5,
-    "downsampling_factor": 0.7,
-    "denoising": False,
-    "denoise_dt_us": 2000,
-    "denoise_radius": 1,
-    "denoise_min_supporters": 2,
-    "denoise_same_polarity_only": False,
-    "derotate": True,
-    "optimizer": "AdamW",
-    "lr": 1e-05,
-    "momentum": 0.9,
-    "weight_decay": 0.0001,
-    "epoch": 100,
-    "pretrained_ViT": False,
-    "num_workers": 4,
-    "checkpoint_path": "checkpoints",
-    "checkpoint": None,
-    "embed_dim": 384,
-    "patch_size": 16,
-    "attention_type": "divided_space_time",
-    "depth": 12,
-    "heads": 6,
-    "dim_head": 64,
-    "attn_dropout": 0.1,
-    "ff_dropout": 0.1,
-    "time_only": False,
-    "model_params": {
-        "embed_dim": 384,
-        "patch_size": 16,
-        "attention_type": "divided_space_time",
-        "num_frames": 3,
-        "num_classes": 6,
-        "depth": 12,
-        "heads": 6,
-        "dim_head": 64,
-        "attn_dropout": 0.1,
-        "ff_dropout": 0.1,
-        "time_only": False,
-    },
-    "epoch_init": 1,
-    "best_val": float("inf"),
-}
-
-
-def build_model_params(args_dict):
-    return {
-        "embed_dim": args_dict["embed_dim"],
-        "patch_size": args_dict["patch_size"],
-        "attention_type": args_dict["attention_type"],
-        "num_frames": args_dict["clip_len"],
-        "num_classes": 9 * (args_dict["clip_len"] - 1),
-        "depth": args_dict["depth"],
-        "heads": args_dict["heads"],
-        "dim_head": args_dict["dim_head"],
-        "attn_dropout": args_dict["attn_dropout"],
-        "ff_dropout": args_dict["ff_dropout"],
-        "time_only": args_dict["time_only"],
-    }
-
-
-def normalize_quat(q):
-    n = np.linalg.norm(q, axis=-1, keepdims=True)
-    n = np.maximum(n, 1e-12)
-    return q / n
-
-
-def average_quaternions(quats):
-    quats = normalize_quat(quats)
-    q_ref = quats[0].copy()
-    aligned = []
-    for q in quats:
-        aligned.append(-q if np.dot(q_ref, q) < 0 else q)
-    aligned = np.stack(aligned, axis=0)
-    q = aligned.mean(axis=0)
-    return q / np.linalg.norm(q)
-
-
-def rotvec_to_quat(rotvec):
-    rotvec = np.asarray(rotvec, dtype=np.float64)
-    theta = np.linalg.norm(rotvec, axis=-1, keepdims=True)
-    half_theta = 0.5 * theta
-
-    scale = np.empty_like(theta)
-    small = theta < 1e-12
-    scale[~small] = np.sin(half_theta[~small]) / theta[~small]
-    scale[small] = 0.5
-
-    quat_xyz = rotvec * scale
-    quat_w = np.cos(half_theta)
-
-    quat = np.concatenate([quat_xyz, quat_w], axis=-1)
-    return normalize_quat(quat)
-
-
-def pose6d_to_output_row(pose6d):
-    pose6d = np.asarray(pose6d, dtype=np.float64)
-    transl = pose6d[..., :3]
-    quat = rotvec_to_quat(pose6d[..., 3:])
-    return np.concatenate([transl, quat], axis=-1)
-
 
 def load_inference_args(checkpoint_file: Path):
     args_file = checkpoint_file.parent / "args.txt"
-    defaults = copy.deepcopy(ARGS)
 
     if not args_file.exists():
-        defaults["model_params"] = build_model_params(defaults)
-        return defaults
+        raise ValueError(
+            "Make sure there is an args.txt file inside the checkpoint folder specified as an argument"
+        )
 
     with open(args_file, "r") as f:
         loaded = json.load(f)
 
     if "model_params" not in loaded:
-        loaded["model_params"] = {
-            "embed_dim": loaded["embed_dim"],
-            "patch_size": loaded["patch_size"],
-            "attention_type": loaded["attention_type"],
-            "num_frames": loaded["clip_len"],
-            "num_classes": 3 * (loaded["clip_len"] - 1),
-            "depth": loaded["depth"],
-            "heads": loaded["heads"],
-            "dim_head": loaded["dim_head"],
-            "attn_dropout": loaded["attn_dropout"],
-            "ff_dropout": loaded["ff_dropout"],
-            "time_only": loaded["time_only"],
-        }
-    else:
-        loaded["model_params"]["num_classes"] = 3 * (loaded["clip_len"] - 1)
+        raise ValueError(
+            "Make sure the args.txt file inside the checkpoint folder has a model_params key"
+        )
 
-    loaded.setdefault("downsampling_factor", 1.0)
-    loaded.setdefault("denoising", False)
-    loaded.setdefault("denoise_dt_us", 1000)
-    loaded.setdefault("denoise_radius", 1)
-    loaded.setdefault("denoise_min_supporters", 1)
-    loaded.setdefault("denoise_same_polarity_only", False)
-    loaded.setdefault("derotate", False)
     loaded["checkpoint"] = None
     loaded["checkpoint_path"] = str(checkpoint_file.parent)
     return loaded
@@ -235,9 +110,7 @@ def average_overlapping_predictions(prediction_store):
 
     for key in sorted(prediction_store.keys()):
         values = np.stack(prediction_store[key], axis=0)
-        avg_translation = values[:, :3].mean(axis=0)
-        avg_quat = average_quaternions(rotvec_to_quat(values[:, 3:6]))
-        rows.append(np.concatenate([avg_translation, avg_quat], axis=0))
+        rows.append(values.mean(axis=0))
         timestamps.append(key)
 
     rows_pred = np.asarray(rows, dtype=np.float64)
@@ -266,19 +139,21 @@ def collect_last_step_predictions(loader, model, device, infer_args, target_mean
                 anc_i = anchors[i]
 
                 if batch_idx == 0 and i == 0:
-                    preds.append(pose6d_to_output_row(y_hat_tr[i, 0]))
+                    preds.append(y_hat_tr[i, 0])
                     rel_t0_list.append(int(anc_i[0]))
                     rel_t1_list.append(int(anc_i[1]))
 
-                preds.append(pose6d_to_output_row(y_hat_tr[i, -1]))
+                preds.append(y_hat_tr[i, -1])
                 rel_t0_list.append(int(anc_i[-2]))
                 rel_t1_list.append(int(anc_i[-1]))
 
     rows_pred = np.asarray(preds, dtype=np.float64)
-    timestamps = np.column_stack([
-        np.asarray(rel_t0_list, dtype=np.int64),
-        np.asarray(rel_t1_list, dtype=np.int64),
-    ])
+    timestamps = np.column_stack(
+        [
+            np.asarray(rel_t0_list, dtype=np.int64),
+            np.asarray(rel_t1_list, dtype=np.int64),
+        ]
+    )
     return rows_pred, timestamps
 
 
@@ -365,12 +240,13 @@ def main():
     out = np.concatenate([timestamps, rows_pred], axis=1)
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
+    
     np.savetxt(
         output_file,
         out,
         fmt=["%d", "%d"] + ["%.10f"] * 3,
         header="t0_us t1_us px py pz",
-        comments=""
+        comments="",
     )
 
     print(f"Saved: {output_file}")

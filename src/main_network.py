@@ -148,6 +148,7 @@ if __name__ == "__main__":
         denoise_same_polarity_only=args["denoise_same_polarity_only"],
         derotate=args["derotate"]
     )
+    
 
     val_data = MultiEventVoxelClipDataset(
         root_path=Path(args["val_root_dir"]),
