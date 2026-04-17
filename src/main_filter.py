@@ -67,6 +67,7 @@ class RunnerConfig:
     seed: int = 7
 
     # Initialization offsets applied on top of the first anchor pose/velocity
+    initial_velocity_window_size: int = 2
     initial_position_offset_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
     initial_velocity_offset_mps: tuple[float, float, float] = (0.0, 0.0, 0.0)
     initial_euler_offset_deg: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -347,6 +348,27 @@ def _apply_initial_offsets(
     return R0 @ R_offset, v0 + v_offset, p0 + p_offset
 
 
+def _estimate_initial_velocity(
+    anchor_times_s: np.ndarray,
+    anchor_positions: np.ndarray,
+    window_size: int = 2,
+) -> np.ndarray:
+    """Estimate the initial velocity from the first `window_size` anchors.
+
+    When enough anchors are available, this uses the displacement from the first
+    to the fourth anchor, which corresponds to 200 ms for the default 50 ms
+    anchor spacing. If fewer anchors exist, it falls back to the furthest
+    available anchor.
+    """
+
+    if len(anchor_times_s) < 2:
+        return np.zeros(3, dtype=np.float64)
+
+    last_idx = min(window_size - 1, len(anchor_times_s) - 1)
+    dt = max(float(anchor_times_s[last_idx] - anchor_times_s[0]), 1e-9)
+    return (anchor_positions[last_idx] - anchor_positions[0]).astype(np.float64) / dt
+
+
 def _state_to_row(timestamp_s: float, ekf_state) -> np.ndarray:
     """Convert one EKF state into a text-friendly row."""
 
@@ -424,8 +446,11 @@ def run_filter(config: RunnerConfig = CONFIG) -> dict:
     anchor_times_s = anchor_timestamps_us.astype(np.float64) * 1e-6
     p0 = anchor_positions[0].astype(np.float64)
     R0 = Rotation.from_quat(anchor_quaternions[0]).as_matrix()
-    dt0 = max(anchor_times_s[1] - anchor_times_s[0], 1e-9)
-    v0 = (anchor_positions[1] - anchor_positions[0]) / dt0
+    v0 = _estimate_initial_velocity(
+        anchor_times_s,
+        anchor_positions,
+        window_size=config.initial_velocity_window_size,
+    )
     R0, v0, p0 = _apply_initial_offsets(R0, v0.astype(np.float64), p0, config)
     bg0 = np.asarray(config.initial_bg, dtype=np.float64)
     ba0 = np.asarray(config.initial_ba, dtype=np.float64)
