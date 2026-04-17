@@ -1,14 +1,15 @@
-"""Run the EKF directly on processed `relative_motions.txt` measurements.
+"""Run the EKF directly on processed relative-motion measurements.
 
-1. load one processed sequence (`anchor_poses.txt`, `relative_motions.txt`, `imu.csv`);
+1. load one processed sequence (`anchor_poses.txt`, relative-motion file, `imu.csv`);
 2. initialize the EKF from the first two anchor poses;
 3. propagate the IMU exactly from anchor to anchor;
 4. update the EKF with overlapping triplets of relative translations from
-   `relative_motions.txt`;
+   the selected relative-motion file;
 5. marginalize a single oldest clone after each attempted update.
 
-The transformer's output is assumed to already be available on disk as
-`relative_motions.txt`. Thus, it is an asynchronous implementation.
+The transformer's output is assumed to already be available on disk either as
+`relative_motions.txt` or `regressed_relative_motions.txt`, so this is an
+asynchronous implementation.
 """
 
 from __future__ import annotations
@@ -39,9 +40,10 @@ class RunnerConfig:
     """User-editable configuration for the minimal relative-motion filter runner."""
 
     # Paths
-    processed_root: Path = ROOT / "data" / "eds" / "processed"
-    sequence: str = "00_peanuts_dark"
+    processed_root: Path = ROOT / "data" / "eds" / "processed_train"
+    sequence: str = "03_rocket_earth_dark"
     out_dir: Path = ROOT / "outputs" / "main_filter"
+    use_regressed_relative_motions: bool = False
 
     # Optional sequence truncation
     max_frames: int | None = None
@@ -60,7 +62,7 @@ class RunnerConfig:
     assumed_sigma_rel_r_deg: float = 2.0
     meas_cov_scale: float = 1.0
 
-    # Optional extra synthetic noise added on top of `relative_motions.txt`
+    # Optional extra synthetic noise added on top of the selected relative-motion file
     extra_measurement_noise_t: float = 0.0
     seed: int = 7
 
@@ -102,10 +104,15 @@ def _load_anchor_poses(sequence_path: Path) -> tuple[np.ndarray, np.ndarray, np.
     return timestamps_us, positions, quaternions
 
 
-def _load_relative_motion_table(sequence_path: Path) -> np.ndarray:
+def _load_relative_motion_table(sequence_path: Path, use_regressed_relative_motions: bool) -> np.ndarray:
     """Load processed relative motions and skip any stale non-numeric header lines."""
 
-    rel_path = sequence_path / "relative_motions.txt"
+    rel_filename = (
+        "regressed_relative_motions.txt"
+        if use_regressed_relative_motions
+        else "relative_motions.txt"
+    )
+    rel_path = sequence_path / rel_filename
     rows: list[list[float]] = []
     with rel_path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -118,10 +125,10 @@ def _load_relative_motion_table(sequence_path: Path) -> np.ndarray:
                 continue
 
     relative_motions = np.asarray(rows, dtype=np.float64)
-    if relative_motions.ndim != 2 or relative_motions.shape[1] != 9:
+    if relative_motions.ndim != 2 or relative_motions.shape[1] not in (8, 9):
         raise ValueError(
-            f"{rel_path} has shape {relative_motions.shape}, expected N x 9: "
-            "t0 t1 px py pz qx qy qz qw."
+            f"{rel_path} has shape {relative_motions.shape}, expected either N x 8 "
+            "(t0 t1 px py pz rx ry rz) or N x 9 (t0 t1 px py pz qx qy qz qw)."
         )
     if relative_motions.shape[0] < 2:
         raise ValueError(f"{rel_path} needs at least two rows to form one triplet update.")
@@ -156,7 +163,12 @@ def _infer_time_scale_to_seconds(timestamps: np.ndarray) -> float:
 
 
 def _build_anchor_times_from_relative_motions(relative_motion_table: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Recover anchor timestamps and the translation-only measurements used by the EKF."""
+    """Recover anchor timestamps and the translation-only measurements used by the EKF.
+
+    The current EKF update uses only the translation component, so both
+    `t0 t1 px py pz rx ry rz` and `t0 t1 px py pz qx qy qz qw` layouts are
+    supported.
+    """
 
     raw_times = relative_motion_table[:, :2]
     time_scale = _infer_time_scale_to_seconds(raw_times.reshape(-1))
@@ -378,7 +390,10 @@ def run_filter(config: RunnerConfig = CONFIG) -> dict:
 
     sequence_path = _sequence_path(config)
     anchor_timestamps_us, anchor_positions, anchor_quaternions = _load_anchor_poses(sequence_path)
-    relative_motion_table = _load_relative_motion_table(sequence_path)
+    relative_motion_table = _load_relative_motion_table(
+        sequence_path,
+        config.use_regressed_relative_motions,
+    )
     imu_table = _load_sequence_imu(sequence_path)
 
     relative_anchor_times_s, relative_measurements = _build_anchor_times_from_relative_motions(
