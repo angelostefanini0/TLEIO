@@ -144,6 +144,7 @@ def save_rotation_comparison_plot(
     times_s: np.ndarray,
     gt_quaternions_xyzw: np.ndarray,
     estimated_quaternions_xyzw: np.ndarray,
+    regressed_quaternions_xyzw: np.ndarray | None = None,
 ) -> Path:
     """Save the standard roll/pitch/yaw comparison and geodesic rotation error plot."""
 
@@ -156,13 +157,10 @@ def save_rotation_comparison_plot(
     est_euler_rad = Rotation.from_quat(estimated_quaternions_xyzw).as_euler("xyz", degrees=False)
     gt_euler_deg = np.rad2deg(np.unwrap(gt_euler_rad, axis=0))
     est_euler_deg = np.rad2deg(np.unwrap(est_euler_rad, axis=0))
-
-    rot_errors_deg = np.array(
-        [
-            rotation_error_deg(q_gt, q_est)
-            for q_gt, q_est in zip(gt_quaternions_xyzw, estimated_quaternions_xyzw)
-        ]
-    )
+    
+    if regressed_quaternions_xyzw is not None:
+        regr_euler_rad = Rotation.from_quat(regressed_quaternions_xyzw).as_euler("xyz", degrees=False)
+        regr_euler_deg = np.rad2deg(np.unwrap(regr_euler_rad, axis=0))
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 9))
     labels = ["Roll (X)", "Pitch (Y)", "Yaw (Z)"]
@@ -171,12 +169,24 @@ def save_rotation_comparison_plot(
         col = axis_idx % 2
         axis = axes[row, col]
         axis.plot(t_rel, gt_euler_deg[:, axis_idx], label=f"GT {label}", color="tab:blue")
+        if regressed_quaternions_xyzw is not None:
+            axis.plot(t_rel, regr_euler_deg[:, axis_idx], label=f"Regressed {label}", color="tab:orange", linestyle="--")
         axis.plot(t_rel, est_euler_deg[:, axis_idx], label=f"EKF {label}", color="tab:green")
         axis.set_title(f"{label} Angle")
         axis.set_xlabel("time [s]")
         axis.set_ylabel("angle [deg]")
         axis.grid(True)
         axis.legend()
+
+    rot_errors_deg = np.array(
+        [
+            rotation_error_deg(q_gt, q_est)
+            for q_gt, q_est in zip(gt_quaternions_xyzw, estimated_quaternions_xyzw)
+        ]
+    )
+    if regressed_quaternions_xyzw is not None:
+        regr_rot_errors_deg = np.array([rotation_error_deg(q_gt, q_reg) for q_gt, q_reg in zip(gt_quaternions_xyzw, regressed_quaternions_xyzw)])
+        axes[1, 1].plot(t_rel, regr_rot_errors_deg, color="tab:orange", linestyle="--", label="Regressed Error")
 
     axes[1, 1].plot(t_rel, rot_errors_deg, color="tab:red", label="EKF Error")
     axes[1, 1].set_title("Absolute Rotation Error")
@@ -262,11 +272,63 @@ def save_3d_trajectory_plot(
     return path
 
 
+def save_projections_plot(
+    path: Path,
+    gt_positions: np.ndarray,
+    estimated_positions: np.ndarray,
+    regressed_positions: np.ndarray | None = None,
+) -> Path:
+    """Save 2D projections (XY, XZ, YZ) of the trajectories."""
+
+    import matplotlib.pyplot as plt
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+    planes = [
+        (0, 1, "X", "Y", "XY Projection (Top View)"),
+        (0, 2, "X", "Z", "XZ Projection (Front View)"),
+        (1, 2, "Y", "Z", "YZ Projection (Side View)"),
+    ]
+
+    for ax, (idx1, idx2, label1, label2, title) in zip(axes, planes):
+        ax.plot(gt_positions[:, idx1], gt_positions[:, idx2], label="Ground Truth", color="tab:blue")
+        
+        if regressed_positions is not None:
+            ax.plot(
+                regressed_positions[:, idx1], 
+                regressed_positions[:, idx2], 
+                label="Regressed", 
+                color="tab:orange", 
+                linestyle="--"
+            )
+            
+        ax.plot(estimated_positions[:, idx1], estimated_positions[:, idx2], label="EKF Estimated", color="tab:green")
+        
+        ax.scatter(gt_positions[0, idx1], gt_positions[0, idx2], color="black", marker="o", s=40, zorder=5)
+        ax.scatter(gt_positions[-1, idx1], gt_positions[-1, idx2], color="red", marker="x", s=40, zorder=5)
+
+        ax.set_title(title)
+        ax.set_xlabel(f"{label1} [m]")
+        ax.set_ylabel(f"{label2} [m]")
+        ax.grid(True)
+        ax.legend()
+        
+        ax.axis('equal')
+
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return path
+
+
 def show_interactive_3d_plot(
     estimated_trajectory: np.ndarray,
     ground_truth_trajectory: np.ndarray,
     regressed_trajectory: np.ndarray | None = None,
 ) -> None:
+    """Apre una finestra nativa di Matplotlib interattiva e rotante."""
     import matplotlib.pyplot as plt
 
     fig = plt.figure(figsize=(10, 10))
@@ -286,7 +348,7 @@ def show_interactive_3d_plot(
     ax.scatter(*gt_pos[0], color="black", marker="o", s=60, label="Start", zorder=5)
     ax.scatter(*gt_pos[-1], color="red", marker="x", s=60, label="End", zorder=5)
     
-    ax.set_title("3D Trajectory")
+    ax.set_title("3D Trajectory (Trascina col mouse per ruotare)")
     ax.set_xlabel("X [m]")
     ax.set_ylabel("Y [m]")
     ax.set_zlabel("Z [m]")
@@ -380,6 +442,7 @@ def compute_filter_diagnostics(
     saved_files: dict[str, str] = {}
     if output_dir is not None:
         output_dir = Path(output_dir)
+        
         saved_files["trajectory_plot"] = str(
             save_trajectory_comparison_plot(
                 output_dir / f"{file_prefix}_trajectory_comparison.png",
@@ -395,11 +458,22 @@ def compute_filter_diagnostics(
                 est_times_s,
                 aligned_gt_quaternions,
                 est_quaternions,
+                regressed_quaternions_xyzw=aligned_regr_quaternions,
             )
         )
         saved_files["trajectory_3d_plot"] = str(
             save_3d_trajectory_plot(
                 output_dir / f"{file_prefix}_trajectory_3d.png",
+                aligned_gt_positions,
+                est_positions,
+                regressed_positions=aligned_regr_positions,
+            )
+        )
+        
+        projections_dir = output_dir / "projections"
+        saved_files["projections_plot"] = str(
+            save_projections_plot(
+                projections_dir / f"{file_prefix}_projections.png",
                 aligned_gt_positions,
                 est_positions,
                 regressed_positions=aligned_regr_positions,
