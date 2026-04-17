@@ -375,6 +375,7 @@ def compute_filter_diagnostics(
     regressed_trajectory: np.ndarray | None = None,
     output_dir: Path | None = None,
     file_prefix: str = "filter",
+    plot_projections: bool = False,
 ) -> dict:
     """Compute development metrics and optionally save the standard plots."""
 
@@ -470,15 +471,15 @@ def compute_filter_diagnostics(
             )
         )
         
-        projections_dir = output_dir / "projections"
-        saved_files["projections_plot"] = str(
-            save_projections_plot(
-                projections_dir / f"{file_prefix}_projections.png",
-                aligned_gt_positions,
-                est_positions,
-                regressed_positions=aligned_regr_positions,
+        if plot_projections:
+            saved_files["projections_plot"] = str(
+                save_projections_plot(
+                    output_dir / f"{file_prefix}_projections.png",
+                    aligned_gt_positions,
+                    est_positions,
+                    regressed_positions=aligned_regr_positions,
+                )
             )
-        )
 
     return {
         "position_rmse_m": position_rmse_m,
@@ -560,6 +561,7 @@ def main() -> None:
     parser.add_argument("--regressed", type=Path, default=None, help="Optional regressed trajectory txt file.")
     parser.add_argument("--output_dir", type=Path, default=None, help="Optional directory for plots.")
     parser.add_argument("--prefix", type=str, default="filter", help="Prefix used for saved plot filenames.")
+    parser.add_argument("--plot_projections", action="store_true", help="Save 2D projection plots.")
     args = parser.parse_args()
 
     estimated = load_trajectory_table(args.estimated)
@@ -585,6 +587,7 @@ def main() -> None:
         mean_delta_norm=None,
         diagnostics=results,
         saved_trajectory_path=str(args.estimated),
+        plot_projections=args.plot_projections,
     )
 
 

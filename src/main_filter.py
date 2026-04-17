@@ -45,9 +45,10 @@ class RunnerConfig:
     out_dir: Path = ROOT / "outputs" / "main_filter"
 
     # Execution modes
-    use_gt: bool = False  # Set via --gt CLI argument
-    plot_transformer: bool = False # Set via --plot_transformer CLI argument
-    interactive_plot: bool = False # Set via --interactive_plot CLI argument
+    use_gt: bool = False  # Set via CLI argument
+    plot_transformer: bool = False 
+    interactive_plot: bool = False 
+    plot_projections: bool = False
 
     # Optional sequence truncation
     max_frames: int | None = None
@@ -529,6 +530,7 @@ def run_filter(config: RunnerConfig) -> dict:
         regressed_trajectory=regressed_trajectory,
         output_dir=sequence_out_dir,
         file_prefix=config.sequence,
+        plot_projections=config.plot_projections,
     )
 
     return {
@@ -569,6 +571,11 @@ def parse_args():
         action="store_true",
         help="Opens the interactive 3D plot window at the end of the run."
     )
+    parser.add_argument(
+        "--plot_projections",
+        action="store_true",
+        help="Saves the 2D projections plots."
+    )
     return parser.parse_args()
 
 
@@ -582,7 +589,8 @@ def main() -> None:
         use_gt=args.gt, 
         sequence=args.sequence,
         plot_transformer=args.plot_transformer,
-        interactive_plot=args.interactive_plot
+        interactive_plot=args.interactive_plot,
+        plot_projections=args.plot_projections
     )
 
     results = run_filter(active_config)
