@@ -1,20 +1,20 @@
-"""Run the EKF directly on processed relative-motion measurements.
+"""Run the EKF directly on processed `relative_motions.txt` measurements.
 
-1. load one processed sequence (`anchor_poses.txt`, relative-motion file, `imu.csv`);
+1. load one processed sequence (`anchor_poses.txt`, `relative_motions.txt`, `imu.csv`);
 2. initialize the EKF from the first two anchor poses;
 3. propagate the IMU exactly from anchor to anchor;
 4. update the EKF with overlapping triplets of relative translations from
-   the selected relative-motion file;
+   `relative_motions.txt` or `regressed_relative_motions.txt`;
 5. marginalize a single oldest clone after each attempted update.
 
-The transformer's output is assumed to already be available on disk either as
-`relative_motions.txt` or `regressed_relative_motions.txt`, so this is an
-asynchronous implementation.
+The transformer's output is assumed to already be available on disk.
+Thus, it is an asynchronous implementation.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import argparse
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 import sys
@@ -32,7 +32,7 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from filter_diagnostics import compute_filter_diagnostics, print_filter_run_summary
+from filter_diagnostics import compute_filter_diagnostics, print_filter_run_summary, show_interactive_3d_plot
 
 
 @dataclass(frozen=True)
@@ -40,10 +40,14 @@ class RunnerConfig:
     """User-editable configuration for the minimal relative-motion filter runner."""
 
     # Paths
-    processed_root: Path = ROOT / "data" / "eds" / "processed_train"
+    processed_root: Path = ROOT / "data" / "eds" / "processed"
     sequence: str = "03_rocket_earth_dark"
     out_dir: Path = ROOT / "outputs" / "main_filter"
-    use_regressed_relative_motions: bool = False
+
+    # Execution modes
+    use_gt: bool = False  # Set via --gt CLI argument
+    plot_transformer: bool = False # Set via --plot_transformer CLI argument
+    interactive_plot: bool = False # Set via --interactive_plot CLI argument
 
     # Optional sequence truncation
     max_frames: int | None = None
@@ -53,7 +57,7 @@ class RunnerConfig:
 
     # IMU process noise
     sigma_na: float = 5.90e-03
-    sigma_ng: float = 3.19e-03
+    sigma_ng: float = 9.57e-03
     sigma_nba: float = 8.81e-05
     sigma_nbg: float = 3.99e-05
 
@@ -62,12 +66,11 @@ class RunnerConfig:
     assumed_sigma_rel_r_deg: float = 2.0
     meas_cov_scale: float = 1.0
 
-    # Optional extra synthetic noise added on top of the selected relative-motion file
+    # Optional extra synthetic noise added on top of measurements
     extra_measurement_noise_t: float = 0.0
     seed: int = 7
 
     # Initialization offsets applied on top of the first anchor pose/velocity
-    initial_velocity_window_size: int = 2
     initial_position_offset_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
     initial_velocity_offset_mps: tuple[float, float, float] = (0.0, 0.0, 0.0)
     initial_euler_offset_deg: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -105,15 +108,12 @@ def _load_anchor_poses(sequence_path: Path) -> tuple[np.ndarray, np.ndarray, np.
     return timestamps_us, positions, quaternions
 
 
-def _load_relative_motion_table(sequence_path: Path, use_regressed_relative_motions: bool) -> np.ndarray:
+def _load_relative_motion_table(sequence_path: Path, use_gt: bool) -> np.ndarray:
     """Load processed relative motions and skip any stale non-numeric header lines."""
 
-    rel_filename = (
-        "regressed_relative_motions.txt"
-        if use_regressed_relative_motions
-        else "relative_motions.txt"
-    )
-    rel_path = sequence_path / rel_filename
+    filename = "relative_motions.txt" if use_gt else "regressed_relative_motions.txt"
+    rel_path = sequence_path / filename
+    
     rows: list[list[float]] = []
     with rel_path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -126,10 +126,11 @@ def _load_relative_motion_table(sequence_path: Path, use_regressed_relative_moti
                 continue
 
     relative_motions = np.asarray(rows, dtype=np.float64)
-    if relative_motions.ndim != 2 or relative_motions.shape[1] not in (8, 9):
+    # Allows both 5-col (translation only) and 9-col (translation + rotation) formats
+    if relative_motions.ndim != 2 or relative_motions.shape[1] < 5:
         raise ValueError(
-            f"{rel_path} has shape {relative_motions.shape}, expected either N x 8 "
-            "(t0 t1 px py pz rx ry rz) or N x 9 (t0 t1 px py pz qx qy qz qw)."
+            f"{rel_path} has shape {relative_motions.shape}, expected N x 5 or N x 9: "
+            "t0 t1 px py pz [qx qy qz qw]."
         )
     if relative_motions.shape[0] < 2:
         raise ValueError(f"{rel_path} needs at least two rows to form one triplet update.")
@@ -164,12 +165,7 @@ def _infer_time_scale_to_seconds(timestamps: np.ndarray) -> float:
 
 
 def _build_anchor_times_from_relative_motions(relative_motion_table: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Recover anchor timestamps and the translation-only measurements used by the EKF.
-
-    The current EKF update uses only the translation component, so both
-    `t0 t1 px py pz rx ry rz` and `t0 t1 px py pz qx qy qz qw` layouts are
-    supported.
-    """
+    """Recover anchor timestamps and the translation-only measurements used by the EKF."""
 
     raw_times = relative_motion_table[:, :2]
     time_scale = _infer_time_scale_to_seconds(raw_times.reshape(-1))
@@ -177,7 +173,7 @@ def _build_anchor_times_from_relative_motions(relative_motion_table: np.ndarray)
     edge_end_times_s = raw_times[:, 1].astype(np.float64) * time_scale
 
     if np.any(edge_end_times_s <= edge_start_times_s):
-        raise ValueError("Found a non-positive interval in `relative_motions.txt`.")
+        raise ValueError("Found a non-positive interval in relative motions table.")
 
     continuity_error = np.max(np.abs(edge_end_times_s[:-1] - edge_start_times_s[1:]))
     if continuity_error > 1e-9:
@@ -201,14 +197,14 @@ def _validate_anchor_alignment(
     anchor_times_s = anchor_timestamps_us.astype(np.float64) * 1e-6
     if len(anchor_times_s) != len(relative_anchor_times_s):
         raise ValueError(
-            "anchor_poses.txt and relative_motions.txt disagree on the number of anchors: "
+            "anchor_poses.txt and relative motions disagree on the number of anchors: "
             f"{len(anchor_times_s)} vs {len(relative_anchor_times_s)}."
         )
 
     max_error = float(np.max(np.abs(anchor_times_s - relative_anchor_times_s)))
     if max_error > 1e-9:
         raise ValueError(
-            "anchor_poses.txt and relative_motions.txt disagree on anchor timestamps; "
+            "anchor_poses.txt and relative motions disagree on anchor timestamps; "
             f"maximum mismatch is {max_error:.3e} s."
         )
 
@@ -348,27 +344,6 @@ def _apply_initial_offsets(
     return R0 @ R_offset, v0 + v_offset, p0 + p_offset
 
 
-def _estimate_initial_velocity(
-    anchor_times_s: np.ndarray,
-    anchor_positions: np.ndarray,
-    window_size: int = 2,
-) -> np.ndarray:
-    """Estimate the initial velocity from the first `window_size` anchors.
-
-    When enough anchors are available, this uses the displacement from the first
-    to the fourth anchor, which corresponds to 200 ms for the default 50 ms
-    anchor spacing. If fewer anchors exist, it falls back to the furthest
-    available anchor.
-    """
-
-    if len(anchor_times_s) < 2:
-        return np.zeros(3, dtype=np.float64)
-
-    last_idx = min(window_size - 1, len(anchor_times_s) - 1)
-    dt = max(float(anchor_times_s[last_idx] - anchor_times_s[0]), 1e-9)
-    return (anchor_positions[last_idx] - anchor_positions[0]).astype(np.float64) / dt
-
-
 def _state_to_row(timestamp_s: float, ekf_state) -> np.ndarray:
     """Convert one EKF state into a text-friendly row."""
 
@@ -407,15 +382,15 @@ def _build_ground_truth_trajectory(
     )
 
 
-def run_filter(config: RunnerConfig = CONFIG) -> dict:
+def run_filter(config: RunnerConfig) -> dict:
     """Run the relative-motion EKF on one processed sequence."""
 
     sequence_path = _sequence_path(config)
     anchor_timestamps_us, anchor_positions, anchor_quaternions = _load_anchor_poses(sequence_path)
-    relative_motion_table = _load_relative_motion_table(
-        sequence_path,
-        config.use_regressed_relative_motions,
-    )
+    
+    # Pass `config.use_gt` to determine which table to load
+    relative_motion_table = _load_relative_motion_table(sequence_path, config.use_gt)
+    
     imu_table = _load_sequence_imu(sequence_path)
 
     relative_anchor_times_s, relative_measurements = _build_anchor_times_from_relative_motions(
@@ -446,11 +421,8 @@ def run_filter(config: RunnerConfig = CONFIG) -> dict:
     anchor_times_s = anchor_timestamps_us.astype(np.float64) * 1e-6
     p0 = anchor_positions[0].astype(np.float64)
     R0 = Rotation.from_quat(anchor_quaternions[0]).as_matrix()
-    v0 = _estimate_initial_velocity(
-        anchor_times_s,
-        anchor_positions,
-        window_size=config.initial_velocity_window_size,
-    )
+    dt0 = max(anchor_times_s[1] - anchor_times_s[0], 1e-9)
+    v0 = (anchor_positions[1] - anchor_positions[0]) / dt0
     R0, v0, p0 = _apply_initial_offsets(R0, v0.astype(np.float64), p0, config)
     bg0 = np.asarray(config.initial_bg, dtype=np.float64)
     ba0 = np.asarray(config.initial_ba, dtype=np.float64)
@@ -509,9 +481,52 @@ def run_filter(config: RunnerConfig = CONFIG) -> dict:
         anchor_positions,
         anchor_quaternions,
     )
+
+    regressed_trajectory = None
+    if config.plot_transformer:
+        try:
+            regressed_table = _load_relative_motion_table(sequence_path, use_gt=False)
+            
+            reg_dp = regressed_table[:, 2:5]
+            
+            has_rotations = regressed_table.shape[1] >= 9
+            if has_rotations:
+                reg_dq = regressed_table[:, 5:9]
+            
+            if config.max_frames is not None:
+                reg_dp = reg_dp[: max(0, config.max_frames - 1)]
+                if has_rotations:
+                    reg_dq = reg_dq[: max(0, config.max_frames - 1)]
+                    
+            if len(reg_dp) == len(anchor_timestamps_us) - 1:
+                regr_positions = [anchor_positions[0].astype(np.float64)]
+                regr_quaternions = [anchor_quaternions[0].astype(np.float64)]
+                
+                for i in range(len(reg_dp)):
+                    R_curr = Rotation.from_quat(regr_quaternions[-1])
+                    
+                    p_next = regr_positions[-1] + R_curr.as_matrix() @ reg_dp[i]
+                    regr_positions.append(p_next)
+                    
+                    if has_rotations:
+                        dR = Rotation.from_quat(reg_dq[i])
+                        q_next = (R_curr * dR).as_quat()
+                        regr_quaternions.append(q_next)
+                    else:
+                        regr_quaternions.append(anchor_quaternions[i + 1])
+                        
+                regressed_trajectory = _build_ground_truth_trajectory(
+                    anchor_timestamps_us,
+                    np.array(regr_positions),
+                    np.array(regr_quaternions), 
+                )
+        except Exception as e:
+            print(f"Warning: Failed to plot regressed trajectory: {e}")
+
     diagnostics = compute_filter_diagnostics(
         trajectory_table,
         ground_truth_trajectory,
+        regressed_trajectory=regressed_trajectory,
         output_dir=sequence_out_dir,
         file_prefix=config.sequence,
     )
@@ -524,25 +539,77 @@ def run_filter(config: RunnerConfig = CONFIG) -> dict:
         "mean_residual_norm": float(np.mean(residual_norms)) if residual_norms else None,
         "mean_delta_norm": float(np.mean(delta_norms)) if delta_norms else None,
         "trajectory": trajectory_table,
+        "ground_truth": ground_truth_trajectory,
+        "regressed": regressed_trajectory,
         "saved_file": str(saved_path),
         "diagnostics": diagnostics,
     }
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Training configuration")
+    parser.add_argument(
+        "--gt", 
+        action="store_true",
+        help="Uses the ground truth for the updates, default regressed_relative_motions.txt (Transformer output)"
+    )
+    parser.add_argument(
+        "--sequence",
+        type=str,
+        default=CONFIG.sequence, 
+        help="Sequence folder name to process (e.g., '00_peanuts_dark', '01_peanuts_light', '03_rocket_earth_dark')"
+    )
+    parser.add_argument(
+        "--plot_transformer",
+        action="store_true",
+        help="Plots the regressed trajectory from the Transformer alongside EKF and GT."
+    )
+    parser.add_argument(
+        "--interactive_plot",
+        action="store_true",
+        help="Opens the interactive 3D plot window at the end of the run."
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
     """Run the minimal relative-motion filter with the top-of-file configuration."""
+    args = parse_args()
 
-    results = run_filter(CONFIG)
+    # Create a new config based on CONFIG but overriding attributes from args
+    active_config = replace(
+        CONFIG, 
+        use_gt=args.gt, 
+        sequence=args.sequence,
+        plot_transformer=args.plot_transformer,
+        interactive_plot=args.interactive_plot
+    )
+
+    results = run_filter(active_config)
+    
     print_filter_run_summary(
         sequence=results["sequence"],
         num_anchors=results["num_anchors"],
         num_updates_attempted=results["num_updates_attempted"],
         num_updates_rejected=results["num_updates_rejected"],
+        diagnostics=results["diagnostics"],
         mean_residual_norm=results["mean_residual_norm"],
         mean_delta_norm=results["mean_delta_norm"],
-        diagnostics=results["diagnostics"],
         saved_trajectory_path=results["saved_file"],
     )
+
+    if active_config.interactive_plot:
+        if results["regressed"] is not None:
+            show_interactive_3d_plot(
+                estimated_trajectory=results["trajectory"],
+                ground_truth_trajectory=results["ground_truth"],
+                regressed_trajectory=results["regressed"],
+            )
+        else:
+            show_interactive_3d_plot(
+                estimated_trajectory=results["trajectory"],
+                ground_truth_trajectory=results["ground_truth"],
+            )
 
 
 if __name__ == "__main__":

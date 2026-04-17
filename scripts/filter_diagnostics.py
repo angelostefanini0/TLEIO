@@ -10,7 +10,7 @@ from scipy.spatial.transform import Rotation
 
 
 def load_trajectory_table(path: Path) -> np.ndarray:
-    """Load a text trajectory table with columns `timestamp px py pz qx qy qz qw`."""
+    """Load a text trajectory table with columns `timestamp px py pz rx ry rz`."""
 
     table = np.loadtxt(path, comments="#", ndmin=2)
     if table.shape[1] != 8:
@@ -96,6 +96,7 @@ def save_trajectory_comparison_plot(
     gt_times_s: np.ndarray,
     gt_positions: np.ndarray,
     estimated_positions: np.ndarray,
+    regressed_positions: np.ndarray | None = None,
 ) -> Path:
     """Save the standard x/y/z position comparison and total position error plot."""
 
@@ -111,6 +112,8 @@ def save_trajectory_comparison_plot(
         col = axis_idx % 2
         axis = axes[row, col]
         axis.plot(t_rel, gt_positions[:, axis_idx], label=f"GT {label}", color="tab:blue")
+        if regressed_positions is not None:
+            axis.plot(t_rel, regressed_positions[:, axis_idx], label=f"Regressed {label}", color="tab:orange", linestyle="--")
         axis.plot(t_rel, estimated_positions[:, axis_idx], label=f"EKF {label}", color="tab:green")
         axis.set_title(f"{label.upper()} Position")
         axis.set_xlabel("time [s]")
@@ -119,6 +122,10 @@ def save_trajectory_comparison_plot(
         axis.legend()
 
     position_error = np.linalg.norm(estimated_positions - gt_positions, axis=1)
+    if regressed_positions is not None:
+        regressed_error = np.linalg.norm(regressed_positions - gt_positions, axis=1)
+        axes[1, 1].plot(t_rel, regressed_error, color="tab:orange", linestyle="--", label="Regressed Error")
+
     axes[1, 1].plot(t_rel, position_error, color="tab:red", label="EKF Error")
     axes[1, 1].set_title("Total Position Error")
     axes[1, 1].set_xlabel("time [s]")
@@ -188,6 +195,7 @@ def save_3d_trajectory_plot(
     path: Path,
     gt_positions: np.ndarray,
     estimated_positions: np.ndarray,
+    regressed_positions: np.ndarray | None = None,
 ) -> Path:
     """Save a 3D plot comparing the estimated trajectory against ground truth."""
 
@@ -197,6 +205,7 @@ def save_3d_trajectory_plot(
 
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection="3d")
+    
     ax.plot(
         gt_positions[:, 0],
         gt_positions[:, 1],
@@ -205,6 +214,18 @@ def save_3d_trajectory_plot(
         color="tab:blue",
         linewidth=2,
     )
+    
+    if regressed_positions is not None:
+        ax.plot(
+            regressed_positions[:, 0],
+            regressed_positions[:, 1],
+            regressed_positions[:, 2],
+            label="Regressed (Open Loop)",
+            color="tab:orange",
+            linestyle="--",
+            linewidth=2,
+        )
+
     ax.plot(
         estimated_positions[:, 0],
         estimated_positions[:, 1],
@@ -241,9 +262,55 @@ def save_3d_trajectory_plot(
     return path
 
 
+def show_interactive_3d_plot(
+    estimated_trajectory: np.ndarray,
+    ground_truth_trajectory: np.ndarray,
+    regressed_trajectory: np.ndarray | None = None,
+) -> None:
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(111, projection="3d")
+    
+    gt_pos = ground_truth_trajectory[:, 1:4]
+    est_pos = estimated_trajectory[:, 1:4]
+
+    ax.plot(gt_pos[:, 0], gt_pos[:, 1], gt_pos[:, 2], label="Ground Truth", color="tab:blue", linewidth=2)
+    
+    if regressed_trajectory is not None:
+        reg_pos = regressed_trajectory[:, 1:4]
+        ax.plot(reg_pos[:, 0], reg_pos[:, 1], reg_pos[:, 2], label="Regressed (Open Loop)", color="tab:orange", linestyle="--", linewidth=2)
+        
+    ax.plot(est_pos[:, 0], est_pos[:, 1], est_pos[:, 2], label="EKF Estimated", color="tab:green", linewidth=2)
+    
+    ax.scatter(*gt_pos[0], color="black", marker="o", s=60, label="Start", zorder=5)
+    ax.scatter(*gt_pos[-1], color="red", marker="x", s=60, label="End", zorder=5)
+    
+    ax.set_title("3D Trajectory")
+    ax.set_xlabel("X [m]")
+    ax.set_ylabel("Y [m]")
+    ax.set_zlabel("Z [m]")
+    ax.legend()
+
+    max_range = np.array([
+        gt_pos[:, 0].max() - gt_pos[:, 0].min(),
+        gt_pos[:, 1].max() - gt_pos[:, 1].min(),
+        gt_pos[:, 2].max() - gt_pos[:, 2].min(),
+    ]).max() / 2.0
+    mid_x = (gt_pos[:, 0].max() + gt_pos[:, 0].min()) * 0.5
+    mid_y = (gt_pos[:, 1].max() + gt_pos[:, 1].min()) * 0.5
+    mid_z = (gt_pos[:, 2].max() + gt_pos[:, 2].min()) * 0.5
+    ax.set_xlim(mid_x - max_range, mid_x + max_range)
+    ax.set_ylim(mid_y - max_range, mid_y + max_range)
+    ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+    plt.show()
+
+
 def compute_filter_diagnostics(
     estimated_trajectory: np.ndarray,
     ground_truth_trajectory: np.ndarray,
+    regressed_trajectory: np.ndarray | None = None,
     output_dir: Path | None = None,
     file_prefix: str = "filter",
 ) -> dict:
@@ -270,6 +337,18 @@ def compute_filter_diagnostics(
         gt_quaternions,
         est_times_s,
     )
+
+    if regressed_trajectory is not None:
+        regr = np.asarray(regressed_trajectory, dtype=np.float64)
+        aligned_regr_positions, aligned_regr_quaternions = interpolate_poses(
+            regr[:, 0],
+            regr[:, 1:4],
+            normalize_quaternions(regr[:, 4:8]),
+            est_times_s,
+        )
+    else:
+        aligned_regr_positions = None
+        aligned_regr_quaternions = None
 
     position_errors = est_positions - aligned_gt_positions
     x_rmse_m = float(np.sqrt(np.mean(position_errors[:, 0] ** 2)))
@@ -307,6 +386,7 @@ def compute_filter_diagnostics(
                 est_times_s,
                 aligned_gt_positions,
                 est_positions,
+                regressed_positions=aligned_regr_positions,
             )
         )
         saved_files["rotation_plot"] = str(
@@ -322,20 +402,21 @@ def compute_filter_diagnostics(
                 output_dir / f"{file_prefix}_trajectory_3d.png",
                 aligned_gt_positions,
                 est_positions,
+                regressed_positions=aligned_regr_positions,
             )
         )
 
     return {
+        "position_rmse_m": position_rmse_m,
         "x_rmse_m": x_rmse_m,
         "y_rmse_m": y_rmse_m,
         "z_rmse_m": z_rmse_m,
         "max_position_error_m": max_position_error_m,
-        "position_rmse_m": position_rmse_m,
+        "rotation_rmse_deg": rotation_rmse_deg,
         "roll_rmse_deg": roll_rmse_deg,
         "pitch_rmse_deg": pitch_rmse_deg,
         "yaw_rmse_deg": yaw_rmse_deg,
         "max_rotation_error_deg": max_rotation_error_deg,
-        "rotation_rmse_deg": rotation_rmse_deg,
         "saved_files": saved_files,
     }
 
@@ -352,26 +433,48 @@ def print_filter_run_summary(
 ) -> None:
     """Print the development-time filter summary in one place."""
 
-    print(f"Sequence:                 {sequence}")
-    print(f"Anchors processed:        {num_anchors}")
-    print(f"Updates attempted:        {num_updates_attempted}")
-    print(f"Updates rejected:         {num_updates_rejected}")
-    print(f"Mean residual norm:       {mean_residual_norm}")
-    print(f"Mean correction norm:     {mean_delta_norm}")
-    print(f"X direction RMSE [m]:     {diagnostics['x_rmse_m']:.6f}")
-    print(f"Y direction RMSE [m]:     {diagnostics['y_rmse_m']:.6f}")
-    print(f"Z direction RMSE [m]:     {diagnostics['z_rmse_m']:.6f}")
-    print(f"MAX position error [m]:   {diagnostics['max_position_error_m']:.6f}")
-    print(f"Position RMSE [m]:        {diagnostics['position_rmse_m']:.6f}")
-    print(f"Roll RMSE [deg]:          {diagnostics['roll_rmse_deg']:.6f}")
-    print(f"Pitch RMSE [deg]:         {diagnostics['pitch_rmse_deg']:.6f}")
-    print(f"Yaw RMSE [deg]:           {diagnostics['yaw_rmse_deg']:.6f}")
-    print(f"MAX rotation error [deg]: {diagnostics['max_rotation_error_deg']:.6f}")
-    print(f"Rotation RMSE [deg]:      {diagnostics['rotation_rmse_deg']:.6f}")
+    w_label = 26
+    w_total = 67
+
+    print(f"{'Sequence:':<{w_label}} {sequence}")
+    print(f"{'Anchors processed:':<{w_label}} {num_anchors}")
+    print(f"{'Updates attempted:':<{w_label}} {num_updates_attempted}")
+    print(f"{'Updates rejected:':<{w_label}} {num_updates_rejected}")
+    
+    print(f"{' Position and Rotation RMSE ':-^{w_total}}")
+    print(f"{'Position RMSE [m]:':<{w_label}} {diagnostics['position_rmse_m']:.6f}")
+    print(f"{'Rotation RMSE [deg]:':<{w_label}} {diagnostics['rotation_rmse_deg']:.6f}")
+    
+    print(f"{' MAX Errors ':-^{w_total}}")
+    print(f"{'MAX position error [m]:':<{w_label}} {diagnostics['max_position_error_m']:.6f}")
+    print(f"{'MAX rotation error [deg]:':<{w_label}} {diagnostics['max_rotation_error_deg']:.6f}")
+    
+    print(f"{' Position details ':-^{w_total}}")
+    print(f"{'X direction RMSE [m]:':<{w_label}} {diagnostics['x_rmse_m']:.6f}")
+    print(f"{'Y direction RMSE [m]:':<{w_label}} {diagnostics['y_rmse_m']:.6f}")
+    print(f"{'Z direction RMSE [m]:':<{w_label}} {diagnostics['z_rmse_m']:.6f}")
+    
+    print(f"{' Rotation details ':-^{w_total}}")
+    print(f"{'Roll RMSE [deg]:':<{w_label}} {diagnostics['roll_rmse_deg']:.6f}")
+    print(f"{'Pitch RMSE [deg]:':<{w_label}} {diagnostics['pitch_rmse_deg']:.6f}")
+    print(f"{'Yaw RMSE [deg]:':<{w_label}} {diagnostics['yaw_rmse_deg']:.6f}")
+    
+    print("-" * w_total)
+    
+    if mean_residual_norm is not None:
+        print(f"{'Mean residual norm:':<{w_label}} {mean_residual_norm:.6f}")
+        print(f"{'Mean correction norm:':<{w_label}} {mean_delta_norm:.6f}")
+    else:
+        print(f"{'Mean residual norm:':<{w_label}} {mean_residual_norm}")
+        print(f"{'Mean correction norm:':<{w_label}} {mean_delta_norm}")
+        
+    print("-" * w_total)
+    
     if saved_trajectory_path is not None:
-        print(f"Saved trajectory:         {saved_trajectory_path}")
-    for key, value in diagnostics["saved_files"].items():
-        print(f"{key}: {value}")
+        print(f"{'Saved trajectory:':<{w_label}} {saved_trajectory_path}")
+        
+    for key, value in diagnostics.get("saved_files", {}).items():
+        print(f"{key + ':':<{w_label}} {value}")
 
 
 def main() -> None:
@@ -380,15 +483,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Compute diagnostics for a filter trajectory.")
     parser.add_argument("--estimated", type=Path, required=True, help="Estimated trajectory txt file.")
     parser.add_argument("--ground_truth", type=Path, required=True, help="Ground-truth trajectory txt file.")
+    parser.add_argument("--regressed", type=Path, default=None, help="Optional regressed trajectory txt file.")
     parser.add_argument("--output_dir", type=Path, default=None, help="Optional directory for plots.")
     parser.add_argument("--prefix", type=str, default="filter", help="Prefix used for saved plot filenames.")
     args = parser.parse_args()
 
     estimated = load_trajectory_table(args.estimated)
     ground_truth = load_trajectory_table(args.ground_truth)
+    
+    regressed = None
+    if args.regressed is not None:
+        regressed = load_trajectory_table(args.regressed)
+
     results = compute_filter_diagnostics(
-        estimated,
-        ground_truth,
+        estimated_trajectory=estimated,
+        ground_truth_trajectory=ground_truth,
+        regressed_trajectory=regressed,
         output_dir=args.output_dir,
         file_prefix=args.prefix,
     )
