@@ -144,7 +144,6 @@ def save_rotation_comparison_plot(
     times_s: np.ndarray,
     gt_quaternions_xyzw: np.ndarray,
     estimated_quaternions_xyzw: np.ndarray,
-    regressed_quaternions_xyzw: np.ndarray | None = None,
 ) -> Path:
     """Save the standard roll/pitch/yaw comparison and geodesic rotation error plot."""
 
@@ -157,10 +156,13 @@ def save_rotation_comparison_plot(
     est_euler_rad = Rotation.from_quat(estimated_quaternions_xyzw).as_euler("xyz", degrees=False)
     gt_euler_deg = np.rad2deg(np.unwrap(gt_euler_rad, axis=0))
     est_euler_deg = np.rad2deg(np.unwrap(est_euler_rad, axis=0))
-    
-    if regressed_quaternions_xyzw is not None:
-        regr_euler_rad = Rotation.from_quat(regressed_quaternions_xyzw).as_euler("xyz", degrees=False)
-        regr_euler_deg = np.rad2deg(np.unwrap(regr_euler_rad, axis=0))
+
+    rot_errors_deg = np.array(
+        [
+            rotation_error_deg(q_gt, q_est)
+            for q_gt, q_est in zip(gt_quaternions_xyzw, estimated_quaternions_xyzw)
+        ]
+    )
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 9))
     labels = ["Roll (X)", "Pitch (Y)", "Yaw (Z)"]
@@ -169,24 +171,12 @@ def save_rotation_comparison_plot(
         col = axis_idx % 2
         axis = axes[row, col]
         axis.plot(t_rel, gt_euler_deg[:, axis_idx], label=f"GT {label}", color="tab:blue")
-        if regressed_quaternions_xyzw is not None:
-            axis.plot(t_rel, regr_euler_deg[:, axis_idx], label=f"Regressed {label}", color="tab:orange", linestyle="--")
         axis.plot(t_rel, est_euler_deg[:, axis_idx], label=f"EKF {label}", color="tab:green")
         axis.set_title(f"{label} Angle")
         axis.set_xlabel("time [s]")
         axis.set_ylabel("angle [deg]")
         axis.grid(True)
         axis.legend()
-
-    rot_errors_deg = np.array(
-        [
-            rotation_error_deg(q_gt, q_est)
-            for q_gt, q_est in zip(gt_quaternions_xyzw, estimated_quaternions_xyzw)
-        ]
-    )
-    if regressed_quaternions_xyzw is not None:
-        regr_rot_errors_deg = np.array([rotation_error_deg(q_gt, q_reg) for q_gt, q_reg in zip(gt_quaternions_xyzw, regressed_quaternions_xyzw)])
-        axes[1, 1].plot(t_rel, regr_rot_errors_deg, color="tab:orange", linestyle="--", label="Regressed Error")
 
     axes[1, 1].plot(t_rel, rot_errors_deg, color="tab:red", label="EKF Error")
     axes[1, 1].set_title("Absolute Rotation Error")
@@ -459,7 +449,6 @@ def compute_filter_diagnostics(
                 est_times_s,
                 aligned_gt_quaternions,
                 est_quaternions,
-                regressed_quaternions_xyzw=aligned_regr_quaternions,
             )
         )
         saved_files["trajectory_3d_plot"] = str(
