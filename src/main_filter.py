@@ -53,7 +53,7 @@ class RunnerConfig:
 
     # IMU process noise
     sigma_na: float = 5.90e-03
-    sigma_ng: float = 3.19e-03
+    sigma_ng: float = 9.57e-03
     sigma_nba: float = 8.81e-05
     sigma_nbg: float = 3.99e-05
 
