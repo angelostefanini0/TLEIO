@@ -13,6 +13,7 @@ venv/
 data/*
 !data/.gitkeep
 results/
+outputs/main_filter/
 checkpoints/
 *.h5
 *.log
