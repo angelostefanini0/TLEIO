@@ -41,7 +41,7 @@ class RunnerConfig:
 
     # Paths
     processed_root: Path = ROOT / "data" / "eds" / "processed"
-    sequence: str = "03_rocket_earth_dark"
+    sequence: str = "09_ziggy_flying_pieces"
     out_dir: Path = ROOT / "outputs" / "main_filter"
 
     # Execution modes
@@ -185,13 +185,19 @@ def _build_anchor_times_from_relative_motions(relative_motion_table: np.ndarray)
 
     anchor_times_s = np.concatenate([edge_start_times_s[:1], edge_end_times_s], axis=0)
     relative_measurements = relative_motion_table[:, 2:5].astype(np.float64)
-    return anchor_times_s, relative_measurements
+    if relative_motion_table.shape[1] == 8:
+        relative_sigmas = relative_motion_table[:, 5:8].astype(np.float64)
+    else:
+        relative_sigmas = None
+
+    return anchor_times_s, relative_measurements, relative_sigmas
 
 
 def _validate_anchor_alignment(
     anchor_timestamps_us: np.ndarray,
     relative_anchor_times_s: np.ndarray,
     relative_measurements: np.ndarray,
+    relative_sigmas: np.ndarray | None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Ensure anchor_poses.txt and relative_motions.txt describe the same timeline."""
 
@@ -215,7 +221,7 @@ def _validate_anchor_alignment(
             f"{relative_measurements.shape[0]} rows for {len(anchor_times_s)} anchors."
         )
 
-    return anchor_timestamps_us, anchor_times_s, relative_measurements
+    return anchor_timestamps_us, anchor_times_s, relative_measurements, relative_sigmas
 
 
 def _truncate_sequence(
@@ -223,12 +229,13 @@ def _truncate_sequence(
     anchor_positions: np.ndarray,
     anchor_quaternions: np.ndarray,
     relative_measurements: np.ndarray,
+    relative_sigmas: np.ndarray | None,
     max_frames: int | None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+):
     """Optionally keep only the first `max_frames` anchors."""
 
     if max_frames is None:
-        return anchor_timestamps_us, anchor_positions, anchor_quaternions, relative_measurements
+        return anchor_timestamps_us, anchor_positions, anchor_quaternions, relative_measurements, relative_sigmas
 
     if max_frames < 3:
         raise ValueError("`max_frames` must be at least 3 to run triplet updates.")
@@ -237,7 +244,10 @@ def _truncate_sequence(
     anchor_positions = anchor_positions[:max_frames]
     anchor_quaternions = anchor_quaternions[:max_frames]
     relative_measurements = relative_measurements[: max(0, max_frames - 1)]
-    return anchor_timestamps_us, anchor_positions, anchor_quaternions, relative_measurements
+    if relative_sigmas is not None:
+        relative_sigmas = relative_sigmas[: max(0, max_frames - 1)]
+        
+    return anchor_timestamps_us, anchor_positions, anchor_quaternions, relative_measurements, relative_sigmas
 
 
 def _build_exact_imu_segment(
@@ -394,19 +404,22 @@ def run_filter(config: RunnerConfig) -> dict:
     
     imu_table = _load_sequence_imu(sequence_path)
 
-    relative_anchor_times_s, relative_measurements = _build_anchor_times_from_relative_motions(
+    relative_anchor_times_s, relative_measurements, relative_sigmas = _build_anchor_times_from_relative_motions(
         relative_motion_table
     )
-    anchor_timestamps_us, _, relative_measurements = _validate_anchor_alignment(
+    #relative_sigmas=None
+    anchor_timestamps_us, _, relative_measurements, relative_sigmas = _validate_anchor_alignment(
         anchor_timestamps_us,
         relative_anchor_times_s,
         relative_measurements,
+        relative_sigmas
     )
-    anchor_timestamps_us, anchor_positions, anchor_quaternions, relative_measurements = _truncate_sequence(
+    anchor_timestamps_us, anchor_positions, anchor_quaternions, relative_measurements, relative_sigmas = _truncate_sequence(
         anchor_timestamps_us,
         anchor_positions,
         anchor_quaternions,
         relative_measurements,
+        relative_sigmas,
         config.max_frames,
     )
 
@@ -456,10 +469,16 @@ def run_filter(config: RunnerConfig) -> dict:
                 size=measurement.shape,
             )
 
+        current_joint_covariance = joint_covariance.copy()
+        if relative_sigmas is not None:
+            sigmas = relative_sigmas[anchor_idx - 2 : anchor_idx] # shape (2, 3)
+            variances = (sigmas.flatten()) ** 2 
+            np.fill_diagonal(current_joint_covariance[0:6, 0:6], variances)
+
         update_info = ekf.update(
             {
                 "relative_pose": measurement,
-                "joint_covariance": joint_covariance,
+                "joint_covariance": current_joint_covariance,
             }
         )
         if update_info.get("rejected", False):

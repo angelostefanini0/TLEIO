@@ -183,11 +183,12 @@ class ImuMSCKF:
         EKF correction must apply the negative Kalman step so the residual is
         driven toward zero instead of away from it.
         """
+        covariance = network_output.get("joint_covariance", self.default_measurement_covariance)
 
         residual, H, R = build_triplet_update(
             self.state,
             network_output,
-            self.default_measurement_covariance,
+            covariance,
             covariance_scale=self.meas_cov_scale,
         )
 

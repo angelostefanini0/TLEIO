@@ -338,7 +338,7 @@ def show_interactive_3d_plot(
     ax.scatter(*gt_pos[0], color="black", marker="o", s=60, label="Start", zorder=5)
     ax.scatter(*gt_pos[-1], color="red", marker="x", s=60, label="End", zorder=5)
     
-    ax.set_title("3D Trajectory (Trascina col mouse per ruotare)")
+    ax.set_title("3D Trajectory")
     ax.set_xlabel("X [m]")
     ax.set_ylabel("Y [m]")
     ax.set_zlabel("Z [m]")
