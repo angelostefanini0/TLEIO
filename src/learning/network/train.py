@@ -138,23 +138,51 @@ def train(model, train_loader, val_loader, criterion, optimizer, tensorboard_wri
     return
 
 
-def get_optimizer(params, args):
+def build_param_groups(model, weight_decay):
+    raw_model = model.module if hasattr(model, "module") else model
+    skip_weight_decay = set()
+    if hasattr(raw_model, "no_weight_decay"):
+        skip_weight_decay = set(raw_model.no_weight_decay())
+
+    decay_params = []
+    no_decay_params = []
+
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+
+        clean_name = name[7:] if name.startswith("module.") else name
+        if (
+            param.ndim == 1
+            or clean_name.endswith(".bias")
+            or clean_name in skip_weight_decay
+        ):
+            no_decay_params.append(param)
+        else:
+            decay_params.append(param)
+
+    return [
+        {"params": decay_params, "weight_decay": weight_decay},
+        {"params": no_decay_params, "weight_decay": 0.0},
+    ]
+
+
+def get_optimizer(model, args):
     method = args["optimizer"]
+    param_groups = build_param_groups(model, args["weight_decay"])
 
     # initialize the optimizer
     if method == "Adam":
-        optimizer = optim.Adam(params, lr=args["lr"], weight_decay=args["weight_decay"])
+        optimizer = optim.Adam(param_groups, lr=args["lr"])
     elif method == "AdamW":
-        optimizer = optim.AdamW(params, lr=args["lr"], weight_decay=args["weight_decay"])
+        optimizer = optim.AdamW(param_groups, lr=args["lr"])
     elif method == "SGD":
-        optimizer = optim.SGD(params, lr=args["lr"],
-                              momentum=args["momentum"],
-                              weight_decay=args["weight_decay"])
+        optimizer = optim.SGD(param_groups, lr=args["lr"],
+                              momentum=args["momentum"])
     elif method == "RAdam":
-        optimizer = optim.RAdam(params, lr=args["lr"])
+        optimizer = optim.RAdam(param_groups, lr=args["lr"])
     elif method == "Adagrad":
-        optimizer = optim.Adagrad(params, lr=args["lr"],
-                                  weight_decay=args["weight_decay"])
+        optimizer = optim.Adagrad(param_groups, lr=args["lr"])
 
     # load checkpoint
     if args["checkpoint"] is not None:
