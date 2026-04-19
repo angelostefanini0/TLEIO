@@ -63,7 +63,7 @@ class RunnerConfig:
     sigma_nbg: float = 3.99e-05
 
     # EKF assumed measurement covariance
-    assumed_sigma_rel_t: float = 0.03
+    assumed_sigma_rel_t: float = 0.018
     assumed_sigma_rel_r_deg: float = 2.0
     meas_cov_scale: float = 1.0
 
@@ -112,7 +112,7 @@ def _load_anchor_poses(sequence_path: Path) -> tuple[np.ndarray, np.ndarray, np.
 def _load_relative_motion_table(sequence_path: Path, use_gt: bool) -> np.ndarray:
     """Load processed relative motions and skip any stale non-numeric header lines."""
 
-    filename = "relative_motions.txt" if use_gt else "regressed_relative_motions.txt"
+    filename = "relative_motions.txt" if use_gt else "regressed_relative_motions_no_cov.txt"
     rel_path = sequence_path / filename
     
     rows: list[list[float]] = []
@@ -158,7 +158,7 @@ def _infer_time_scale_to_seconds(timestamps: np.ndarray) -> float:
     positive_diffs = positive_diffs[positive_diffs > 0]
     median_dt = float(np.median(positive_diffs)) if len(positive_diffs) > 0 else 0.0
 
-    if median_dt > 1e5:
+    if median_dt > 1e7:
         return 1e-9
     if median_dt > 1e1:
         return 1e-6
