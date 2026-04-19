@@ -112,7 +112,7 @@ def _load_anchor_poses(sequence_path: Path) -> tuple[np.ndarray, np.ndarray, np.
 def _load_relative_motion_table(sequence_path: Path, use_gt: bool) -> np.ndarray:
     """Load processed relative motions and skip any stale non-numeric header lines."""
 
-    filename = "relative_motions.txt" if use_gt else "regressed_relative_motions_no_cov.txt"
+    filename = "relative_motions.txt" if use_gt else "regressed_relative_motions.txt"
     rel_path = sequence_path / filename
     
     rows: list[list[float]] = []
