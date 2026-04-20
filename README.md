@@ -70,7 +70,7 @@ python scripts/processing.py data/eds/raw \
 --timestamps-key t \
 --process_gt imu.csv stamped_groundtruth.txt \
 --delta_t_ms 50 \
---anchor_hz 20
+--anchor_t_ms 50
 
 ```
 ## 4. Visualization of event data: 

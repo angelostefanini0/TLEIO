@@ -129,10 +129,10 @@ def parse_args() -> argparse.Namespace:
     )
     
     parser.add_argument(
-        "--anchor_hz", 
+        "--anchor_t_ms", 
         type=float, 
-        default=20.0, 
-        help="Anchor frequency in Hz"
+        default=50.0, 
+        help="Anchor step duration in ms"
     )
 
     return parser.parse_args()
@@ -259,7 +259,7 @@ def process_gt(
     files_to_copy: list[str],
     t0: int, 
     delta_t_ms: float, 
-    anchor_hz: float
+    anchor_t_ms: float
 ) -> None:
     
     source_dir = source_h5.parent
@@ -273,7 +273,7 @@ def process_gt(
             raise FileNotFoundError(f"Supplementary file not found: {s_file}")
 
         print(f"Processing: {filename} -> {dest_dir}")
-        offset_timestamps(s_file, dest_dir, d_file, t0, delta_t_ms, anchor_hz)
+        offset_timestamps(s_file, dest_dir, d_file, t0, delta_t_ms, anchor_t_ms)
 
 
 def copy_calibration_if_present(source_h5: Path, dest_h5: Path) -> None:
@@ -293,7 +293,7 @@ def offset_timestamps(s_file: Path,
                       d_file: Path, 
                       t0:int, 
                       delta_t_ms: float, 
-                      anchor_hz: float
+                      anchor_t_ms: float
                       ) -> np.ndarray: 
 
     if s_file.suffix.lower() == ".csv":
@@ -328,16 +328,16 @@ def offset_timestamps(s_file: Path,
     
     #Actually process the gt 
     if gt: 
-        generate_supervision(delta_t_ms, anchor_hz, filtered, d_folder)
+        generate_supervision(delta_t_ms, anchor_t_ms, filtered, d_folder)
 
 def generate_supervision(
         delta_t_ms: float = 50.0,
-        anchor_hz: float = 20.0, 
+        anchor_t_ms: float = 50.0, 
         gt_data: np.ndarray = None, 
         out_dir : Path = None,
         ): 
     delta_t_us = int(round(delta_t_ms * 1000.0))
-    anchor_step_us = int(round(1e6 / anchor_hz))
+    anchor_step_us = int(round(anchor_t_ms * 1000.0))
     
     ts_gt, pos_gt, quat_gt = load_gt(gt_data)
 
@@ -455,7 +455,7 @@ def main() -> None:
             print(f"Wrote dataset '{args.dataset_name}' into: {output_path}")
             
             if args.process_gt:
-                process_gt(event_path, output_path, args.process_gt, t0, args.delta_t_ms, args.anchor_hz)
+                process_gt(event_path, output_path, args.process_gt, t0, args.delta_t_ms, args.anchor_t_ms)
             copy_calibration_if_present(event_path, output_path)
         
         # delete recursively the raw input files if specified
