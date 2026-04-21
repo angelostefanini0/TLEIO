@@ -72,6 +72,7 @@ class ImuMSCKF:
             self.sigma_rel_t
         )
         self.t = 0.0
+        self.adaptive_cov = AdaptiveCovariance(M1=3, M2=2, gamma=0.1)
 
     def initialize_with_state(self, t, R, v, p, bg, ba, P=None):
         """Reset the filter to a known nominal state and clear all clones."""
@@ -200,14 +201,15 @@ class ImuMSCKF:
         )
 
         P = self.state.P
-        innovation_covariance = H @ P @ H.T + R
+        R_adaptive = self.adaptive_cov.get_adaptive_R(residual, H, P, R)
+        innovation_covariance = H @ P @ H.T + R_adaptive
         mahalanobis_sq = residual.T @ np.linalg.solve(innovation_covariance, residual)
         chi2_threshold=12.59 #95% accuracy
         if mahalanobis_sq>chi2_threshold:
             return {
                 "residual": residual,
                 "jacobian": H,
-                "measurement_covariance": R,
+                "measurement_covariance": R_adaptive,
                 "innovation_covariance": innovation_covariance,
                 "kalman_gain": None,
                 "delta_x": None,
@@ -221,13 +223,13 @@ class ImuMSCKF:
 
         identity = np.eye(P.shape[0])
         joseph_left = identity - K @ H
-        P_updated = joseph_left @ P @ joseph_left.T + K @ R @ K.T
+        P_updated = joseph_left @ P @ joseph_left.T + K @ R_adaptive @ K.T
         self.state.P = 0.5 * (P_updated + P_updated.T)
 
         return {
             "residual": residual,
             "jacobian": H,
-            "measurement_covariance": R,
+            "measurement_covariance": R_adaptive,
             "innovation_covariance": innovation_covariance,
             "kalman_gain": K,
             "delta_x": delta_x,
@@ -257,6 +259,69 @@ class ImuMSCKF:
             self.state.clone_ps[clone_idx] = (
                 self.state.clone_ps[clone_idx] + delta_x[offset + 3 : offset + 6]
             )
+
+
+class AdaptiveCovariance:
+    """
+    Implementa la stima adattiva della covarianza del rumore di misura 
+    basata sull'algoritmo di Young Soo Suh.
+    """
+    def __init__(self, M1=3, M2=2, gamma=0.1):
+        self.M1 = M1          # Window of residuals
+        self.M2 = M2          # Counter before Mode 1
+        self.gamma = gamma    
+        self.residual_history = []
+        self.mode1_counter = 0
+
+    def get_adaptive_R(self, residual, H, P, R_base):
+        res = residual.reshape(-1, 1)
+        self.residual_history.append(res)
+
+        if len(self.residual_history) > self.M1:
+            self.residual_history.pop(0)
+
+        if len(self.residual_history) < self.M1:
+            return R_base
+
+        dim = res.shape[0]
+        
+        U_k = np.zeros((dim, dim))
+        for r in self.residual_history:
+            U_k += r @ r.T
+        U_k /= self.M1
+
+        S_k = H @ P @ H.T + R_base
+
+        lambdas, U_vecs = np.linalg.eigh(U_k)
+
+        max_diff = -np.inf
+        Q_hat = np.zeros((dim, dim))
+
+        for i in range(dim):
+            u_i = U_vecs[:, i:i+1]
+            
+            mu_i = (u_i.T @ S_k @ u_i)[0, 0]
+            
+            diff = lambdas[i] - mu_i
+            if diff > max_diff:
+                max_diff = diff
+
+            if diff > 0:
+                Q_hat += diff * (u_i @ u_i.T)
+
+        if max_diff < self.gamma:
+            self.mode1_counter += 1
+        else:
+            self.mode1_counter = 0
+
+        if self.mode1_counter > self.M2:
+            Q_hat = np.zeros((dim, dim))
+
+        R_adaptive = R_base + Q_hat
+        
+        R_adaptive = 0.5 * (R_adaptive + R_adaptive.T)
+        
+        return R_adaptive
 
 
 def propagate_rvt_and_jac(R, v, p, bg, ba, wm_raw, am_raw, dt, g):
