@@ -73,6 +73,8 @@ def parse_args():
                         help="load weights from pre-trained ViT")
     parser.add_argument("--num_workers", type=int, default=0, 
                         help="Number of workers for dataloader")
+    parser.add_argument("--transition_epoch", type=int, default=10,
+                        help="epoch to switch from MSE to ML loss")
 
     # checkpoints
     parser.add_argument("--checkpoint_path", type=str, default="checkpoints",
@@ -100,7 +102,7 @@ def parse_args():
         "patch_size": args["patch_size"],
         "attention_type": args["attention_type"],
         "num_frames": args["clip_len"],
-        "num_classes": 3 * (args["clip_len"] - 1),
+        "num_classes": 6 * (args["clip_len"] - 1),
         "depth": args["depth"],
         "heads": args["heads"],
         "dim_head": args["dim_head"],
