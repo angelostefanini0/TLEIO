@@ -8,6 +8,7 @@ EKF residual.
 """
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from filter.measurement_triplet import build_triplet_update, make_default_joint_covariance
 from filter.utils.math_utils import hat, mat_exp,Jr_exp
@@ -29,7 +30,9 @@ class State:
         self.v = np.zeros(3)     # velocity in world coordinates
         self.p = np.zeros(3)     # position in world coordinates
         self.bg = np.zeros(3)    # gyroscope bias
-        self.ba = np.zeros(3)    # accelerometer bias
+        self.ba = np.zeros(3)    # accelerometer bias 
+
+        self.oldomega4 = np.zeros((4, 4)) #matrix for third-order quaternion integration
 
         self.clone_Rs = []       # cloned body-to-world rotations, oldest first
         self.clone_ps = []       # cloned world positions, oldest first
@@ -79,6 +82,7 @@ class ImuMSCKF:
         self.state.p = p.copy()
         self.state.bg = bg.copy()
         self.state.ba = ba.copy()
+        self.state.oldomega4 = np.zeros((4, 4))
         self.state.clone_Rs = []
         self.state.clone_ps = []
         if P is None:
@@ -109,7 +113,10 @@ class ImuMSCKF:
             dR = mat_exp(wm * dt)
             specific_force_world = R_prev @ am + self.g
 
-            self.state.R = R_prev @ dR
+            specific_force_world = R_prev @ am + self.g 
+            self.state.R, self.state.oldomega4 = integrate_quaternion_3rd_order(
+                R_prev, wm, dt, self.state.oldomega4
+            )
             self.state.v = v_prev + specific_force_world * dt
             self.state.p = p_prev + v_prev * dt + 0.5 * specific_force_world * dt**2
 
@@ -320,3 +327,36 @@ def propagate_covariance(P, R, wm, am, dt, sg, sa, sbg, sba):
     
     return P_sym + eps * np.eye(P_sym.shape[0])
 
+def integrate_quaternion_3rd_order(R, wm, dt, oldomega4):
+    """
+    Perform 3rd-order quaternion integration.
+    """
+    q_xyzw = Rotation.from_matrix(R).as_quat()
+    q = np.array([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]) 
+    
+    omega4 = np.array([
+        [  0.0,  -wm[0], -wm[1], -wm[2]],
+        [ wm[0],   0.0,   wm[2], -wm[1]],
+        [ wm[1], -wm[2],   0.0,   wm[0]],
+        [ wm[2],  wm[1], -wm[0],   0.0 ]
+    ])
+    
+    I = np.eye(4)
+    w_sq = np.sum(wm**2)
+    
+    transition_matrix = (
+        I 
+        + 0.75 * omega4 * dt 
+        - 0.25 * oldomega4 * dt 
+        - (1.0 / 6.0) * w_sq * (dt**2) * I 
+        - (1.0 / 24.0) * (omega4 @ oldomega4) * (dt**2) 
+        - (1.0 / 48.0) * w_sq * omega4 * (dt**3)
+    )
+    
+    q_next = transition_matrix @ q
+    q_next /= np.linalg.norm(q_next)
+    
+    q_next_xyzw = np.array([q_next[1], q_next[2], q_next[3], q_next[0]])
+    R_next = Rotation.from_quat(q_next_xyzw).as_matrix()
+    
+    return R_next, omega4
