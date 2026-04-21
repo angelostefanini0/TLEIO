@@ -73,8 +73,8 @@ def parse_args():
                         help="load weights from pre-trained ViT")
     parser.add_argument("--num_workers", type=int, default=0, 
                         help="Number of workers for dataloader")
-    parser.add_argument("--transition_epoch", type=int, default=10,
-                        help="epoch to switch from MSE to ML loss")
+    parser.add_argument("--transition_epoch", type=int, default=1e6,
+                        help="epoch to switch from MSE to ML loss; MSE only if not set")
 
     # checkpoints
     parser.add_argument("--checkpoint_path", type=str, default="checkpoints",
