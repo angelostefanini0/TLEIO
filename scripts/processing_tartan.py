@@ -644,11 +644,11 @@ def main() -> None:
             
             copy_calibration_if_present(event_path, output_path)
         
-        # DELETE RECURSIVELY THE RAW INPUT FILES IF SPECIFIED
-        # if args.remove_raw:
-        #     if seq.exists() and seq.is_dir():
-        #         shutil.rmtree(seq)
-        #         print(f"Successfully removed: {seq}", flush=True)
+        #DELETE RECURSIVELY THE RAW INPUT FILES IF SPECIFIED
+        if args.remove_raw:
+            if seq.exists() and seq.is_dir():
+                shutil.rmtree(seq)
+                print(f"Successfully removed: {seq}", flush=True)
 
 
 if __name__ == "__main__":
