@@ -72,7 +72,7 @@ class ImuMSCKF:
             self.sigma_rel_t
         )
         self.t = 0.0
-        self.adaptive_cov = AdaptiveCovariance(M1=3, M2=2, gamma=0.1)
+        self.adaptive_cov = AdaptiveCovariance(M1=2, M2=1, gamma=1e-5)
 
     def initialize_with_state(self, t, R, v, p, bg, ba, P=None):
         """Reset the filter to a known nominal state and clear all clones."""
@@ -263,10 +263,9 @@ class ImuMSCKF:
 
 class AdaptiveCovariance:
     """
-    Implementa la stima adattiva della covarianza del rumore di misura 
-    basata sull'algoritmo di Young Soo Suh.
+    Implement Adaptive Algorithm for Covariance Estimation
     """
-    def __init__(self, M1=3, M2=2, gamma=0.1):
+    def __init__(self, M1=5, M2=2, gamma=1e-5):
         self.M1 = M1          # Window of residuals
         self.M2 = M2          # Counter before Mode 1
         self.gamma = gamma    
@@ -308,7 +307,6 @@ class AdaptiveCovariance:
 
             if diff > 0:
                 Q_hat += diff * (u_i @ u_i.T)
-
         if max_diff < self.gamma:
             self.mode1_counter += 1
         else:
