@@ -15,7 +15,7 @@ job = command(
     code="./",
     # We use ${{outputs.processed_data}} to tell Azure to insert the 
     # correct mount path directly into the CLI string.
-    command="python scripts/download/download_eds.py ${{outputs.processed_data}}/eds --seq 0,7,8,9,11,12,13,14 --remove-images",
+    command="python scripts/download/download_eds.py ${{outputs.processed_data}}/eds --seq 6 --remove-images",
     outputs={
         "processed_data": Output(
             type="uri_folder",
@@ -24,7 +24,7 @@ job = command(
         )
     },
     environment="tleio-env@latest",
-    compute="Preprocessing",
+    compute="cpu-cluster",
     display_name="EDS-Download-and-Process"
 )
 
