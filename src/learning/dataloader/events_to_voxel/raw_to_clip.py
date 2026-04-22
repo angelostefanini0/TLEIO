@@ -134,6 +134,7 @@ class MultiEventVoxelClipDataset(Dataset):
             gt_poses_fn = seq_path / "anchor_poses.txt"
             gt_rel_transf_fn = seq_path / "relative_motions.txt"
             events_file = seq_path / "events.h5"
+            events_meta_file = seq_path / "events_meta.h5"
             gt_full_fn = seq_path / "stamped_groundtruth.txt"
 
             # skip folders that do not contain a valid processed sequence
@@ -151,6 +152,7 @@ class MultiEventVoxelClipDataset(Dataset):
             seq_info = {
                 "seq_path": seq_path,
                 "events_file": events_file,
+                "events_meta_file": events_meta_file if events_meta_file.exists() else None,
                 "anchors_us": anchor_poses[:, 0],
                 "rel_transf": rel_transf,
             }
@@ -198,7 +200,8 @@ class MultiEventVoxelClipDataset(Dataset):
     def _ensure_reader(self, seq_idx):
         if self._readers[seq_idx] is None:
             events_file = self.seq_infos[seq_idx]["events_file"]
-            self._readers[seq_idx] = EDSReader(events_file)
+            events_meta_file = self.seq_infos[seq_idx]["events_meta_file"]
+            self._readers[seq_idx] = EDSReader(events_file, metadata_file=events_meta_file)
     
     def close(self):
         if not hasattr(self, "_readers"):
