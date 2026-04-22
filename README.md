@@ -43,7 +43,9 @@ cd tartanairpy
 pip install -e .
 git submodule update --init --recursive
 ```
-Then when installed run: 
+
+Then when installed go to `tartanairpy/tartanair/tartanair_module.py`, line 51 and add `'pose'` to the modalities to download the ground truth pose. 
+
 
 ```bash
 python scripts/download/download_tartanair.py \
@@ -82,10 +84,6 @@ Pass the top-level Tartan root, for example `data/tartanair`, not a single envir
 ```bash
 python scripts/processing_tartan.py data/tartanair \
 --save-path data/tartanair/processed_train \
---save_path_validation data/tartanair/processed_validation \
---validation-seq 3 \
---save_path_testing data/tartanair/processed_testing \
---test-seq 0,6 \
 --overwrite \
 --timestamps-key events/t \
 --process_gt pose_lcam_front.txt \

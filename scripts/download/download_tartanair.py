@@ -172,6 +172,13 @@ def main() -> int:
 
     root = args.root.resolve()
     root.mkdir(parents=True, exist_ok=True)
+    
+    if not args.skip_air:
+        download_tartanair_imu(
+            root=root,
+            env=args.env_air,
+            difficulties=args.difficulty,
+        )
 
     if not args.skip_event:
         download_tartanevent(
@@ -181,12 +188,7 @@ def main() -> int:
             delete_zip=not args.keep_zip,
         )
 
-    if not args.skip_air:
-        download_tartanair_imu(
-            root=root,
-            env=args.env_air,
-            difficulties=args.difficulty,
-        )
+    
 
     normalize_tartanair_layout(
         root=root,
