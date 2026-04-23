@@ -55,6 +55,17 @@ python scripts/download/download_tartanair.py \
 --difficulty easy hard
 ```
 
+If the IMU data is failing to download then only the events will be in the folder, so later run 
+```bash
+python scripts/download/download_tartanair.py \
+--root data/tartanair \
+--env-event office \
+--env-air Office \
+--difficulty easy hard \
+--skip-event
+```
+If the first partial download of events lives in a different folder than the one specified in the second one, then the second command should add --merge-root /path/to/that/partial/folder.
+
 ## 3. EDS Data pre-processing
 
 Run the `processing_eds.py` script to process the event stream and the ground truth data to get supervision for the network. The script generates a ms_to_idx mapping for efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency. 
