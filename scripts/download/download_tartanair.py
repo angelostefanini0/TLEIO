@@ -15,11 +15,21 @@ import shutil
 import subprocess
 import zipfile
 from pathlib import Path
+import urllib.request
+import time
 
 TARTANEVENT_ROOT_URL = (
     "https://download.ifi.uzh.ch/rpg/web/data/iros24_rampvo/datasets/TartanEvent"
 )
 
+def download_with_retry(url, target):
+    for i in range(3): # Try 3 times
+        try:
+            urllib.request.urlretrieve(url, target)
+            return
+        except Exception as e:
+            print(f"Attempt {i+1} failed: {e}. Retrying...")
+            time.sleep(5)
 
 def run(cmd: list[str]) -> None:
     print(" ".join(cmd))
@@ -34,7 +44,8 @@ def download_tartanevent(root: Path, env_zip: str, unzip: bool, delete_zip: bool
     url = f"{TARTANEVENT_ROOT_URL}/{zip_name}"
 
     print(f"Downloading TartanEvent: {url}")
-    run(["curl", "-L", "--fail", "-C", "-", "-o", str(target_zip), url])
+    # run(["curl", "-L", "--fail", "-C", "-", "-o", str(target_zip), url])
+    download_with_retry(url, str(target_zip))
 
     print(f"Verifying archive: {target_zip}")
     with zipfile.ZipFile(target_zip, "r") as zf:
