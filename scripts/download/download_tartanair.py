@@ -39,7 +39,7 @@ def run(cmd: list[str]) -> None:
 def download_tartanevent(root: Path, env_zip: str, unzip: bool, delete_zip: bool) -> None:
     root.mkdir(parents=True, exist_ok=True)
 
-    env_folder = root / env_zip + "_events"
+    env_folder = root / f"{env_zip}_events"
     env_folder.mkdir(parents=True, exist_ok=True)
 
     zip_name = env_zip if env_zip.endswith(".zip") else f"{env_zip}.zip"
@@ -133,7 +133,7 @@ def normalize_tartanair_layout(root: Path, env_event: str, env_air: str, difficu
         air_diff_name, final_diff_name = diff_map[diff]
         dst = env_final / final_diff_name
         sources = [
-            root / env_event + "_events" / final_diff_name,      # TartanEvent zip layout
+            root / f"{env_event}_events" / final_diff_name,      # TartanEvent zip layout
             env_air_dir / air_diff_name, # TartanAir layout
         ]
 
