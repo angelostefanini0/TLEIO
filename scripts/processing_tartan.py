@@ -28,22 +28,19 @@ The resulting `ms_to_idx` array enables fast temporal slicing of events without 
 
 For each processed Tartan sequence, the script writes:
 - `events_meta.h5` with corrected `events/t` and the computed `ms_to_idx`
-- `events.h5` as a symlink to the original raw event file
+- `events.h5` either as a symlink to the original raw event file or as a
+  streamed byte-for-byte copy when `--materialize-events-file` is enabled
 - the processed GT / IMU text files used downstream
 
 Command to run:
 python scripts/processing_tartan.py data/tartan \
 --save-path data/tartan/processed_train \
---save_path_validation data/tartan/processed_validation \
---validation-seq 3 \
---save_path_testing data/eds/processed_testing \
---test-seq 0,6 \
 --overwrite \
 --timestamps-key events/t \
 --process_gt pose_lcam_front.txt \
 --generate_imu_csv true
 --delta_t_ms 50 \
---anchor_hz 20
+--anchor_t_ms 50
 
 
 python scripts/processing.py data/eds/raw --save-path data/eds/processed_train --save_path_validation data/eds/processed_validation --validation-seq 3 --save_path_testing data/eds/processed_testing --test-seq 0,6 --overwrite --timestamps-key t --process_gt imu.csv stamped_groundtruth.txt --delta_t_ms 50 --anchor_hz 20
@@ -51,6 +48,7 @@ python scripts/processing.py data/eds/raw --save-path data/eds/processed_train -
 """
 
 DEFAULT_EVENT_CHUNK_SIZE = 2_000_000
+DEFAULT_STREAM_COPY_BUFFER_BYTES = 16 * 1024 * 1024
 METADATA_COMPRESSION = "gzip"
 METADATA_COMPRESSION_LEVEL = 4
 
@@ -183,6 +181,24 @@ def parse_args() -> argparse.Namespace:
             f"metadata. Default: {DEFAULT_EVENT_CHUNK_SIZE}"
         ),
     )
+    parser.add_argument(
+        "--materialize-events-file",
+        action="store_true",
+        help=(
+            "Write a real `events.h5` file into each processed Tartan sequence "
+            "by streaming a byte-for-byte copy of the raw file. "
+            "Default behavior is to create a symlink instead."
+        ),
+    )
+    parser.add_argument(
+        "--remove-raw-after-materialize",
+        action="store_true",
+        help=(
+            "After successfully materializing a real processed `events.h5`, "
+            "delete the corresponding raw Tartan sequence directory and prune "
+            "now-empty parent folders under the input root."
+        ),
+    )
 
     return parser.parse_args()
 
@@ -230,6 +246,82 @@ def create_or_replace_symlink(target_path: Path, link_path: Path, overwrite: boo
         os.path.relpath(target_path.resolve(), start=link_path.parent.resolve())
     )
     link_path.symlink_to(relative_target)
+
+
+def stream_copy_file(
+    source_path: Path,
+    dest_path: Path,
+    overwrite: bool,
+    buffer_bytes: int = DEFAULT_STREAM_COPY_BUFFER_BYTES,
+) -> None:
+    """
+    Copy a file in fixed-size chunks so large HDF5 files never need to be held in RAM.
+    """
+    
+    if buffer_bytes <= 0:
+        raise ValueError("stream copy buffer must be a positive integer.")
+
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if dest_path.exists() or dest_path.is_symlink():
+        if not overwrite:
+            raise FileExistsError(
+                f"Output path already exists: {dest_path}. Use --overwrite to replace it."
+            )
+        if dest_path.is_dir() and not dest_path.is_symlink():
+            raise IsADirectoryError(f"Cannot replace directory with file: {dest_path}")
+        dest_path.unlink()
+
+    with source_path.open("rb") as src, dest_path.open("wb") as dst:
+        shutil.copyfileobj(src, dst, length=buffer_bytes)
+
+
+def create_processed_events_file(
+    source_path: Path,
+    dest_path: Path,
+    overwrite: bool,
+    materialize_events_file: bool,
+) -> str:
+    """
+    Create the processed `events.h5` as either a symlink or a streamed real copy.
+    """
+    
+    if materialize_events_file:
+        stream_copy_file(source_path, dest_path, overwrite=overwrite)
+        return "copied"
+
+    create_or_replace_symlink(source_path, dest_path, overwrite=overwrite)
+    return "linked"
+
+
+def remove_raw_sequence_tree(seq_dir: Path, root_dir: Path, protected_paths: tuple[Path, ...] = ()) -> None:
+    """
+    Remove a raw sequence directory and then prune empty parents up to `root_dir`.
+    """
+    
+    seq_resolved = seq_dir.resolve()
+    root_resolved = root_dir.resolve()
+    protected_resolved = tuple(path.resolve() for path in protected_paths)
+
+    if seq_resolved == root_resolved:
+        raise ValueError(f"Refusing to remove the dataset root itself: {root_dir}")
+
+    for protected in protected_resolved:
+        if protected == seq_resolved or protected.is_relative_to(seq_resolved):
+            raise ValueError(
+                f"Refusing to remove raw sequence {seq_dir} because it would also remove "
+                f"protected output path {protected}"
+            )
+
+    shutil.rmtree(seq_resolved)
+
+    parent = seq_resolved.parent
+    while parent != root_resolved and parent.is_relative_to(root_resolved):
+        try:
+            parent.rmdir()
+        except OSError:
+            break
+        parent = parent.parent
 
 
 def iter_event_slices(length: int, chunk_size: int):
@@ -587,6 +679,12 @@ def main() -> None:
     args = parse_args()
     input_path = ensure_file_exists(args.file)
 
+    if args.remove_raw_after_materialize and not args.materialize_events_file:
+        raise ValueError(
+            "--remove-raw-after-materialize requires --materialize-events-file. "
+            "Removing raw files would break the default symlink-based layout."
+        )
+
     #BUILD PROCESSED SEQUENCE TREE CLEANLY
     sequence_dirs = []
     sequence_names = []
@@ -663,7 +761,12 @@ def main() -> None:
                 overwrite=args.overwrite,
                 chunk_size=args.event_chunk_size,
             )
-            create_or_replace_symlink(event_path, output_events_path, overwrite=args.overwrite)
+            events_file_mode = create_processed_events_file(
+                event_path,
+                output_events_path,
+                overwrite=args.overwrite,
+                materialize_events_file=args.materialize_events_file,
+            )
 
             # LOG INFO ABOUT EVENT DATA
             print(f"Loaded timestamps from: {event_path}")
@@ -677,7 +780,10 @@ def main() -> None:
             print(
                 f"Wrote dataset '{args.dataset_name}' into: {output_metadata_path}"
             )
-            print(f"Linked raw events into: {output_events_path}")
+            if events_file_mode == "copied":
+                print(f"Copied raw events into: {output_events_path}")
+            else:
+                print(f"Linked raw events into: {output_events_path}")
             
             # GROUND-TRUTH PROCESSING
             if args.process_gt:
@@ -696,6 +802,18 @@ def main() -> None:
                     output_dir,
                     chunk_size=args.event_chunk_size,
                 )
+
+            if args.remove_raw_after_materialize:
+                if events_file_mode != "copied":
+                    raise RuntimeError(
+                        "Raw removal is only allowed after materializing a real events.h5 copy."
+                    )
+                remove_raw_sequence_tree(
+                    seq,
+                    input_path,
+                    protected_paths=(output_dir,),
+                )
+                print(f"Removed raw sequence tree: {seq}")
             
         
 if __name__ == "__main__":
