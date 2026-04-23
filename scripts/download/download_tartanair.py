@@ -39,6 +39,9 @@ def run(cmd: list[str]) -> None:
 def download_tartanevent(root: Path, env_zip: str, unzip: bool, delete_zip: bool) -> None:
     root.mkdir(parents=True, exist_ok=True)
 
+    env_folder = root / env_zip + "_events"
+    env_folder.mkdir(parents=True, exist_ok=True)
+
     zip_name = env_zip if env_zip.endswith(".zip") else f"{env_zip}.zip"
     target_zip = root / zip_name
     url = f"{TARTANEVENT_ROOT_URL}/{zip_name}"
@@ -54,8 +57,8 @@ def download_tartanevent(root: Path, env_zip: str, unzip: bool, delete_zip: bool
             raise RuntimeError(f"Corrupted zip archive, first bad file: {bad}")
 
     if unzip:
-        print(f"Extracting {target_zip} into {root}")
-        run(["unzip", "-o", str(target_zip), "-d", str(root)])
+        print(f"Extracting {target_zip} into {env_folder}")
+        run(["unzip", "-o", str(target_zip), "-d", str(env_folder)])
 
         if delete_zip:
             print(f"Deleting {target_zip}")
@@ -111,8 +114,8 @@ def normalize_tartanair_layout(root: Path, env_event: str, env_air: str, difficu
     Goal:
       - final env folder name: lowercase event name, e.g. root/office
       - final difficulty folders: Easy / Hard
-      - if TartanEvent created root/Easy, merge it into root/office/Easy
-      - if TartanEvent created root/Hard, merge it into root/office/Hard
+      - if TartanEvent created root/office_events/Easy, merge it into root/office/Easy
+      - if TartanEvent created root/office_events/Hard, merge it into root/office/Hard
       - if TartanAir created root/Office/Data_easy, merge it into root/office/Easy
       - if TartanAir created root/Office/Data_hard, merge it into root/office/Hard
     """
@@ -130,7 +133,7 @@ def normalize_tartanair_layout(root: Path, env_event: str, env_air: str, difficu
         air_diff_name, final_diff_name = diff_map[diff]
         dst = env_final / final_diff_name
         sources = [
-            root / final_diff_name,      # TartanEvent zip layout
+            root / env_event + "_events" / final_diff_name,      # TartanEvent zip layout
             env_air_dir / air_diff_name, # TartanAir layout
         ]
 
