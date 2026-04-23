@@ -51,6 +51,8 @@ python scripts/processing.py data/eds/raw --save-path data/eds/processed_train -
 """
 
 DEFAULT_EVENT_CHUNK_SIZE = 2_000_000
+METADATA_COMPRESSION = "gzip"
+METADATA_COMPRESSION_LEVEL = 4
 
 
 @dataclass(frozen=True)
@@ -281,6 +283,9 @@ def build_tartan_sidecar(
             shape=timestamps_ds.shape,
             dtype=np.int64,
             chunks=output_chunks,
+            compression=METADATA_COMPRESSION,
+            compression_opts=METADATA_COMPRESSION_LEVEL,
+            shuffle=True,
         )
 
         num_reversals = 0
@@ -340,7 +345,14 @@ def build_tartan_sidecar(
             )
 
         ms_to_idx = np.concatenate(ms_to_idx_parts)
-        f_out.create_dataset(dataset_name, data=ms_to_idx, dtype=np.int64)
+        f_out.create_dataset(
+            dataset_name,
+            data=ms_to_idx,
+            dtype=np.int64,
+            compression=METADATA_COMPRESSION,
+            compression_opts=METADATA_COMPRESSION_LEVEL,
+            shuffle=True,
+        )
         f_out.create_dataset("t_offset", data=np.array(0, dtype=np.int64))
         f_out.create_dataset("raw_t0_us", data=np.array(t0_us, dtype=np.int64))
         f_out.attrs["normalize_polarity_to_binary"] = 1

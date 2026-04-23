@@ -198,7 +198,7 @@ if __name__ == "__main__":
 
     # loss and optimizer
     criterion = torch.nn.MSELoss()
-    optimizer = get_optimizer(model.parameters(), args)
+    optimizer = get_optimizer(model, args)
 
     # train network
     print(20*"--" +  " Training " + 20*"--")
