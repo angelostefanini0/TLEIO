@@ -92,6 +92,7 @@ python scripts/processing_tartan.py data/tartanair \
 --anchor_t_ms 50
 
 ```
+When running on the server, add argument `--materialize-events-file`, so that the event file is not symlinked from the raw folder and `--remove-raw-after-materialize`, so as not to use space on the disk in the cluster. 
 
 ## 5. Visualization of event data: 
 Run the `scripts/viz/play_events_on_rgb.py` script to playback the input video with events overlayed onto RGB frames. `root` expects the absolute path to the dataset root, `sequence` expects the name of the sequence to inspect, and `height` / `width` are the image dimensions to display. To have the playback uncapped, set `fps` to `0`.
