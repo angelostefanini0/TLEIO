@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Optional, Dict
 
+import hdf5plugin  # noqa: F401  # Registers external HDF5 filters (e.g. Blosc).
 import h5py
 import numpy as np
 
