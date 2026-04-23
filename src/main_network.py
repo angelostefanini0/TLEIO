@@ -73,6 +73,10 @@ def parse_args():
                         help="load weights from pre-trained ViT")
     parser.add_argument("--num_workers", type=int, default=0, 
                         help="Number of workers for dataloader")
+    parser.add_argument("--profile_timing", type=str2bool, default=False,
+                        help="measure average batch wait time versus compute time during training")
+    parser.add_argument("--profile_warmup_batches", type=int, default=10,
+                        help="number of initial training batches to ignore in timing statistics")
 
     # checkpoints
     parser.add_argument("--checkpoint_path", type=str, default="checkpoints",

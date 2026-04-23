@@ -1,10 +1,17 @@
 import os
+import time
 import torch
 import torch.optim as optim
 from tqdm import tqdm
 
 
 torch.manual_seed(2026)
+
+
+def maybe_cuda_synchronize() -> None:
+    """Synchronize the default CUDA stream when timing GPU work."""
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
 
 
 def val_epoch(model, val_loader, criterion, args):
@@ -41,14 +48,28 @@ def val_epoch(model, val_loader, criterion, args):
 def train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_writer, args):
     epoch_loss = 0
     iter = (epoch - 1) * len(train_loader) + 1
+    profile_timing = args.get("profile_timing", False)
+    profile_warmup_batches = max(0, int(args.get("profile_warmup_batches", 10)))
+    waited_for_data_s = 0.0
+    compute_s = 0.0
+    measured_batches = 0
+    measured_samples = 0
+    epoch_start = time.perf_counter()
+    batch_end = epoch_start
 
     with tqdm(train_loader, unit="batch") as tepoch:
-        for batch in tepoch:
+        for batch_idx, batch in enumerate(tepoch):
             tepoch.set_description(f"Epoch {epoch}")
+            data_ready = time.perf_counter()
+            data_wait_this_batch = data_ready - batch_end
             
             x = batch["representation"] # B, C, T, H, W
             y = batch["target"] # B, T - 1, 3
-            
+
+            if profile_timing:
+                maybe_cuda_synchronize()
+                compute_start = time.perf_counter()
+
             if torch.cuda.is_available():
                 x = x.cuda(non_blocking=True)
                 y = y.cuda(non_blocking=True)
@@ -65,20 +86,62 @@ def train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_wr
             loss.backward()
             optimizer.step()
 
+            if profile_timing:
+                maybe_cuda_synchronize()
+                compute_this_batch = time.perf_counter() - compute_start
+                if batch_idx >= profile_warmup_batches:
+                    waited_for_data_s += data_wait_this_batch
+                    compute_s += compute_this_batch
+                    measured_batches += 1
+                    measured_samples += int(x.shape[0])
+
             # log loss
             epoch_loss += loss.item()
 
-            tepoch.set_postfix(
-                loss=f"{loss.item():.4f}",
-            )
+            if profile_timing and measured_batches > 0:
+                avg_data_ms = 1000.0 * waited_for_data_s / measured_batches
+                avg_compute_ms = 1000.0 * compute_s / measured_batches
+                tepoch.set_postfix(
+                    loss=f"{loss.item():.4f}",
+                    data_ms=f"{avg_data_ms:.1f}",
+                    compute_ms=f"{avg_compute_ms:.1f}",
+                )
+            else:
+                tepoch.set_postfix(
+                    loss=f"{loss.item():.4f}",
+                )
             # log tensorboard
             tensorboard_writer.add_scalar('training_loss', loss.item(), iter)
             iter += 1
+            batch_end = time.perf_counter()
             
         
         avg_total = epoch_loss / len(train_loader)
-   
-    return avg_total
+
+    timing_summary = None
+    if profile_timing:
+        epoch_total_s = time.perf_counter() - epoch_start
+        total_measured_s = waited_for_data_s + compute_s
+        if measured_batches > 0 and total_measured_s > 0:
+            timing_summary = {
+                "epoch_total_s": epoch_total_s,
+                "avg_data_wait_ms": 1000.0 * waited_for_data_s / measured_batches,
+                "avg_compute_ms": 1000.0 * compute_s / measured_batches,
+                "data_fraction": waited_for_data_s / total_measured_s,
+                "compute_fraction": compute_s / total_measured_s,
+                "measured_batches": measured_batches,
+                "samples_per_s": measured_samples / total_measured_s,
+                "batches_per_s": measured_batches / total_measured_s,
+                "warmup_batches": profile_warmup_batches,
+            }
+        else:
+            timing_summary = {
+                "epoch_total_s": epoch_total_s,
+                "measured_batches": measured_batches,
+                "warmup_batches": profile_warmup_batches,
+            }
+
+    return avg_total, timing_summary
   
 
 def train(model, train_loader, val_loader, criterion, optimizer, tensorboard_writer, args, stats):
@@ -90,7 +153,15 @@ def train(model, train_loader, val_loader, criterion, optimizer, tensorboard_wri
     for epoch in range(init, epochs +1):
         # training for one epoch
         model.train()
-        train_loss = train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_writer, args)
+        train_loss, timing_summary = train_epoch(
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            epoch,
+            tensorboard_writer,
+            args,
+        )
 
         # validate model
         if val_loader:
@@ -126,6 +197,38 @@ def train(model, train_loader, val_loader, criterion, optimizer, tensorboard_wri
 
             # log validation loss in TensorBoard
             tensorboard_writer.add_scalar("val_loss", val_loss, epoch)
+
+        if timing_summary is not None:
+            if timing_summary.get("measured_batches", 0) > 0:
+                tqdm.write(
+                    "Timing | "
+                    f"epoch={epoch} | "
+                    f"avg_data_wait={timing_summary['avg_data_wait_ms']:.1f} ms | "
+                    f"avg_compute={timing_summary['avg_compute_ms']:.1f} ms | "
+                    f"data_fraction={100.0 * timing_summary['data_fraction']:.1f}% | "
+                    f"throughput={timing_summary['batches_per_s']:.2f} batch/s "
+                    f"({timing_summary['samples_per_s']:.2f} sample/s)"
+                )
+                tensorboard_writer.add_scalar(
+                    "timing/avg_data_wait_ms",
+                    timing_summary["avg_data_wait_ms"],
+                    epoch,
+                )
+                tensorboard_writer.add_scalar(
+                    "timing/avg_compute_ms",
+                    timing_summary["avg_compute_ms"],
+                    epoch,
+                )
+                tensorboard_writer.add_scalar(
+                    "timing/data_fraction",
+                    timing_summary["data_fraction"],
+                    epoch,
+                )
+                tensorboard_writer.add_scalar(
+                    "timing/batches_per_s",
+                    timing_summary["batches_per_s"],
+                    epoch,
+                )
 
         # save checkpoint every 20 epochs
         if not epoch%20:
