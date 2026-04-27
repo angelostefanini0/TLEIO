@@ -486,6 +486,7 @@ def compute_filter_diagnostics(
 
 
 def print_filter_run_summary(
+    dataset: str,
     sequence: str,
     num_anchors: int,
     num_updates_attempted: int,
@@ -500,6 +501,7 @@ def print_filter_run_summary(
     w_label = 26
     w_total = 67
 
+    print(f"{'Dataset:':<{w_label}} {dataset}")
     print(f"{'Sequence:':<{w_label}} {sequence}")
     print(f"{'Anchors processed:':<{w_label}} {num_anchors}")
     print(f"{'Updates attempted:':<{w_label}} {num_updates_attempted}")

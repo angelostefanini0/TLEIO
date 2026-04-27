@@ -40,9 +40,14 @@ class RunnerConfig:
     """User-editable configuration for the minimal relative-motion filter runner."""
 
     # Paths
-    processed_root: Path = ROOT / "data" / "eds" / "processed"
+    data_root: Path = ROOT / "data"
+    dataset: str = "eds"
     sequence: str = "09_ziggy_flying_pieces"
     out_dir: Path = ROOT / "outputs" / "main_filter"
+
+    @property
+    def processed_root(self) -> Path:
+        return self.data_root / self.dataset / "processed"
 
     # Execution modes
     use_gt: bool = False  # Set via CLI argument
@@ -553,6 +558,7 @@ def run_filter(config: RunnerConfig) -> dict:
     )
 
     return {
+        "dataset": config.dataset,
         "sequence": config.sequence,
         "num_anchors": int(len(anchor_times_s)),
         "num_updates_attempted": int(len(anchor_times_s) - 2),
@@ -573,6 +579,12 @@ def parse_args():
         "--gt", 
         action="store_true",
         help="Uses the ground truth for the updates, default regressed_relative_motions.txt (Transformer output)"
+    )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default=CONFIG.dataset, 
+        help="Dataset folder name to process (e.g., 'eds', 'tartanair')"
     )
     parser.add_argument(
         "--sequence",
@@ -606,6 +618,7 @@ def main() -> None:
     active_config = replace(
         CONFIG, 
         use_gt=args.gt, 
+        dataset=args.dataset,
         sequence=args.sequence,
         plot_transformer=args.plot_transformer,
         interactive_plot=args.interactive_plot,
@@ -615,6 +628,7 @@ def main() -> None:
     results = run_filter(active_config)
     
     print_filter_run_summary(
+        dataset=results["dataset"],
         sequence=results["sequence"],
         num_anchors=results["num_anchors"],
         num_updates_attempted=results["num_updates_attempted"],
