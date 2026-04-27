@@ -91,8 +91,8 @@ class ImuMSCKF:
             self.state.P[0:3, 0:3] = np.eye(3) * (0.01)**2  
             self.state.P[6:9, 6:9] = np.eye(3) * (0.01)**2  
             self.state.P[3:6, 3:6] = np.eye(3) * (0.5)**2   
-            self.state.P[9:12, 9:12] = np.eye(3) * (0.05)**2
-            self.state.P[12:15, 12:15] = np.eye(3) * (0.2)**2
+            self.state.P[9:12, 9:12] = np.eye(3) * (0.004)**2
+            self.state.P[12:15, 12:15] = np.eye(3) * (0.04)**2
         else:
             self.state.P = P.copy()
 

@@ -59,13 +59,19 @@ class RunnerConfig:
     max_frames: int | None = None
 
     # IMU preprocessing
-    imu_axis_multipliers: tuple[float, float, float] = (-1.0, -1.0, 1.0)
+    imu_axis_multipliers: tuple[float, float, float] = (1.0, 1.0, 1.0)
 
-    # IMU process noise
-    sigma_na: float = 5.90e-03
-    sigma_ng: float = 9.57e-03
-    sigma_nba: float = 8.81e-05
-    sigma_nbg: float = 3.99e-05
+    # # IMU process noise (EDS)
+    # sigma_na: float = 5.90e-03
+    # sigma_ng: float = 9.57e-03
+    # sigma_nba: float = 8.81e-05
+    # sigma_nbg: float = 3.99e-05
+
+    # IMU process noise (Tartanair)
+    sigma_na: float = 2e-02
+    sigma_ng: float = 1.6968e-02
+    sigma_nba: float = 6e-03
+    sigma_nbg: float = 5.9393e-05
 
     # EKF assumed measurement covariance
     assumed_sigma_rel_t: float = 0.018
@@ -82,7 +88,7 @@ class RunnerConfig:
     initial_euler_offset_deg: tuple[float, float, float] = (0.0, 0.0, 0.0)
     initial_bg: tuple[float, float, float] = (0.0, 0.0, 0.0)
     initial_ba: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    gravity_world_mps2: tuple[float, float, float] = (0.0, 0.0, -9.80665)
+    gravity_world_mps2: tuple[float, float, float] = (0.0, 0.0, 9.80665)
 
 
 CONFIG = RunnerConfig()
