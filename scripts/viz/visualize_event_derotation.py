@@ -387,12 +387,12 @@ def voxel_to_points(
 
 def configure_3d_axis(ax, title: str, width: int, height: int, duration_ms: float, elev: float, azim: float) -> None:
     ax.set_title(title)
-    ax.set_xlabel("x [px]")
-    ax.set_ylabel("y [px]")
-    ax.set_zlabel("time [ms]")
-    ax.set_xlim(0, width)
-    ax.set_ylim(height, 0)
-    ax.set_zlim(0, duration_ms)
+    ax.set_xlabel("time [ms]")
+    ax.set_ylabel("x [px]")
+    ax.set_zlabel("y [px]")
+    ax.set_xlim(0, duration_ms)
+    ax.set_ylim(0, width)
+    ax.set_zlim(height, 0)
     ax.view_init(elev=elev, azim=azim)
 
 
@@ -436,8 +436,8 @@ def make_plot(
         "linewidths": 0,
         "depthshade": False,
     }
-    ax_raw_3d.scatter(raw_x, raw_y, raw_t_ms, c=raw_colors, **scatter_kwargs)
-    ax_derot_3d.scatter(derot_x, derot_y, derot_t_ms, c=derot_colors, **scatter_kwargs)
+    ax_raw_3d.scatter(raw_t_ms, raw_x, raw_y, c=raw_colors, **scatter_kwargs)
+    ax_derot_3d.scatter(derot_t_ms, derot_x, derot_y, c=derot_colors, **scatter_kwargs)
 
     configure_3d_axis(ax_raw_3d, "Raw events", width, height, duration_ms, view_elev, view_azim)
     configure_3d_axis(ax_derot_3d, "De-rotated events", width, height, duration_ms, view_elev, view_azim)
