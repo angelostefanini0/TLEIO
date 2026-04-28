@@ -204,6 +204,7 @@ def main():
     output_file = Path(args_cli.output_file)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
     infer_args = load_inference_args(checkpoint_file)
     dataset = build_inference_dataset(sequence_dir, infer_args)
 
@@ -211,7 +212,7 @@ def main():
         dataset,
         batch_size=infer_args["b_size"],
         shuffle=False,
-        num_workers=max(args_cli.num_workers, 0),
+        num_workers=args_cli.num_workers,
         pin_memory=torch.cuda.is_available(),
         drop_last=False,
     )
