@@ -286,60 +286,94 @@ def normalize_tartanair_layout(
     difficulties: list[str],
     merge_roots: list[Path] | None = None,
 ) -> None:
-    """
-    Goal:
-      - final env folder name: lowercase event name, e.g. root/office
-      - final difficulty folders: Easy / Hard
-      - if TartanEvent created root/office_events/Easy, merge it into root/office/Easy
-      - if TartanEvent created root/office_events/Hard, merge it into root/office/Hard
-      - if TartanAir created root/Office/Data_easy, merge it into root/office/Easy
-      - if TartanAir created root/Office/Data_hard, merge it into root/office/Hard
-      - if a previous partial download already normalized into another root, merge that too
-    """
-    env_final = root / env_event
-    env_final.mkdir(parents=True, exist_ok=True)
-    source_roots = unique_paths([root, *((merge_roots or []))])
+    import os
+    import shutil
+    import re
 
-    diff_map = {
-        "easy": ("Data_easy", "Easy"),
-        "hard": ("Data_hard", "Hard"),
-    }
+    source_roots = [root]
+    if merge_roots:
+        source_roots.extend(merge_roots)
 
-    for diff in difficulties:
-        air_diff_name, final_diff_name = diff_map[diff]
-        dst = env_final / final_diff_name
-        seen_sources = set()
-        for source_root in source_roots:
-            sources = collect_difficulty_sources(
-                source_root=source_root,
-                env_event=env_event,
-                env_air=env_air,
-                final_diff_name=final_diff_name,
-                air_diff_name=air_diff_name,
-            )
-            for src in sources:
-                src_key = str(src.resolve())
-                if src_key in seen_sources or src.resolve() == dst.resolve():
-                    continue
-                seen_sources.add(src_key)
-                print(f"Merging {src} -> {dst}")
-                move_contents(src, dst)
-                remove_empty_tree(src, source_root)
+    final_env_dir = root / env_event.lower()
+    final_env_dir.mkdir(parents=True, exist_ok=True)
+
+    traj_pattern = re.compile(r"^P\d{3,4}$", re.IGNORECASE)
+    
+    allowed_diffs = [d.lower() for d in difficulties]
+
+    env_keywords = [env_event.lower(), env_air.lower(), f"{env_event.lower()}_events"]
 
     for source_root in source_roots:
-        move_env_level_items(
-            source_root=source_root,
-            env_event=env_event,
-            env_air=env_air,
-            env_final=env_final,
-        )
+        if not source_root.exists():
+            continue
 
-    # Clean up any empty top-level difficulty folders left behind by TartanEvent.
-    for diff in difficulties:
-        final_diff_name = diff_map[diff][1]
-        top_level_diff = root / final_diff_name
-        if top_level_diff.exists() and top_level_diff != env_final / final_diff_name:
-            remove_empty_tree(top_level_diff, root)
+        for root_path, dirs, files in os.walk(source_root):
+            current_dir = Path(root_path)
+
+            if traj_pattern.match(current_dir.name):
+                path_str = str(current_dir).lower()
+
+                if not any(k in path_str for k in env_keywords):
+                    continue
+
+                diff = None
+                for d in allowed_diffs:
+                    if d in path_str:
+                        diff = d.capitalize() 
+                        break
+
+                if not diff:
+                    continue 
+
+                target_traj_dir = final_env_dir / diff / current_dir.name.upper()
+                target_traj_dir.mkdir(parents=True, exist_ok=True)
+
+                if current_dir.resolve() == target_traj_dir.resolve():
+                    continue
+
+                for item in current_dir.iterdir():
+                    target_item = target_traj_dir / item.name
+
+                    if item.is_file():
+                        if not target_item.exists():
+                            shutil.move(str(item), str(target_item))
+                    elif item.is_dir():
+                        target_item.mkdir(parents=True, exist_ok=True)
+                        for sub_item in item.iterdir():
+                            target_sub_item = target_item / sub_item.name
+                            if not target_sub_item.exists():
+                                shutil.move(str(sub_item), str(target_sub_item))
+                        try:
+                            item.rmdir()
+                        except OSError:
+                            pass
+
+                try:
+                    current_dir.rmdir()
+                except OSError:
+                    pass
+
+        
+        protected_dirs = [ (final_env_dir / d.capitalize()).resolve() for d in allowed_diffs ]
+        
+        for root_path, dirs, files in os.walk(source_root, topdown=False):
+            current_dir = Path(root_path)
+
+            if current_dir == source_root or current_dir == final_env_dir:
+                continue
+            if current_dir.resolve() in protected_dirs:
+                continue
+
+            path_str = str(current_dir).lower()
+            if not any(k in path_str for k in env_keywords):
+                continue
+
+            try:
+                current_dir.rmdir()
+            except OSError:
+                pass
+
+
 
 
 def main() -> int:
