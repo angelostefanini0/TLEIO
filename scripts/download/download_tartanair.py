@@ -18,19 +18,80 @@ from pathlib import Path
 import urllib.request
 import time
 from collections.abc import Iterable
+from tqdm import tqdm
 
 TARTANEVENT_ROOT_URL = (
     "https://download.ifi.uzh.ch/rpg/web/data/iros24_rampvo/datasets/TartanEvent"
 )
 
-def download_with_retry(url, target):
-    for i in range(3): # Try 3 times
+def download_with_retry(url: str, target: str) -> None:
+    import os
+    final_path = Path(target)
+    part_path = final_path.with_suffix(final_path.suffix + ".part")
+
+    if final_path.exists():
+        print(f"\nFile {final_path.name} already fully downloaded.")
+        return
+
+    while True:
         try:
-            urllib.request.urlretrieve(url, target)
-            return
-        except Exception as e:
-            print(f"Attempt {i+1} failed: {e}. Retrying...")
+            req = urllib.request.Request(url)
+            
+            file_size = part_path.stat().st_size if part_path.exists() else 0
+            
+            if file_size > 0:
+                req.add_header("Range", f"bytes={file_size}-")
+                print(f"Attempt : Resuming {final_path.name} from {file_size / (1024**3):.2f} GB...")
+            else:
+                print(f"Attempt : Starting new download for {final_path.name}...")
+
+            with urllib.request.urlopen(req, timeout=30) as response:
+                is_partial = response.status == 206
+                mode = "ab" if is_partial else "wb"
+                
+                if not is_partial and file_size > 0:
+                    print("Server ignored the Range header. Restarting download...")
+                    file_size = 0
+                    mode = "wb"
+                
+                total_size = int(response.headers.get('content-length', 0))
+                if is_partial:
+                    total_size += file_size
+
+                with open(part_path, mode) as f:
+                    with tqdm(
+                        total=total_size, 
+                        initial=file_size, 
+                        unit='B', 
+                        unit_scale=True, 
+                        unit_divisor=1024,
+                        desc=final_path.name
+                    ) as pbar:
+                        while True:
+                            chunk = response.read(8 * 1024 * 1024)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            f.flush()
+                            os.fsync(f.fileno()) 
+                            pbar.update(len(chunk))
+            
+            part_path.replace(final_path)
+            print(f"\nDownload completed successfully: {final_path.name}")
+            return 
+
+        except urllib.error.HTTPError as e:
+            if e.code == 416: #  "Range Not Satisfiable" = download already done
+                print("\nFile is already fully downloaded.")
+                part_path.replace(final_path)
+                return 
+            print(f"\nAttempt failed (HTTP {e.code}): {e.reason}. Retrying in 5s...")
             time.sleep(5)
+        except Exception as e:
+            print(f"\nAttempt failed: {e}. Retrying in 5s...")
+            time.sleep(5)
+            
+
 
 def run(cmd: list[str]) -> None:
     print(" ".join(cmd))
@@ -59,7 +120,8 @@ def download_tartanevent(root: Path, env_zip: str, unzip: bool, delete_zip: bool
 
     if unzip:
         print(f"Extracting {target_zip} into {env_folder}")
-        run(["unzip", "-o", str(target_zip), "-d", str(env_folder)])
+        with zipfile.ZipFile(target_zip, "r") as zf:
+            zf.extractall(path=env_folder)
 
         if delete_zip:
             print(f"Deleting {target_zip}")
@@ -78,7 +140,7 @@ def download_tartanair_imu(root: Path, env: str, difficulties: list[str]) -> Non
     ta.download(
         env=[env],
         difficulty=difficulties,
-        modality=['imu', 'pose'],
+        modality=['imu'],
         camera_name=["lcam_front"],
         unzip=True,
     )
