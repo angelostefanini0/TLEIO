@@ -26,31 +26,35 @@ TARTANEVENT_ROOT_URL = (
 
 def download_with_retry(url: str, target: str) -> None:
     import os
+    import zipfile
     final_path = Path(target)
     part_path = final_path.with_suffix(final_path.suffix + ".part")
-
+    
     if final_path.exists():
-        print(f"\nFile {final_path.name} already fully downloaded.")
-        return
+        if zipfile.is_zipfile(final_path):
+            print(f"\nFile {final_path.name} already fully downloaded and valid.")
+            return
+        else:
+            print(f"\nFound incomplete {final_path.name}. Auto-renaming to .part to resume...")
+            final_path.replace(part_path)
 
     while True:
         try:
             req = urllib.request.Request(url)
-            
             file_size = part_path.stat().st_size if part_path.exists() else 0
             
             if file_size > 0:
                 req.add_header("Range", f"bytes={file_size}-")
-                print(f"Attempt : Resuming {final_path.name} from {file_size / (1024**3):.2f} GB...")
+                print(f"Attempt: Resuming {final_path.name} from {file_size / (1024**3):.2f} GB...")
             else:
-                print(f"Attempt : Starting new download for {final_path.name}...")
+                print(f"Attempt: Starting new download for {final_path.name}...")
 
             with urllib.request.urlopen(req, timeout=30) as response:
                 is_partial = response.status == 206
                 mode = "ab" if is_partial else "wb"
                 
                 if not is_partial and file_size > 0:
-                    print("Server ignored the Range header. Restarting download...")
+                    print("Server ignored Range header. Restarting...")
                     file_size = 0
                     mode = "wb"
                 
@@ -78,14 +82,14 @@ def download_with_retry(url: str, target: str) -> None:
             
             part_path.replace(final_path)
             print(f"\nDownload completed successfully: {final_path.name}")
-            return 
+            return
 
         except urllib.error.HTTPError as e:
-            if e.code == 416: #  "Range Not Satisfiable" = download already done
+            if e.code == 416:
                 print("\nFile is already fully downloaded.")
                 part_path.replace(final_path)
-                return 
-            print(f"\nAttempt failed (HTTP {e.code}): {e.reason}. Retrying in 5s...")
+                return
+            print(f"\nAttempt failed (HTTP {e.code}). Retrying in 5s...")
             time.sleep(5)
         except Exception as e:
             print(f"\nAttempt failed: {e}. Retrying in 5s...")
@@ -130,20 +134,43 @@ def download_tartanevent(root: Path, env_zip: str, unzip: bool, delete_zip: bool
 
 def download_tartanair_imu(root: Path, env: str, difficulties: list[str]) -> None:
     import tartanair as ta
+    import time
+    import zipfile
 
     root.mkdir(parents=True, exist_ok=True)
 
     print(f"Initializing TartanAir at {root}")
     ta.init(str(root))
 
-    print(f"Downloading TartanAir IMU for env={env}, difficulty={difficulties}")
-    ta.download(
-        env=[env],
-        difficulty=difficulties,
-        modality=['imu'],
-        camera_name=["lcam_front"],
-        unzip=True,
-    )
+    for diff in difficulties:
+        print(f"\nDownloading TartanAir IMU for env={env}, difficulty={diff}")
+        # Loop to ensure download goes to the end
+        while True:
+            try:
+                ta.download(
+                    env=[env],
+                    difficulty=[diff],
+                    modality=['imu'],
+                    camera_name=["lcam_front"],
+                    unzip=True,
+                )
+                break 
+                
+            except Exception as e:
+                print(f"\nIMU download failed for {diff} (Error: {e}). Retrying in 5s...")
+                time.sleep(5)
+
+        diff_dir = root / env / f"Data_{diff}"
+        if diff_dir.exists():
+            for item in diff_dir.iterdir():
+                if item.suffix == '.zip':
+                    print(f"Extracting {item.name}...")
+                    try:
+                        with zipfile.ZipFile(item, 'r') as zf:
+                            zf.extractall(diff_dir)
+                        item.unlink() 
+                    except Exception as e:
+                        print(f"Error while extracting {item.name}: {e}")
 
 
 def move_contents(src: Path, dst: Path) -> None:
