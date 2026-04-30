@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 import sys
+from time import perf_counter
 
 import matplotlib.pyplot as plt
 import h5py
@@ -18,7 +19,7 @@ from src.learning.dataloader.events_to_voxel.utils import (
     normalize_quaternions,
 )
 from src.learning.dataloader.representation.event_slicer import EventSlicer
-from src.learning.dataloader.representation.voxel_grid import VoxelGrid, quat_xyzw_to_rotmat
+from src.learning.dataloader.representation.voxel_grid import quat_xyzw_to_rotmat
 
 try:
     import hdf5plugin  # noqa: F401  # Registers external HDF5 filters when installed.
@@ -40,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Visualize raw and de-rotated event slices in x/y/time. "
-            "The de-rotation uses the same per-bin rotation homographies as voxelization."
+            "Events are de-rotated in small temporal slices, then voxelized separately."
         )
     )
     parser.add_argument(
@@ -55,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--duration-ms",
         type=float,
-        default=100.0,
+        default=50.0,
         help="Temporal window size to visualize.",
     )
     parser.add_argument(
@@ -83,7 +84,22 @@ def parse_args() -> argparse.Namespace:
         "--num-bins",
         type=int,
         default=5,
-        help="Number of temporal bins used for the same de-rotation discretization as voxelization.",
+        help="Number of temporal bins used for final voxelization after event de-rotation.",
+    )
+    parser.add_argument(
+        "--derotation-slices",
+        type=int,
+        default=None,
+        help=(
+            "Number of small temporal windows used for event-space de-rotation. "
+            "Overrides --derotation-slice-ms when set."
+        ),
+    )
+    parser.add_argument(
+        "--derotation-slice-ms",
+        type=float,
+        default=0.5,
+        help="Approximate duration of each event de-rotation slice in milliseconds.",
     )
     parser.add_argument("--height", type=int, default=480, help="Original event image height.")
     parser.add_argument("--width", type=int, default=640, help="Original event image width.")
@@ -245,6 +261,17 @@ def build_sequence_info(
         ),
     }
 
+def rot_necessary(camera_matrix:np.ndarray, pixel_coord:np.ndarray): 
+    pixel_coord_h = np.array([pixel_coord[0], pixel_coord[1], 1.0])
+    pixel_coord_h_1 = np.array([pixel_coord[0]+1, pixel_coord[1], 1.0])
+    K= np.asarray(camera_matrix, dtype=np.float64)
+    K_inv = np.linalg.inv(K)
+    normalized_p_coord_h = K_inv @ pixel_coord_h
+    normalized_p_coord_h1 = K_inv @ pixel_coord_h_1
+    sin_theta = (normalized_p_coord_h1[0]-normalized_p_coord_h1[2]*normalized_p_coord_h[0])/(normalized_p_coord_h[0]**2+1)
+    theta = np.arcsin(sin_theta)
+    print(f"angle: {np.rad2deg(theta)}")
+    print(f"Speed: {np.rad2deg(theta)/0.01}")
 
 def homography_from_bin_to_ref(camera_matrix: np.ndarray, bin_quat_xyzw: np.ndarray, ref_quat_xyzw: np.ndarray) -> np.ndarray:
     K = np.asarray(camera_matrix, dtype=np.float64)
@@ -255,6 +282,100 @@ def homography_from_bin_to_ref(camera_matrix: np.ndarray, bin_quat_xyzw: np.ndar
     H_ref_from_bin = K @ R_ref_from_bin @ K_inv
     H_ref_from_bin /= H_ref_from_bin[2, 2]
     return H_ref_from_bin
+
+
+def resolve_derotation_slices(
+    duration_ms: float,
+    derotation_slices: int | None,
+    derotation_slice_ms: float,
+) -> int:
+    if derotation_slices is not None:
+        if derotation_slices < 1:
+            raise ValueError("--derotation-slices must be >= 1.")
+        return derotation_slices
+
+    if derotation_slice_ms <= 0:
+        raise ValueError("--derotation-slice-ms must be positive.")
+    return max(1, int(round(duration_ms / derotation_slice_ms)))
+
+
+def warp_points_with_homography(
+    x: np.ndarray,
+    y: np.ndarray,
+    homography: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    points_h = np.stack([x, y, np.ones_like(x)], axis=0)
+    warped_h = np.asarray(homography, dtype=np.float64) @ points_h
+    denom = warped_h[2]
+    valid = np.isfinite(denom) & (np.abs(denom) > 1e-12)
+
+    warped_x = np.full_like(x, np.nan, dtype=np.float64)
+    warped_y = np.full_like(y, np.nan, dtype=np.float64)
+    warped_x[valid] = warped_h[0, valid] / denom[valid]
+    warped_y[valid] = warped_h[1, valid] / denom[valid]
+    valid &= np.isfinite(warped_x) & np.isfinite(warped_y)
+    return warped_x, warped_y, valid
+
+
+def derotate_events_in_slices(
+    x: np.ndarray,
+    y: np.ndarray,
+    t_us: np.ndarray,
+    ts_start_us: int,
+    ts_end_us: int,
+    context: dict,
+    width: int,
+    height: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[np.ndarray]]:
+    """
+    De-rotate event coordinates before voxelization.
+
+    The window is split into many short slices. Each event receives the
+    homography of its slice center, so intra-slice rotation is treated as
+    negligible.
+    """
+    num_slices = len(context["bin_quat_xyzw"])
+    if num_slices < 1:
+        raise ValueError("Derotation context must contain at least one slice quaternion.")
+
+    window_duration_us = float(ts_end_us - ts_start_us)
+    if window_duration_us <= 0:
+        raise ValueError("Window duration must be positive.")
+
+    rel_t_us = t_us.astype(np.float64) - float(ts_start_us)
+    slice_idx = np.floor(rel_t_us * num_slices / window_duration_us).astype(np.int64)
+    slice_idx = np.clip(slice_idx, 0, num_slices - 1)
+
+    derot_x = np.full_like(x, np.nan, dtype=np.float64)
+    derot_y = np.full_like(y, np.nan, dtype=np.float64)
+    valid = np.zeros(len(x), dtype=bool)
+    homographies = []
+
+    for idx in range(num_slices):
+        homography = homography_from_bin_to_ref(
+            camera_matrix=context["camera_matrix"],
+            bin_quat_xyzw=context["bin_quat_xyzw"][idx],
+            ref_quat_xyzw=context["ref_quat_xyzw"],
+        )
+        homographies.append(homography)
+
+        mask = slice_idx == idx
+        if not np.any(mask):
+            continue
+
+        warped_x, warped_y, warped_valid = warp_points_with_homography(
+            x=x[mask],
+            y=y[mask],
+            homography=homography,
+        )
+
+        mask_indices = np.flatnonzero(mask)
+        derot_x[mask_indices] = warped_x
+        derot_y[mask_indices] = warped_y
+        valid[mask_indices] = warped_valid
+
+    valid &= (derot_x >= 0.0) & (derot_x < width) & (derot_y >= 0.0) & (derot_y < height)
+    return derot_x, derot_y, valid, homographies
 
 
 def raw_events_to_fixed_window_voxel(
@@ -269,8 +390,7 @@ def raw_events_to_fixed_window_voxel(
     width: int,
 ) -> torch.Tensor:
     """
-    Build the same pre-warp voxel raster that VoxelGrid.convert builds when
-    derotation is enabled, using fixed window-relative time binning.
+    Voxelize events over the fixed physical window [ts_start_us, ts_end_us).
     """
     window_duration_us = float(ts_end_us - ts_start_us)
     if window_duration_us <= 0:
@@ -317,25 +437,6 @@ def raw_events_to_fixed_window_voxel(
                     voxel_grid.put_(index[mask], interp_weights[mask], accumulate=True)
 
     return voxel_grid
-
-
-def derotate_voxel_with_training_path(raw_voxel: torch.Tensor, context: dict) -> torch.Tensor:
-    """
-    Call the same method used during training. This method internally uses
-    cv2.warpPerspective for each temporal bin.
-    """
-    derotator = VoxelGrid(
-        channels=raw_voxel.shape[0],
-        height=raw_voxel.shape[1],
-        width=raw_voxel.shape[2],
-        derotate=True,
-    )
-    return derotator.derotate_voxel_grid(
-        voxel_grid=raw_voxel,
-        camera_matrix=np.asarray(context["camera_matrix"], dtype=np.float64),
-        bin_quat_xyzw=np.asarray(context["bin_quat_xyzw"], dtype=np.float64),
-        ref_quat_xyzw=np.asarray(context["ref_quat_xyzw"], dtype=np.float64),
-    )
 
 
 def subsample_indices(num_events: int, max_events: int) -> np.ndarray:
@@ -520,12 +621,13 @@ def load_events(sequence_dir: Path, start_us: int, end_us: int) -> dict[str, np.
 
 def main() -> None:
     """
-    Script to match the training path to visualize the exact same derotation
+    Visualize event-space de-rotation followed by fixed-window voxelization.
     """
     args = parse_args()
     sequence_dir = args.sequence_dir.resolve()
     if not sequence_dir.is_dir():
         raise NotADirectoryError(f"Not a sequence directory: {sequence_dir}")
+    
 
     new_height, new_width = get_downsampled_size(
         original_height=args.height,
@@ -542,11 +644,17 @@ def main() -> None:
         original_width=args.width,
     )
     start_us, end_us, window_source = choose_window_us(args, seq_info["gt_timestamps_us"])
-    context = build_derotation_context(
+    duration_ms = (end_us - start_us) / 1000.0
+    num_derotation_slices = resolve_derotation_slices(
+        duration_ms=duration_ms,
+        derotation_slices=args.derotation_slices,
+        derotation_slice_ms=args.derotation_slice_ms,
+    )
+    derotation_context = build_derotation_context(
         seq_info=seq_info,
         ts_start_us=start_us,
         ts_end_us=end_us,
-        num_bins=args.num_bins,
+        num_bins=num_derotation_slices,
     )
 
     events = load_events(sequence_dir, start_us, end_us)
@@ -560,6 +668,20 @@ def main() -> None:
     t_us = events["t"].astype(np.int64)
     polarity = events["p"]
 
+    derotation_start = perf_counter()
+    derot_x, derot_y, derot_valid, homographies = derotate_events_in_slices(
+        x=raw_x,
+        y=raw_y,
+        t_us=t_us,
+        ts_start_us=start_us,
+        ts_end_us=end_us,
+        context=derotation_context,
+        width=new_width,
+        height=new_height,
+    )
+    derotation_warp_s = perf_counter() - derotation_start
+
+    raw_voxel_start = perf_counter()
     raw_voxel = raw_events_to_fixed_window_voxel(
         x=raw_x,
         y=raw_y,
@@ -571,9 +693,23 @@ def main() -> None:
         height=new_height,
         width=new_width,
     )
-    derot_voxel = derotate_voxel_with_training_path(raw_voxel, context)
+    raw_voxel_s = perf_counter() - raw_voxel_start
 
-    duration_ms = (end_us - start_us) / 1000.0
+    derot_voxel_start = perf_counter()
+    derot_voxel = raw_events_to_fixed_window_voxel(
+        x=derot_x[derot_valid],
+        y=derot_y[derot_valid],
+        p=polarity[derot_valid],
+        t_us=t_us[derot_valid],
+        ts_start_us=start_us,
+        ts_end_us=end_us,
+        num_bins=args.num_bins,
+        height=new_height,
+        width=new_width,
+    )
+    derotation_voxel_s = perf_counter() - derot_voxel_start
+    derotation_total_s = derotation_warp_s + derotation_voxel_s
+
     raw_plot_x, raw_plot_y, raw_plot_t, raw_plot_value, raw_total = voxel_to_points(
         raw_voxel,
         duration_ms=duration_ms,
@@ -586,28 +722,38 @@ def main() -> None:
         max_points=args.max_events,
         eps=args.voxel_eps,
     )
-    homographies = [
-        homography_from_bin_to_ref(
-            camera_matrix=context["camera_matrix"],
-            bin_quat_xyzw=context["bin_quat_xyzw"][idx],
-            ref_quat_xyzw=context["ref_quat_xyzw"],
-        )
-        for idx in range(args.num_bins)
-    ]
 
     print(f"Sequence: {sequence_dir}")
     print(f"Window source: {window_source}")
     print(f"Window: [{start_us}, {end_us}) us ({duration_ms:.3f} ms)")
     print(f"Events loaded: {len(events['t'])}")
+    print(
+        "Event-space derotation: "
+        f"{num_derotation_slices} slices "
+        f"({duration_ms / num_derotation_slices:.3f} ms/slice), "
+        f"valid warped events: {int(np.count_nonzero(derot_valid))}"
+    )
+    print(f"Final voxel bins: {args.num_bins}")
+    print(
+        "Timing: "
+        f"raw voxel {raw_voxel_s * 1000.0:.2f} ms | "
+        f"derotation warp {derotation_warp_s * 1000.0:.2f} ms | "
+        f"derot voxel {derotation_voxel_s * 1000.0:.2f} ms | "
+        f"derotation path total {derotation_total_s * 1000.0:.2f} ms"
+    )
+    print(
+        "Timing per loaded event: "
+        f"derotation path {derotation_total_s * 1e6 / len(events['t']):.3f} us/event"
+    )
     print(f"Raw nonzero voxel pixels: {raw_total} (plotted {len(raw_plot_x)})")
     print(f"De-rotated nonzero voxel pixels: {derot_total} (plotted {len(derot_plot_x)})")
     print(f"Downsampled size: {new_height}x{new_width}")
-    print("First bin homography:")
+    print("First derotation-slice homography:")
     print(np.array2string(homographies[0], precision=6, suppress_small=True))
 
     title = (
         f"{sequence_dir.name} | {duration_ms:.1f} ms | "
-        f"{args.num_bins} bins | cv2.warpPerspective derotation"
+        f"{num_derotation_slices} derotation slices -> {args.num_bins} voxel bins"
     )
     fig = make_plot(
         raw_x=raw_plot_x,

@@ -14,7 +14,6 @@ from .utils import (
     normalize_quaternions,
 )
 
-
 class MultiEventVoxelClipDataset(Dataset):
     # We use the voxel grid representation + clipping for TSformer-VO
     #
