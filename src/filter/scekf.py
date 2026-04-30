@@ -23,7 +23,14 @@ class State:
     pose clones, which is the layout already assumed by the existing code.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        initial_attitude_sigma_rad=0.01,
+        initial_velocity_sigma_mps=0.5,
+        initial_position_sigma_m=0.01,
+        initial_bg_sigma_rps=0.01,
+        initial_ba_sigma_mps2=0.2,
+    ):
         """Initialize the nominal state, empty clone list, and small covariance."""
 
         self.R = np.eye(3)       # rotation from body to world
@@ -37,11 +44,11 @@ class State:
         self.clone_Rs = []       # cloned body-to-world rotations, oldest first
         self.clone_ps = []       # cloned world positions, oldest first
         self.P = np.zeros((15, 15))
-        self.P[0:3, 0:3] = np.eye(3) * (0.01)**2  
-        self.P[6:9, 6:9] = np.eye(3) * (0.01)**2  
-        self.P[3:6, 3:6] = np.eye(3) * (0.5)**2   
-        self.P[9:12, 9:12] = np.eye(3) * (0.01)**2 # Bias gyro
-        self.P[12:15, 12:15] = np.eye(3) * (0.2)**2 # Bias accel
+        self.P[0:3, 0:3] = np.eye(3) * initial_attitude_sigma_rad**2
+        self.P[3:6, 3:6] = np.eye(3) * initial_velocity_sigma_mps**2
+        self.P[6:9, 6:9] = np.eye(3) * initial_position_sigma_m**2
+        self.P[9:12, 9:12] = np.eye(3) * initial_bg_sigma_rps**2
+        self.P[12:15, 12:15] = np.eye(3) * initial_ba_sigma_mps2**2
 
     def get_clone_count(self):
         """Return how many stochastic clones are currently stored."""
@@ -66,8 +73,20 @@ class ImuMSCKF:
         self.sigma_rel_r = getattr(args, "sigma_rel_r", 0.10)
         self.meas_cov_scale = getattr(args, "meas_cov_scale", 1.0)
 
+        self.initial_attitude_sigma_rad = getattr(args, "initial_attitude_sigma_rad", 0.01)
+        self.initial_velocity_sigma_mps = getattr(args, "initial_velocity_sigma_mps", 0.5)
+        self.initial_position_sigma_m = getattr(args, "initial_position_sigma_m", 0.01)
+        self.initial_bg_sigma_rps = getattr(args, "initial_bg_sigma_rps", 0.004)
+        self.initial_ba_sigma_mps2 = getattr(args, "initial_ba_sigma_mps2", 0.04)
+
         self.g = np.array([0.0, 0.0, -9.80665])
-        self.state = State()
+        self.state = State(
+            initial_attitude_sigma_rad=self.initial_attitude_sigma_rad,
+            initial_velocity_sigma_mps=self.initial_velocity_sigma_mps,
+            initial_position_sigma_m=self.initial_position_sigma_m,
+            initial_bg_sigma_rps=self.initial_bg_sigma_rps,
+            initial_ba_sigma_mps2=self.initial_ba_sigma_mps2,
+        )
         self.default_measurement_covariance = make_default_joint_covariance(
             self.sigma_rel_t
         )
@@ -88,11 +107,11 @@ class ImuMSCKF:
         self.state.clone_ps = []
         if P is None:
             self.state.P = np.zeros((15, 15))
-            self.state.P[0:3, 0:3] = np.eye(3) * (0.01)**2  
-            self.state.P[6:9, 6:9] = np.eye(3) * (0.01)**2  
-            self.state.P[3:6, 3:6] = np.eye(3) * (0.5)**2   
-            self.state.P[9:12, 9:12] = np.eye(3) * (0.004)**2
-            self.state.P[12:15, 12:15] = np.eye(3) * (0.04)**2
+            self.state.P[0:3, 0:3] = np.eye(3) * self.initial_attitude_sigma_rad**2
+            self.state.P[3:6, 3:6] = np.eye(3) * self.initial_velocity_sigma_mps**2
+            self.state.P[6:9, 6:9] = np.eye(3) * self.initial_position_sigma_m**2
+            self.state.P[9:12, 9:12] = np.eye(3) * self.initial_bg_sigma_rps**2
+            self.state.P[12:15, 12:15] = np.eye(3) * self.initial_ba_sigma_mps2**2
         else:
             self.state.P = P.copy()
 
@@ -220,6 +239,7 @@ class ImuMSCKF:
         delta_x = -K @ residual
 
         self._inject_error_state(delta_x)
+        self._sync_current_pose_with_latest_clone()
 
         identity = np.eye(P.shape[0])
         joseph_left = identity - K @ H
@@ -259,6 +279,14 @@ class ImuMSCKF:
             self.state.clone_ps[clone_idx] = (
                 self.state.clone_ps[clone_idx] + delta_x[offset + 3 : offset + 6]
             )
+
+    def _sync_current_pose_with_latest_clone(self):
+        """Keep the live IMU pose consistent with the newest clone at the same timestamp."""
+
+        if self.state.get_clone_count() == 0:
+            return
+        self.state.R = self.state.clone_Rs[-1].copy()
+        self.state.p = self.state.clone_ps[-1].copy()
 
 
 class AdaptiveCovariance:

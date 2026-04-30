@@ -41,8 +41,8 @@ class RunnerConfig:
 
     # Paths
     data_root: Path = ROOT / "data"
-    dataset: str = "eds"
-    sequence: str = "09_ziggy_flying_pieces"
+    dataset: str = "processed"
+    sequence: str = "seasidetown_Hard_P004"
     out_dir: Path = ROOT / "outputs" / "main_filter"
 
     @property
@@ -68,15 +68,15 @@ class RunnerConfig:
     # sigma_nbg: float = 3.99e-05
 
     # IMU process noise (Tartanair)
-    sigma_na: float = 2e-02
-    sigma_ng: float = 1.6968e-02
-    sigma_nba: float = 6e-03
-    sigma_nbg: float = 5.9393e-05
+    sigma_na: float = 2.3488e-01
+    sigma_ng: float = 2.5087e-03
+    sigma_nba: float = 2.4505e-05
+    sigma_nbg: float = 1.4933e-05
 
     # EKF assumed measurement covariance
-    assumed_sigma_rel_t: float = 0.018
+    assumed_sigma_rel_t: float = 0.013836
     assumed_sigma_rel_r_deg: float = 2.0
-    meas_cov_scale: float = 1.0
+    meas_cov_scale: float = 1.0609
 
     # Optional extra synthetic noise added on top of measurements
     extra_measurement_noise_t: float = 0.0
@@ -89,6 +89,11 @@ class RunnerConfig:
     initial_bg: tuple[float, float, float] = (0.0, 0.0, 0.0)
     initial_ba: tuple[float, float, float] = (0.0, 0.0, 0.0)
     gravity_world_mps2: tuple[float, float, float] = (0.0, 0.0, 9.80665)
+    initial_attitude_sigma_deg: float = 0.2343
+    initial_velocity_sigma_mps: float = 0.1158
+    initial_position_sigma_m: float = 0.01338
+    initial_bg_sigma_rps: float = 0.001112
+    initial_ba_sigma_mps2: float = 0.001536
 
 
 CONFIG = RunnerConfig()
@@ -196,10 +201,7 @@ def _build_anchor_times_from_relative_motions(relative_motion_table: np.ndarray)
 
     anchor_times_s = np.concatenate([edge_start_times_s[:1], edge_end_times_s], axis=0)
     relative_measurements = relative_motion_table[:, 2:5].astype(np.float64)
-    if relative_motion_table.shape[1] == 8:
-        relative_sigmas = relative_motion_table[:, 5:8].astype(np.float64)
-    else:
-        relative_sigmas = None
+    relative_sigmas = None
 
     return anchor_times_s, relative_measurements, relative_sigmas
 
@@ -348,6 +350,11 @@ def _make_filter_args(config: RunnerConfig) -> SimpleNamespace:
         sigma_rel_t=float(config.assumed_sigma_rel_t),
         sigma_rel_r=float(np.deg2rad(config.assumed_sigma_rel_r_deg)),
         meas_cov_scale=float(config.meas_cov_scale),
+        initial_attitude_sigma_rad=float(np.deg2rad(config.initial_attitude_sigma_deg)),
+        initial_velocity_sigma_mps=float(config.initial_velocity_sigma_mps),
+        initial_position_sigma_m=float(config.initial_position_sigma_m),
+        initial_bg_sigma_rps=float(config.initial_bg_sigma_rps),
+        initial_ba_sigma_mps2=float(config.initial_ba_sigma_mps2),
     )
 
 
@@ -418,7 +425,7 @@ def run_filter(config: RunnerConfig) -> dict:
     relative_anchor_times_s, relative_measurements, relative_sigmas = _build_anchor_times_from_relative_motions(
         relative_motion_table
     )
-    #relative_sigmas=None
+    relative_sigmas=None
     anchor_timestamps_us, _, relative_measurements, relative_sigmas = _validate_anchor_alignment(
         anchor_timestamps_us,
         relative_anchor_times_s,
