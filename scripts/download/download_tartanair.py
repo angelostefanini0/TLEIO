@@ -26,22 +26,21 @@ TARTANEVENT_ROOT_URL = (
 
 def download_with_retry(url: str, target: str) -> None:
     import os
-    import zipfile
+    # Ora usiamo SOLO final_path, niente più part_path
     final_path = Path(target)
-    part_path = final_path.with_suffix(final_path.suffix + ".part")
     
+    # Controllo integrità iniziale
     if final_path.exists():
         if zipfile.is_zipfile(final_path):
             print(f"\nFile {final_path.name} already fully downloaded and valid.")
             return
         else:
-            print(f"\nFound incomplete {final_path.name}. Auto-renaming to .part to resume...")
-            final_path.replace(part_path)
+            print(f"\nFound incomplete {final_path.name}. Resuming directly on the file...")
 
     while True:
         try:
             req = urllib.request.Request(url)
-            file_size = part_path.stat().st_size if part_path.exists() else 0
+            file_size = final_path.stat().st_size if final_path.exists() else 0
             
             if file_size > 0:
                 req.add_header("Range", f"bytes={file_size}-")
@@ -62,7 +61,7 @@ def download_with_retry(url: str, target: str) -> None:
                 if is_partial:
                     total_size += file_size
 
-                with open(part_path, mode) as f:
+                with open(final_path, mode) as f:
                     with tqdm(
                         total=total_size, 
                         initial=file_size, 
@@ -80,14 +79,16 @@ def download_with_retry(url: str, target: str) -> None:
                             os.fsync(f.fileno()) 
                             pbar.update(len(chunk))
             
-            part_path.replace(final_path)
+            actual_size = final_path.stat().st_size
+            if total_size > 0 and actual_size < total_size:
+                raise Exception(f"Network error. Downloaded {actual_size} / {total_size} bytes.")
+
             print(f"\nDownload completed successfully: {final_path.name}")
             return
 
         except urllib.error.HTTPError as e:
             if e.code == 416:
                 print("\nFile is already fully downloaded.")
-                part_path.replace(final_path)
                 return
             print(f"\nAttempt failed (HTTP {e.code}). Retrying in 5s...")
             time.sleep(5)
