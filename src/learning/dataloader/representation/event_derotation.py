@@ -152,40 +152,16 @@ def raw_events_to_fixed_window_voxel(
     y_t = torch.from_numpy(y.astype(np.float32, copy=False))
     p_t = torch.from_numpy(p.astype(np.float32, copy=False))
     time_t = torch.from_numpy(t_us.astype(np.float32) - np.float32(ts_start_us))
+    t_norm = (num_bins - 1) * time_t / window_duration_us
+    return trilinear_voxel_interpolation(
+        x=x_t,
+        y=y_t,
+        pol=p_t,
+        t_norm=t_norm,
+        channels=num_bins,
+        height=height,
+        width=width,
+    )
 
-    with torch.no_grad():
-        voxel_grid = torch.zeros((num_bins, height, width), dtype=torch.float32)
-        t_norm = (num_bins - 1) * time_t / window_duration_us
 
-        x0 = x_t.int()
-        y0 = y_t.int()
-        t0 = t_norm.int()
-        value = 2 * p_t - 1
 
-        for dx in [0, 1]:
-            for dy in [0, 1]:
-                for dt in [0, 1]:
-                    xlim = x0 + dx
-                    ylim = y0 + dy
-                    tlim = t0 + dt
-
-                    mask = (
-                        (xlim < width)
-                        & (xlim >= 0)
-                        & (ylim < height)
-                        & (ylim >= 0)
-                        & (tlim < num_bins)
-                        & (tlim >= 0)
-                    )
-
-                    interp_weights = (
-                        value
-                        * (1 - (xlim.float() - x_t).abs())
-                        * (1 - (ylim.float() - y_t).abs())
-                        * (1 - (tlim.float() - t_norm).abs())
-                    )
-
-                    index = height * width * tlim.long() + width * ylim.long() + xlim.long()
-                    voxel_grid.put_(index[mask], interp_weights[mask], accumulate=True)
-
-    return voxel_grid

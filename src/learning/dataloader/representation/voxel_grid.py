@@ -99,6 +99,55 @@ class VoxelGrid(EventRepresentation):
 
         return torch.from_numpy(warped).to(voxel_grid.device)
 
+    def trilinear_voxel_interpolation(
+        x: torch.Tensor,
+        y: torch.Tensor,
+        pol: torch.Tensor,
+        t_norm: torch.Tensor,
+        channels: int,
+        height: int,
+        width: int,
+    ) -> torch.Tensor:
+        assert x.shape == y.shape == pol.shape == t_norm.shape
+        assert x.ndim == 1
+
+        device = x.device
+        with torch.no_grad():
+            voxel_grid = torch.zeros((channels, height, width), dtype=torch.float32, device=device)
+
+            x0 = x.int()
+            y0 = y.int()
+            t0 = t_norm.int()
+            value = 2 * pol - 1
+
+            for dx in [0, 1]:
+                for dy in [0, 1]:
+                    for dt in [0, 1]:
+                        xlim = x0 + dx
+                        ylim = y0 + dy
+                        tlim = t0 + dt
+
+                        mask = (
+                            (xlim < width)
+                            & (xlim >= 0)
+                            & (ylim < height)
+                            & (ylim >= 0)
+                            & (tlim < channels)
+                            & (tlim >= 0)
+                        )
+
+                        interp_weights = (
+                            value
+                            * (1 - (xlim.float() - x).abs())
+                            * (1 - (ylim.float() - y).abs())
+                            * (1 - (tlim.float() - t_norm).abs())
+                        )
+
+                        index = height * width * tlim.long() + width * ylim.long() + xlim.long()
+                        voxel_grid.put_(index[mask], interp_weights[mask], accumulate=True)
+
+        return voxel_grid
+
     def convert(
         self,
         x: torch.Tensor,
@@ -114,21 +163,32 @@ class VoxelGrid(EventRepresentation):
         device = x.device
 
         with torch.no_grad():
-            voxel_grid = torch.zeros((C, H, W), dtype=torch.float32, device=device)
-
             if self.derotate:
                 # When de-rotation happens, the time has a slightly different meaning
                 # Without de-rotation, the exact physical timestamp of each bin is not important.
                 # With de-rotation, each temporal bin is later warped using the pose at that bin’s center. 
                 # So the bin assignment must correspond to the real fixed window [ts_start_us, ts_end_us], 
                 # not to [first_event_time, last_event_time].
+
+                #TODO: The de-rotation now happens before the trilinear voxel interpolation
+                # This is the moment it has to be done 
                 
                 if metadata is None:
                     raise ValueError("Derotation requires metadata.")
                 window_duration_us = float(metadata["window_duration_us"])
                 if window_duration_us <= 0:
                     raise ValueError("window_duration_us must be positive.")
+
                 t_norm = (C - 1) * time / window_duration_us
+                voxel_grid = self.trilinear_voxel_interpolation(
+                    x=x,
+                    y=y,
+                    pol=pol,
+                    t_norm=t_norm,
+                    channels=C,
+                    height=H,
+                    width=W,
+                )
             else:
                 t_min, t_max = time[0], time[-1]
                 if t_max > t_min:
@@ -136,30 +196,15 @@ class VoxelGrid(EventRepresentation):
                 else:
                     t_norm = torch.zeros_like(time)
 
-            x0 = x.int()
-            y0 = y.int()
-            t0 = t_norm.int()
-
-            value = 2 * pol - 1
-
-            for dx in [0, 1]:
-                for dy in [0, 1]:
-                    for dt in [0, 1]:
-                        xlim, ylim, tlim = x0 + dx, y0 + dy, t0 + dt
-
-                        mask = (xlim < W) & (xlim >= 0) & \
-                               (ylim < H) & (ylim >= 0) & \
-                               (tlim < C) & (tlim >= 0)
-
-                        interp_weights = value * (1 - (xlim.float() - x).abs()) * \
-                                                 (1 - (ylim.float() - y).abs()) * \
-                                                 (1 - (tlim.float() - t_norm).abs())
-
-                        index = H * W * tlim.long() + \
-                                W * ylim.long() + \
-                                xlim.long()
-
-                        voxel_grid.put_(index[mask], interp_weights[mask], accumulate=True)
+                voxel_grid = self.trilinear_voxel_interpolation(
+                    x=x,
+                    y=y,
+                    pol=pol,
+                    t_norm=t_norm,
+                    channels=C,
+                    height=H,
+                    width=W,
+                )
 
             if self.derotate:
                 voxel_grid = self.derotate_voxel_grid(
