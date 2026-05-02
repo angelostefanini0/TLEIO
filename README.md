@@ -43,7 +43,9 @@ cd tartanairpy
 pip install -e .
 git submodule update --init --recursive
 ```
-Then when installed run: 
+
+Then when installed go to `tartanairpy/tartanair/tartanair_module.py`, line 51 and add `'pose'` to the modalities to download the ground truth pose. 
+
 
 ```bash
 python scripts/download/download_tartanair.py \
@@ -53,14 +55,25 @@ python scripts/download/download_tartanair.py \
 --difficulty easy hard
 ```
 
-## 3. Data pre-processing
+If the IMU data is failing to download then only the events will be in the folder, so later run 
+```bash
+python scripts/download/download_tartanair.py \
+--root data/tartanair \
+--env-event office \
+--env-air Office \
+--difficulty easy hard \
+--skip-event
+```
+If the first partial download of events lives in a different folder than the one specified in the second one, then the second command should add --merge-root /path/to/that/partial/folder.
 
-Run the `processing.py` script to process the event stream and the ground truth data to get supervision for the network. The script generates a ms_to_idx mapping for efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency. 
+## 3. EDS Data pre-processing
+
+Run the `processing_eds.py` script to process the event stream and the ground truth data to get supervision for the network. The script generates a ms_to_idx mapping for efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency. 
 
 CURRENTLY WORKING FOR EDS ONLY, NEEDS MINOR FIXES TO WORK WITH THE TARTAN AIR DATASET AS WELL
 
 ```bash
-python scripts/processing.py data/eds/raw \
+python scripts/processing_eds.py data/eds/raw \
 --save-path data/eds/processed_train \
 --save_path_validation data/eds/processed_validation \
 --validation-seq 3 \
@@ -73,7 +86,26 @@ python scripts/processing.py data/eds/raw \
 --anchor_t_ms 50
 
 ```
-## 4. Visualization of event data: 
+## 4. Tartan Data pre-processing
+
+Run the `processing_tartan.py` script to process the event stream and the ground truth data to get supervision for the network. The script generates a ms_to_idx mapping for efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency. 
+
+Pass the top-level Tartan root, for example `data/tartanair`, not a single environment folder. The script builds `stamped_groundtruth.txt` from `pose_lcam_front.txt` and `imu/cam_time.txt`, and can also synthesize an `imu.csv` from the Tartan IMU files.
+
+```bash
+python scripts/processing_tartan.py data/tartanair \
+--save-path data/tartanair/processed_train \
+--overwrite \
+--timestamps-key events/t \
+--process_gt pose_lcam_front.txt \
+--generate_imu_csv true \
+--delta_t_ms 50 \
+--anchor_t_ms 50
+
+```
+When running on the server, add argument `--materialize-events-file`, so that the event file is not symlinked from the raw folder and `--remove-raw-after-materialize`, so as not to use space on the disk in the cluster. 
+
+## 5. Visualization of event data: 
 Run the `scripts/viz/play_events_on_rgb.py` script to playback the input video with events overlayed onto RGB frames. `root` expects the absolute path to the dataset root, `sequence` expects the name of the sequence to inspect, and `height` / `width` are the image dimensions to display. To have the playback uncapped, set `fps` to `0`.
 
 ```bash
@@ -106,7 +138,7 @@ python scripts/viz/play_events_on_rgb.py \
 
 When denoising is enabled, the overlay shows `kept/raw` event counts so it is easier to check whether the filter is doing what you expect.
 
-## 5. Training the model: 
+## 6. Training the model: 
 Run the `main_network.py` script to train the model. A bunch of arguments can be passed for general data handling, optimization strategies and model parameters.
 
 Important parameters:
@@ -136,7 +168,7 @@ python src/main_network.py \
 
 ```
 
-## 6. Testing the model: 
+## 7. Testing the model: 
 Run the `test.py` script to test the model and save the motions into a file.
 
 The script reads `args.txt` from the checkpoint directory, so the same training-time settings for downsampling and denoising are reused automatically during inference. You can also enable `--average_overlaps` to average multiple predictions that correspond to the same relative motion. Translation-only checkpoints now save `t0_us t1_us px py pz`.
@@ -149,7 +181,7 @@ python test.py \
 --average_overlaps
 ```
 
-## 7. Inspection of model output: 
+## 8. Inspection of model output: 
 Run the `inspect_relative_motions.py` script to see how the model predicition compares to the GT. `gt` expects the stamped groundtruth, `rel` accepts either translation-only predictions `[t0_us t1_us px py pz]` or full relative motions `[t0_us t1_us px py pz rx ry rz]`, `gt_rel` expects the groundtruth relative motions, and `gt_rel_mode` expects one of `[rotation, translation, both]`. With translation-only predictions, `rotation` is usually the most useful mode because it fuses predicted translation with GT rotation.
 
 ```bash
@@ -160,7 +192,7 @@ python inspect_functions/inspect_relative_motions.py \
 --gt_rel_mode rotation
 ```
 
-## 8. Live visualization and inspection of results: 
+## 9. Live visualization and inspection of results: 
 Run the `scripts/viz/test_trajectory_with_events.py` script to playback the input video with events overlayed onto RGB frames, and get the corresponding trajectory plot live (gt against predicted from the model). It supports the same optional background-activity denoising controls as `play_events_on_rgb.py`.
 ```bash
 python scripts/viz/test_trajectory_with_events.py \

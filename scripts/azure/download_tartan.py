@@ -15,9 +15,8 @@ job = command(
     code="./",
     # We use ${{outputs.processed_data}} to tell Azure to insert the 
     # correct mount path directly into the CLI string.
-    command="python scripts/processing_eds.py ${{outputs.processed_data}}/eds/raw --save-path ${{outputs.processed_data}}/eds/processed_train "
-            "--save_path_testing ${{outputs.processed_data}}/eds/processed_test --save_path_validation ${{outputs.processed_data}}/eds/processed_validation --validation-seq 3 --test-seq 0,6 --remove-raw --timestamps-key t "
-            "--process_gt imu.csv stamped_groundtruth.txt --delta_t_ms 50 --anchor_t_ms 50",
+    command="cd tartanairpy && pip install -e . && apt-get update && apt-get install -y git && git submodule update --init --recursive && cd .. &&"
+    "python scripts/download/download_tartanair.py --root ${{outputs.processed_data}}/tartanair --env-event endofworld --env-air EndofTheWorld --difficulty easy hard ",
     outputs={
         "processed_data": Output(
             type="uri_folder",
@@ -27,7 +26,7 @@ job = command(
     },
     environment="tleio-env@latest",
     compute="preprocessing-cluster",
-    display_name="EDS-Process"
+    display_name="Tartan-download-endofworld"
 )
 
 # Submit the job

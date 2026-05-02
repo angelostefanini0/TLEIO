@@ -7,25 +7,29 @@ import numpy as np
 
 #Taken kindly from DSEC dataloader 
 class EventSlicer:
-    def __init__(self, h5f: h5py.File):
+    def __init__(self, h5f: h5py.File, metadata_h5f: h5py.File | None = None):
         """
-        h5f is a file that contains all the event information in h5 format
-        It is the already processed h5 file with event information as well as the mapping ms_to_idx
+        h5f contains the raw event arrays.
+        metadata_h5f optionally provides processed timestamps and ms_to_idx.
         """
         self.h5f = h5f
+        self.metadata_h5f = metadata_h5f if metadata_h5f is not None else h5f
 
         self.events = dict()
 
-        #Going through sections of the h5file
-        for dset_str in ['p', 't', 'x', 'y']:
+        # x/y/p live in the raw events file, while t/ms_to_idx may come from a sidecar file.
+        for dset_str in ['p', 'x', 'y']:
             self.events[dset_str] = self.h5f['events/{}'.format(dset_str)]
+        self.events['t'] = self.metadata_h5f['events/t']
 
         #The mapping from milliseconds to event index can be found in scripts/processing.py:
+        self.ms_to_idx = np.asarray(self.metadata_h5f['ms_to_idx'], dtype='int64')
+        self.normalize_polarity_to_binary = bool(
+            self.metadata_h5f.attrs.get("normalize_polarity_to_binary", 0)
+        )
 
-        self.ms_to_idx = np.asarray(self.h5f['ms_to_idx'], dtype='int64')
-
-        if "t_offset" in list(h5f.keys()):
-            self.t_offset = int(h5f['t_offset'][()])
+        if "t_offset" in list(self.metadata_h5f.keys()):
+            self.t_offset = int(self.metadata_h5f['t_offset'][()])
         else:
             self.t_offset = 0
         
@@ -76,6 +80,10 @@ class EventSlicer:
         events['t'] = time_array_conservative[idx_start_offset:idx_end_offset] + self.t_offset
         for dset_str in ['p', 'x', 'y']:
             events[dset_str] = np.asarray(self.events[dset_str][t_start_us_idx:t_end_us_idx])
+            if dset_str == 'p' and self.normalize_polarity_to_binary:
+                events[dset_str] = (
+                    (events[dset_str].astype(np.int8) + 1) // 2
+                ).astype(np.uint8)
             assert events[dset_str].size == events['t'].size
         return events
 
