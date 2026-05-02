@@ -182,9 +182,10 @@ def raw_events_to_fixed_window_voxel(
     height: int,
     width: int,
 ) -> torch.Tensor:
-    """Voxelize events over the fixed physical window ``[ts_start_us, ts_end_us)``.
+    """
+    Voxelize events over the fixed physical window ``[ts_start_us, ts_end_us)``.
 
-    This helper is used by the visualization path to build raw and de-rotated
+    This helper is only used by the visualization path to build raw and de-rotated
     voxel grids with the same fixed-window time convention as the training
     de-rotation path.
     """
