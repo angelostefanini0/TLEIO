@@ -1,0 +1,191 @@
+from __future__ import annotations
+
+import numpy as np
+import torch
+
+from .voxel_grid import quat_xyzw_to_rotmat
+
+
+def homography_from_bin_to_ref(
+    camera_matrix: np.ndarray,
+    bin_quat_xyzw: np.ndarray,
+    ref_quat_xyzw: np.ndarray,
+) -> np.ndarray:
+    K = np.asarray(camera_matrix, dtype=np.float64)
+    K_inv = np.linalg.inv(K)
+    R_ref = quat_xyzw_to_rotmat(np.asarray(ref_quat_xyzw, dtype=np.float64))
+    R_bin = quat_xyzw_to_rotmat(np.asarray(bin_quat_xyzw, dtype=np.float64))
+    R_ref_from_bin = R_ref.T @ R_bin
+    H_ref_from_bin = K @ R_ref_from_bin @ K_inv
+    H_ref_from_bin /= H_ref_from_bin[2, 2]
+    return H_ref_from_bin
+
+
+def rot_necessary(camera_matrix: np.ndarray, pixel_coord: np.ndarray) -> None:
+    pixel_coord_h = np.array([pixel_coord[0], pixel_coord[1], 1.0])
+    pixel_coord_h_1 = np.array([pixel_coord[0] + 1, pixel_coord[1], 1.0])
+    K = np.asarray(camera_matrix, dtype=np.float64)
+    K_inv = np.linalg.inv(K)
+    normalized_p_coord_h = K_inv @ pixel_coord_h
+    normalized_p_coord_h1 = K_inv @ pixel_coord_h_1
+    sin_theta = (
+        normalized_p_coord_h1[0] - normalized_p_coord_h1[2] * normalized_p_coord_h[0]
+    ) / (normalized_p_coord_h[0] ** 2 + 1)
+    theta = np.arcsin(sin_theta)
+    print(f"angle: {np.rad2deg(theta)}")
+    print(f"Speed: {np.rad2deg(theta) / 0.01}")
+
+
+def resolve_derotation_slices(
+    duration_ms: float,
+    derotation_slices: int | None,
+    derotation_slice_ms: float,
+) -> int:
+    if derotation_slices is not None:
+        if derotation_slices < 1:
+            raise ValueError("derotation_slices must be >= 1.")
+        return derotation_slices
+
+    if derotation_slice_ms <= 0:
+        raise ValueError("derotation_slice_ms must be positive.")
+    return max(1, int(round(duration_ms / derotation_slice_ms)))
+
+
+def warp_points_with_homography(
+    x: np.ndarray,
+    y: np.ndarray,
+    homography: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    points_h = np.stack([x, y, np.ones_like(x)], axis=0)
+    warped_h = np.asarray(homography, dtype=np.float64) @ points_h
+    denom = warped_h[2]
+    valid = np.isfinite(denom) & (np.abs(denom) > 1e-12)
+
+    warped_x = np.full_like(x, np.nan, dtype=np.float64)
+    warped_y = np.full_like(y, np.nan, dtype=np.float64)
+    warped_x[valid] = warped_h[0, valid] / denom[valid]
+    warped_y[valid] = warped_h[1, valid] / denom[valid]
+    valid &= np.isfinite(warped_x) & np.isfinite(warped_y)
+    return warped_x, warped_y, valid
+
+
+def derotate_events_in_slices(
+    x: np.ndarray,
+    y: np.ndarray,
+    t_us: np.ndarray,
+    ts_start_us: int,
+    ts_end_us: int,
+    context: dict,
+    width: int,
+    height: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[np.ndarray]]:
+    """
+    De-rotate event coordinates before voxelization.
+
+    The window is split into short temporal slices. Each event receives the
+    homography of its slice center, so intra-slice rotation is treated as
+    negligible.
+    """
+    num_slices = len(context["bin_quat_xyzw"])
+    if num_slices < 1:
+        raise ValueError("Derotation context must contain at least one slice quaternion.")
+
+    window_duration_us = float(ts_end_us - ts_start_us)
+    if window_duration_us <= 0:
+        raise ValueError("Window duration must be positive.")
+
+    rel_t_us = t_us.astype(np.float64) - float(ts_start_us)
+    slice_idx = np.floor(rel_t_us * num_slices / window_duration_us).astype(np.int64)
+    slice_idx = np.clip(slice_idx, 0, num_slices - 1)
+
+    derot_x = np.full_like(x, np.nan, dtype=np.float64)
+    derot_y = np.full_like(y, np.nan, dtype=np.float64)
+    valid = np.zeros(len(x), dtype=bool)
+    homographies = []
+
+    for idx in range(num_slices):
+        homography = homography_from_bin_to_ref(
+            camera_matrix=context["camera_matrix"],
+            bin_quat_xyzw=context["bin_quat_xyzw"][idx],
+            ref_quat_xyzw=context["ref_quat_xyzw"],
+        )
+        homographies.append(homography)
+
+        mask = slice_idx == idx
+        if not np.any(mask):
+            continue
+
+        warped_x, warped_y, warped_valid = warp_points_with_homography(
+            x=x[mask],
+            y=y[mask],
+            homography=homography,
+        )
+
+        mask_indices = np.flatnonzero(mask)
+        derot_x[mask_indices] = warped_x
+        derot_y[mask_indices] = warped_y
+        valid[mask_indices] = warped_valid
+
+    valid &= (derot_x >= 0.0) & (derot_x < width) & (derot_y >= 0.0) & (derot_y < height)
+    return derot_x, derot_y, valid, homographies
+
+
+def raw_events_to_fixed_window_voxel(
+    x: np.ndarray,
+    y: np.ndarray,
+    p: np.ndarray,
+    t_us: np.ndarray,
+    ts_start_us: int,
+    ts_end_us: int,
+    num_bins: int,
+    height: int,
+    width: int,
+) -> torch.Tensor:
+    """
+    Voxelize events over the fixed physical window [ts_start_us, ts_end_us).
+    """
+    window_duration_us = float(ts_end_us - ts_start_us)
+    if window_duration_us <= 0:
+        raise ValueError("Window duration must be positive.")
+
+    x_t = torch.from_numpy(x.astype(np.float32, copy=False))
+    y_t = torch.from_numpy(y.astype(np.float32, copy=False))
+    p_t = torch.from_numpy(p.astype(np.float32, copy=False))
+    time_t = torch.from_numpy(t_us.astype(np.float32) - np.float32(ts_start_us))
+
+    with torch.no_grad():
+        voxel_grid = torch.zeros((num_bins, height, width), dtype=torch.float32)
+        t_norm = (num_bins - 1) * time_t / window_duration_us
+
+        x0 = x_t.int()
+        y0 = y_t.int()
+        t0 = t_norm.int()
+        value = 2 * p_t - 1
+
+        for dx in [0, 1]:
+            for dy in [0, 1]:
+                for dt in [0, 1]:
+                    xlim = x0 + dx
+                    ylim = y0 + dy
+                    tlim = t0 + dt
+
+                    mask = (
+                        (xlim < width)
+                        & (xlim >= 0)
+                        & (ylim < height)
+                        & (ylim >= 0)
+                        & (tlim < num_bins)
+                        & (tlim >= 0)
+                    )
+
+                    interp_weights = (
+                        value
+                        * (1 - (xlim.float() - x_t).abs())
+                        * (1 - (ylim.float() - y_t).abs())
+                        * (1 - (tlim.float() - t_norm).abs())
+                    )
+
+                    index = height * width * tlim.long() + width * ylim.long() + xlim.long()
+                    voxel_grid.put_(index[mask], interp_weights[mask], accumulate=True)
+
+    return voxel_grid
