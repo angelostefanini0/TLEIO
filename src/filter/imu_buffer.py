@@ -39,7 +39,7 @@ class ImuBuffer:
         timestamp = getattr(measurement, "timestamp", None)
         if timestamp is None:
             raise AttributeError("IMU measurements added to the EKF buffer need a `timestamp` attribute.")
-
+        # Ensure temporal consistency
         if self._imu_measurements and timestamp <= self._imu_measurements[-1].timestamp:
             raise ValueError("IMU measurements must be added to the EKF buffer in strictly increasing time order.")
 
@@ -49,11 +49,12 @@ class ImuBuffer:
         """Pop and return all queued EKF IMU samples with time `<= timestamp`."""
 
         split_idx = 0
+        # Find the index of the first measurement that exceeds the requested timestamp
         while split_idx < len(self._imu_measurements):
             if self._imu_measurements[split_idx].timestamp > timestamp:
                 break
             split_idx += 1
-
+        # Slice the list and keep only the remaining measurements in the buffer
         measurements = self._imu_measurements[:split_idx]
         self._imu_measurements = self._imu_measurements[split_idx:]
         return measurements
@@ -70,6 +71,7 @@ class ImuBuffer:
             gyr_interp = gyr.T
         else:
             try:
+                # Create a linear interpolator using the previous and current timestamps
                 acc_interp = interp1d(
                     np.array([last_t_us, t_us], dtype=np.uint64).T,
                     np.concatenate([last_acc.T, acc.T]),
@@ -91,6 +93,7 @@ class ImuBuffer:
         """Append one interpolated timestamp and its IMU arrays to the net buffer."""
 
         assert isinstance(t_us, int)
+        # Enforce strict chronological order
         if len(self.net_t_us) > 0:
             assert (
                 t_us > self.net_t_us[-1]
@@ -124,7 +127,9 @@ class ImuBuffer:
         """Discard interpolated IMU data older than the requested timestamp."""
 
         assert isinstance(t_begin_us, int)
+        # Find the exact index of the requested truncation time
         begin_idx = np.where(self.net_t_us == t_begin_us)[0][0]
+        # Overwrite arrays, keeping only data from begin_idx onward
         self.net_acc = self.net_acc[begin_idx:, :]
         self.net_gyr = self.net_gyr[begin_idx:, :]
         self.net_t_us = self.net_t_us[begin_idx:]

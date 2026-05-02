@@ -10,12 +10,20 @@ from .quiet_numba import jit
 
 
 def get_rotation_from_gravity(acc):
-    # take the first accel data to get gravity direction
+    """
+    Computes a rotation matrix that aligns the world z-axis (gravity direction)
+    with the measured acceleration vector.
+    """
+    # Take the first accel data to get gravity direction
     ig_w = np.array([0, 0, 1.0]).reshape((3, 1))
     return rot_2vec(acc, ig_w)
 
 
 def inv_SE3(T):
+    """
+    Computes the exact inverse of a 4x4 SE(3) transformation matrix.
+    Given T = [R, p; 0, 1], the inverse is [R.T, -R.T * p; 0, 1].
+    """
     Tinv = np.eye(4)
     Tinv[:3,:3] = T[:3,:3].T
     Tinv[:3,3:4] = - T[:3,:3].T @ T[:3,3:4]
