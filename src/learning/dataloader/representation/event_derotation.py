@@ -3,7 +3,20 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from .voxel_grid import quat_xyzw_to_rotmat
+from .trilinear_interpolation import trilinear_voxel_interpolation
+
+
+def quat_xyzw_to_rotmat(q: np.ndarray) -> np.ndarray:
+    qx, qy, qz, qw = q
+    xx, yy, zz = qx * qx, qy * qy, qz * qz
+    xy, xz, yz = qx * qy, qx * qz, qy * qz
+    wx, wy, wz = qw * qx, qw * qy, qw * qz
+
+    return np.array([
+        [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz),       2.0 * (xz + wy)],
+        [2.0 * (xy + wz),       1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
+        [2.0 * (xz - wy),       2.0 * (yz + wx),       1.0 - 2.0 * (xx + yy)],
+    ], dtype=np.float64)
 
 
 def homography_from_bin_to_ref(
@@ -151,7 +164,7 @@ def raw_events_to_fixed_window_voxel(
     x_t = torch.from_numpy(x.astype(np.float32, copy=False))
     y_t = torch.from_numpy(y.astype(np.float32, copy=False))
     p_t = torch.from_numpy(p.astype(np.float32, copy=False))
-    time_t = torch.from_numpy(t_us.astype(np.float32) - np.float32(ts_start_us))
+    time_t = torch.from_numpy((t_us.astype(np.float64) - float(ts_start_us)).astype(np.float32))
     t_norm = (num_bins - 1) * time_t / window_duration_us
     return trilinear_voxel_interpolation(
         x=x_t,
@@ -162,6 +175,3 @@ def raw_events_to_fixed_window_voxel(
         height=height,
         width=width,
     )
-
-
-

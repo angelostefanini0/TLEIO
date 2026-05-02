@@ -75,9 +75,10 @@ class MultiEventVoxelClipDataset(Dataset):
                  denoise_dt_us: int = 1000,
                  denoise_radius: int = 1,
                  denoise_min_supporters: int = 1,
-                 denoise_same_polarity_only: bool = False, 
-                 derotate: bool = False):
-        
+                 denoise_same_polarity_only: bool = False,
+                 derotate: bool = False,
+                 derotation_slices: int = 100):
+
         assert num_bins >= 1
         assert clip_len >= 1
         assert delta_t_ms <= 100, 'if duration is higher than 100 ms'
@@ -90,10 +91,12 @@ class MultiEventVoxelClipDataset(Dataset):
         total = 0
 
         # Set constants
+        self.clip_len = clip_len
         self.patch_size = patch_size
         self.root_path = root_path
         self.original_height = 480
         self.original_width = 640
+        #Downsampling
         self.downsampling_factor = downsampling_factor
         self.new_height, self.new_width = self.get_downsampled_size(
             self.original_height,
@@ -104,13 +107,18 @@ class MultiEventVoxelClipDataset(Dataset):
         self.scale_y = self.new_height / self.original_height
         self.scale_x = self.new_width / self.original_width
         self.num_bins = num_bins
-        self.clip_len = clip_len
+
+        #Denoising
         self.denoising = denoising
         self.denoise_dt_us = denoise_dt_us
         self.denoise_radius = denoise_radius
         self.denoise_min_supporters = denoise_min_supporters
         self.denoise_same_polarity_only = denoise_same_polarity_only
+
+        #Derotation
         self.derotate = derotate
+        self.derotation_slices = derotation_slices
+
         #the duration of a voxel
         self.delta_t_us = delta_t_ms * 1000
 
@@ -118,8 +126,9 @@ class MultiEventVoxelClipDataset(Dataset):
         # Set normalization to FALSE FOR testing
         self.voxel_grid = VoxelGrid(self.num_bins,
                                     self.new_height,
-                                    self.new_width, 
-                                    derotate=derotate)
+                                    self.new_width,
+                                    derotate=self.derotate,
+                                    derotation_slices=self.derotation_slices)
 
         #Set the normalization stats to None: 
         self.train_std = None
@@ -265,14 +274,16 @@ class MultiEventVoxelClipDataset(Dataset):
                 "x": downsampled_x.astype(np.float32),
                 "y": downsampled_y.astype(np.float32),
                 "p": p.astype(np.float32),
-                "t": (t - ts_start_us).astype(np.float32),
+                "t": t.astype(np.float64),
+                "ts_start_us": int(ts_start_us),
+                "ts_end_us": int(ts_end_us),
             }
             event_data.update(
                 build_derotation_context(
                     seq_info=seq_info,
                     ts_start_us=ts_start_us,
                     ts_end_us=ts_end_us,
-                    num_bins=self.num_bins,
+                    num_bins=self.derotation_slices,
                 )
             )
         else:
