@@ -1,3 +1,5 @@
+"""Voxel-grid event representation used by the online dataloader."""
+
 import cv2
 import numpy as np
 import torch
@@ -12,20 +14,10 @@ from .event_derotation import derotate_events_in_slices
 from .trilinear_interpolation import trilinear_voxel_interpolation
 
 
-def quat_xyzw_to_rotmat(q: np.ndarray) -> np.ndarray:
-    qx, qy, qz, qw = q
-    xx, yy, zz = qx * qx, qy * qy, qz * qz
-    xy, xz, yz = qx * qy, qx * qz, qy * qz
-    wx, wy, wz = qw * qx, qw * qy, qw * qz
-
-    return np.array([
-        [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz),       2.0 * (xz + wy)],
-        [2.0 * (xy + wz),       1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
-        [2.0 * (xz - wy),       2.0 * (yz + wx),       1.0 - 2.0 * (xx + yy)],
-    ], dtype=np.float64)
-
 
 class EventRepresentation:
+    """Base interface for event representations."""
+
     def convert(
         self,
         x: torch.Tensor,
@@ -34,9 +26,16 @@ class EventRepresentation:
         time: torch.Tensor,
         metadata: Dict | None = None,
     ) -> torch.Tensor:
+        """Convert typed event tensors into an event representation."""
         raise NotImplementedError
 
     def convert_events(self, events: Dict[str, np.ndarray | torch.Tensor]) -> torch.Tensor:
+        """
+        Convert a dictionary of event arrays into the representation tensor.
+
+        The default implementation converts `x`, `y`, `p`, and `t` to
+        `torch.float32` tensors and forwards all remaining keys as metadata.
+        """
         x = events["x"]
         y = events["y"]
         pol = events["p"]
@@ -56,6 +55,16 @@ class EventRepresentation:
 
 
 class VoxelGrid(EventRepresentation):
+    """
+    Convert raw events into dense temporal voxel grids.
+
+    In the standard path, event times are normalized between the first and last
+    event in the requested window. In the de-rotation path, event timestamps are
+    kept absolute until coordinates are warped into the reference pose; then
+    time is normalized with respect to the fixed event window
+    `[ts_start_us, ts_end_us)`.
+    """
+
     def __init__(
         self,
         channels: int,
@@ -72,11 +81,21 @@ class VoxelGrid(EventRepresentation):
 
     @staticmethod
     def _as_numpy_array(value: np.ndarray | torch.Tensor, dtype: np.dtype) -> np.ndarray:
+        """Return ``value`` as a CPU numpy array with the requested dtype."""
         if isinstance(value, torch.Tensor):
             value = value.detach().cpu().numpy()
         return np.asarray(value, dtype=dtype)
 
     def convert_events(self, events: Dict[str, np.ndarray | torch.Tensor]) -> torch.Tensor:
+        """
+        Convert event dictionaries while preserving numpy arrays for de-rotation.
+
+        The non-de-rotation path delegates to the base implementation where events 
+        are converted to tensors straight away. 
+        The de-rotation path keeps event arrays in numpy because the coordinate warp 
+        uses numpy operations before the shared torch interpolation.
+        """
+
         if not self.derotate:
             return super().convert_events(events)
 
@@ -97,6 +116,24 @@ class VoxelGrid(EventRepresentation):
         time: torch.Tensor,
         metadata: Dict | None = None,
     ):
+        """
+        Convert one event window into a `[C, H, W]` voxel grid.
+
+        Args:
+            x: Event x coordinates.
+            y: Event y coordinates.
+            pol: Event polarities encoded as 0/1.
+            time: Event timestamps. For the non-de-rotation path these may be
+                relative values. For the de-rotation path they must be absolute
+                microsecond timestamps.
+            metadata: Optional metadata required by de-rotation: `ts_start_us`,
+                `ts_end_us`, `camera_matrix`, `bin_quat_xyzw`, and
+                `ref_quat_xyzw`.
+
+        Returns:
+            A `torch.float32` voxel grid with shape
+            `[channels, height, width]`.
+        """
         assert x.shape == y.shape == pol.shape == time.shape
         assert x.ndim == 1
 
@@ -108,9 +145,6 @@ class VoxelGrid(EventRepresentation):
                 # With de-rotation, each temporal bin is later warped using the pose at that bin’s center. 
                 # So the bin assignment must correspond to the real fixed window [ts_start_us, ts_end_us], 
                 # not to [first_event_time, last_event_time].
-
-                #TODO: The de-rotation now happens before the trilinear voxel interpolation
-                # This is the moment it has to be done 
                 
                 if metadata is None:
                     raise ValueError("Derotation requires metadata.")
