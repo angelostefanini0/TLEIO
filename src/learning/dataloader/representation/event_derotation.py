@@ -1,3 +1,5 @@
+"""Event-space de-rotation helpers shared by visualization and voxelization."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -7,6 +9,7 @@ from .trilinear_interpolation import trilinear_voxel_interpolation
 
 
 def quat_xyzw_to_rotmat(q: np.ndarray) -> np.ndarray:
+    """Convert one quaternion in ``xyzw`` order to a ``3 x 3`` rotation matrix."""
     qx, qy, qz, qw = q
     xx, yy, zz = qx * qx, qy * qy, qz * qz
     xy, xz, yz = qx * qy, qx * qz, qy * qz
@@ -24,6 +27,19 @@ def homography_from_bin_to_ref(
     bin_quat_xyzw: np.ndarray,
     ref_quat_xyzw: np.ndarray,
 ) -> np.ndarray:
+    """
+    Build the image-plane homography from one pose slice to the reference pose.
+
+    Args:
+        camera_matrix: Event-camera intrinsic matrix.
+        bin_quat_xyzw: Orientation associated with the source temporal slice.
+        ref_quat_xyzw: Reference orientation: the one at the end of the event
+        window.
+
+    Returns:
+        A `3 x 3` homography that maps source-slice pixel coordinates into
+        the reference orientation.
+    """
     K = np.asarray(camera_matrix, dtype=np.float64)
     K_inv = np.linalg.inv(K)
     R_ref = quat_xyzw_to_rotmat(np.asarray(ref_quat_xyzw, dtype=np.float64))
@@ -33,27 +49,14 @@ def homography_from_bin_to_ref(
     H_ref_from_bin /= H_ref_from_bin[2, 2]
     return H_ref_from_bin
 
-
-def rot_necessary(camera_matrix: np.ndarray, pixel_coord: np.ndarray) -> None:
-    pixel_coord_h = np.array([pixel_coord[0], pixel_coord[1], 1.0])
-    pixel_coord_h_1 = np.array([pixel_coord[0] + 1, pixel_coord[1], 1.0])
-    K = np.asarray(camera_matrix, dtype=np.float64)
-    K_inv = np.linalg.inv(K)
-    normalized_p_coord_h = K_inv @ pixel_coord_h
-    normalized_p_coord_h1 = K_inv @ pixel_coord_h_1
-    sin_theta = (
-        normalized_p_coord_h1[0] - normalized_p_coord_h1[2] * normalized_p_coord_h[0]
-    ) / (normalized_p_coord_h[0] ** 2 + 1)
-    theta = np.arcsin(sin_theta)
-    print(f"angle: {np.rad2deg(theta)}")
-    print(f"Speed: {np.rad2deg(theta) / 0.01}")
-
-
 def resolve_derotation_slices(
     duration_ms: float,
     derotation_slices: int | None,
     derotation_slice_ms: float,
 ) -> int:
+    """
+    Resolve an explicit or duration-derived number of de-rotation slices.
+    """
     if derotation_slices is not None:
         if derotation_slices < 1:
             raise ValueError("derotation_slices must be >= 1.")
@@ -69,6 +72,18 @@ def warp_points_with_homography(
     y: np.ndarray,
     homography: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Warp event coordinates with a homography.
+
+    Args:
+        x: Event x coordinates.
+        y: Event y coordinates.
+        homography: ``3 x 3`` projective transform.
+
+    Returns:
+        Warped x coordinates, warped y coordinates, and a boolean validity mask
+        for finite projective results.
+    """
     points_h = np.stack([x, y, np.ones_like(x)], axis=0)
     warped_h = np.asarray(homography, dtype=np.float64) @ points_h
     denom = warped_h[2]
@@ -92,12 +107,25 @@ def derotate_events_in_slices(
     width: int,
     height: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[np.ndarray]]:
-    """
-    De-rotate event coordinates before voxelization.
+    """De-rotate event coordinates before voxelization.
 
     The window is split into short temporal slices. Each event receives the
-    homography of its slice center, so intra-slice rotation is treated as
+    homography of its slice center, because intra-slice rotation is treated as
     negligible.
+
+    Args:
+        x: Event x coordinates in the voxelization resolution.
+        y: Event y coordinates in the voxelization resolution.
+        t_us: Absolute event timestamps in microseconds.
+        ts_start_us: Absolute start timestamp of the fixed event window.
+        ts_end_us: Absolute end timestamp of the fixed event window.
+        context: De-rotation metadata from `build_derotation_context`.
+        width: Output image width used to reject warped events outside bounds.
+        height: Output image height used to reject warped events outside bounds.
+
+    Returns:
+        Warped x coordinates, warped y coordinates, an in-bounds validity mask,
+        and the per-slice homographies used for warping.
     """
     num_slices = len(context["bin_quat_xyzw"])
     if num_slices < 1:
@@ -155,7 +183,11 @@ def raw_events_to_fixed_window_voxel(
     width: int,
 ) -> torch.Tensor:
     """
-    Voxelize events over the fixed physical window [ts_start_us, ts_end_us).
+    Voxelize events over the fixed physical window ``[ts_start_us, ts_end_us)``.
+
+    This helper is only used by the visualization path to build raw and de-rotated
+    voxel grids with the same fixed-window time convention as the training
+    de-rotation path.
     """
     window_duration_us = float(ts_end_us - ts_start_us)
     if window_duration_us <= 0:

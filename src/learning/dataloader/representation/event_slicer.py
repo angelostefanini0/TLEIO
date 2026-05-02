@@ -1,3 +1,5 @@
+"""HDF5-backed event slicing utilities."""
+
 import math
 from typing import Dict, Tuple
 
@@ -7,10 +9,20 @@ import numpy as np
 
 #Taken kindly from DSEC dataloader 
 class EventSlicer:
+    """Read event windows from HDF5 event arrays using a millisecond index.
+
+    ``events/x``, ``events/y``, and ``events/p`` are read from ``h5f``. Event
+    timestamps and ``ms_to_idx`` may come from ``metadata_h5f`` when processed
+    timestamps are stored in a sidecar file.
+    """
+
     def __init__(self, h5f: h5py.File, metadata_h5f: h5py.File | None = None):
-        """
-        h5f contains the raw event arrays.
-        metadata_h5f optionally provides processed timestamps and ms_to_idx.
+        """Initialize the event slicer.
+
+        Args:
+            h5f: HDF5 file containing raw event arrays.
+            metadata_h5f: Optional HDF5 file containing processed timestamps,
+                ``ms_to_idx``, ``t_offset``, and polarity metadata.
         """
         self.h5f = h5f
         self.metadata_h5f = metadata_h5f if metadata_h5f is not None else h5f
@@ -40,20 +52,24 @@ class EventSlicer:
         self.t_final = int(self.events['t'][-1]) + self.t_offset
 
     def get_start_time_us(self):
+        """Return the first absolute timestamp represented by this slicer."""
         return self.t_offset
 
     def get_final_time_us(self):
+        """Return the final absolute timestamp represented by this slicer."""
         return self.t_final
 
     def get_events(self, t_start_us: int, t_end_us: int) -> Dict[str, np.ndarray]:
-        """Get events (p, x, y, t) within the specified time window
-        Parameters
-        ----------
-        t_start_us: start time in microseconds
-        t_end_us: end time in microseconds
-        Returns
-        -------
-        events: dictionary of (p, x, y, t) or None if the time window cannot be retrieved
+        """Get events within the specified absolute time window.
+
+        Args:
+            t_start_us: Inclusive window start timestamp in microseconds.
+            t_end_us: Exclusive window end timestamp in microseconds.
+
+        Returns:
+            A dictionary containing ``p``, ``x``, ``y``, and absolute ``t``
+            arrays, or ``None`` if the requested window cannot be retrieved
+            from the millisecond lookup table.
         """
         assert t_start_us < t_end_us
 
@@ -90,17 +106,17 @@ class EventSlicer:
 
     @staticmethod
     def get_conservative_window_ms(ts_start_us: int, ts_end_us) -> Tuple[int, int]:
-        """Compute a conservative time window of time with millisecond resolution.
-        We have a time to index mapping for each millisecond. Hence, we need
-        to compute the lower and upper millisecond to retrieve events.
-        Parameters
-        ----------
-        ts_start_us:    start time in microseconds
-        ts_end_us:      end time in microseconds
-        Returns
-        -------
-        window_start_ms:    conservative start time in milliseconds
-        window_end_ms:      conservative end time in milliseconds
+        """Compute a conservative millisecond window for event lookup.
+
+        ``ms_to_idx`` only indexes events at millisecond resolution, so the
+        requested microsecond window is expanded outward before fine filtering.
+
+        Args:
+            ts_start_us: Start timestamp in microseconds.
+            ts_end_us: End timestamp in microseconds.
+
+        Returns:
+            Conservative start and end timestamps in milliseconds.
         """
         assert ts_end_us > ts_start_us
         window_start_ms = math.floor(ts_start_us/1000)
@@ -113,25 +129,16 @@ class EventSlicer:
             time_array: np.ndarray,
             time_start_us: int,
             time_end_us: int) -> Tuple[int, int]:
-        """Compute index offset of start and end timestamps in microseconds
-        This is the step to go from coarse to fine indexing: with ms_to_idx 
-        we only have millisecond accuracy
-        Parameters
-        ----------
-        time_array:     timestamps (in us) of the events
-        time_start_us:  start timestamp (in us)
-        time_end_us:    end timestamp (in us)
-        Returns
-        -------
-        idx_start:  Index within this array corresponding to time_start_us
-        idx_end:    Index within this array corresponding to time_end_us
-        such that (in non-edge cases)
-        time_array[idx_start] >= time_start_us
-        time_array[idx_end] >= time_end_us
-        time_array[idx_start - 1] < time_start_us
-        time_array[idx_end - 1] < time_end_us
-        this means that
-        time_start_us <= time_array[idx_start:idx_end] < time_end_us
+        """Find fine-grained offsets inside a conservative event slice.
+
+        Args:
+            time_array: Candidate event timestamps in microseconds.
+            time_start_us: Inclusive start timestamp in microseconds.
+            time_end_us: Exclusive end timestamp in microseconds.
+
+        Returns:
+            Start and end offsets such that, in non-edge cases,
+            ``time_start_us <= time_array[idx_start:idx_end] < time_end_us``.
         """
 
         assert time_array.ndim == 1
@@ -170,6 +177,7 @@ class EventSlicer:
         return idx_start, idx_end
 
     def ms2idx(self, time_ms: int) -> int:
+        """Map a millisecond timestamp to the corresponding event index."""
         assert time_ms >= 0
         if time_ms >= self.ms_to_idx.size:
             return None
