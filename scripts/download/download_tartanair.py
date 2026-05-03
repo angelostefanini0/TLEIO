@@ -14,14 +14,26 @@ import argparse
 import shutil
 import subprocess
 import zipfile
-from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path, PurePosixPath
 import urllib.request
 import time
 from collections.abc import Iterable
 from tqdm import tqdm
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 TARTANEVENT_ROOT_URL = (
     "https://download.ifi.uzh.ch/rpg/web/data/iros24_rampvo/datasets/TartanEvent"
+)
+TARTANAIR_FILE_LIST = REPO_ROOT / "download_training_zipfiles.txt"
+TARTANAIR_FILE_LIST_URL = (
+    "https://raw.githubusercontent.com/castacks/tartanair_tools/master/"
+    "download_training_zipfiles.txt"
+)
+TARTANAIR_AIRLAB_ENDPOINT = (
+    "https://airlab-cloud.andrew.cmu.edu:8080/swift/v1/"
+    "AUTH_ac8533a83cff4d48bc8c608ad222d330"
 )
 
 def download_with_retry(url: str, target: str) -> None:
@@ -171,6 +183,238 @@ def download_tartanair_imu(root: Path, env: str, difficulties: list[str]) -> Non
                         item.unlink() 
                     except Exception as e:
                         print(f"Error while extracting {item.name}: {e}")
+
+
+class DirectAirLabDownloader:
+    def __init__(self, bucket_name: str, workers: int) -> None:
+        try:
+            import boto3
+            from botocore import UNSIGNED
+            from botocore.client import Config
+        except ImportError as exc:
+            raise ImportError("Direct TartanAir download requires boto3: pip install boto3") from exc
+
+        self.client = boto3.client(
+            "s3",
+            endpoint_url=TARTANAIR_AIRLAB_ENDPOINT,
+            config=Config(
+                signature_version=UNSIGNED,
+                connect_timeout=30,
+                read_timeout=60,
+                retries={"max_attempts": 5, "mode": "standard"},
+            ),
+        )
+        self.bucket_name = bucket_name
+        self.workers = workers
+
+    def _download_one(self, source_file: str, root: Path) -> tuple[str, Path, str]:
+        target_file = root / PurePosixPath(source_file)
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+
+        if target_file.exists() and zipfile.is_zipfile(target_file):
+            return source_file, target_file, "exists"
+
+        part_file = target_file.with_suffix(target_file.suffix + ".part")
+        try:
+            response = self.client.get_object(Bucket=self.bucket_name, Key=source_file)
+            total_size = int(response.get("ContentLength", 0))
+            with open(part_file, "wb") as fh:
+                with tqdm(
+                    total=total_size,
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    desc=Path(source_file).name,
+                ) as pbar:
+                    for chunk in response["Body"].iter_chunks(chunk_size=8 * 1024 * 1024):
+                        if chunk:
+                            fh.write(chunk)
+                            pbar.update(len(chunk))
+            part_file.replace(target_file)
+            return source_file, target_file, "ok"
+        except Exception as exc:
+            return source_file, target_file, f"error: {exc}"
+
+    def download(self, filelist: list[str], root: Path) -> list[Path]:
+        downloaded = []
+        had_error = False
+
+        print(f"Downloading {len(filelist)} TartanAir file(s) from {self.bucket_name}")
+        with ThreadPoolExecutor(max_workers=self.workers) as pool:
+            futures = [pool.submit(self._download_one, source_file, root) for source_file in filelist]
+            for future in as_completed(futures):
+                source_file, target_file, status = future.result()
+                if status in {"ok", "exists"}:
+                    print(f"  {status:6s} {source_file} -> {target_file}")
+                    downloaded.append(target_file)
+                else:
+                    had_error = True
+                    print(f"  FAIL   {source_file}: {status}")
+
+        if had_error:
+            raise RuntimeError("Some TartanAir files failed to download.")
+        return downloaded
+
+
+def ensure_tartanair_file_list(file_list: Path) -> None:
+    if file_list.exists():
+        return
+    if file_list.name != "download_training_zipfiles.txt":
+        raise FileNotFoundError(f"TartanAir file list not found: {file_list}")
+
+    print(f"Downloading TartanAir v1 file list -> {file_list}")
+    file_list.parent.mkdir(parents=True, exist_ok=True)
+    urllib.request.urlretrieve(TARTANAIR_FILE_LIST_URL, file_list)
+
+
+def load_tartanair_file_sizes(file_list: Path) -> dict[str, float]:
+    ensure_tartanair_file_list(file_list)
+    if not file_list.exists():
+        raise FileNotFoundError(f"TartanAir file list not found: {file_list}")
+
+    file_sizes = {}
+    with open(file_list, "r") as fh:
+        for line in fh:
+            parts = line.strip().split()
+            if len(parts) < 2 or not parts[0].endswith(".zip"):
+                continue
+            file_sizes[parts[0]] = float(parts[1])
+    return file_sizes
+
+
+def select_tartanair_archives(
+    file_sizes: dict[str, float],
+    env: str,
+    difficulties: list[str],
+    archive_name: str,
+) -> list[str]:
+    wanted_difficulties = {diff.lower() for diff in difficulties}
+    selected = []
+
+    for source_file in file_sizes:
+        parts = PurePosixPath(source_file).parts
+        if len(parts) < 3:
+            continue
+        if parts[0].lower() != env.lower():
+            continue
+        if parts[-1].lower() != archive_name.lower():
+            continue
+
+        diff_part = parts[1].lower()
+        diff = diff_part.replace("data_", "")
+        if diff in wanted_difficulties:
+            selected.append(source_file)
+
+    if not selected:
+        expected = []
+        for diff in difficulties:
+            expected.append(f"{env}/{diff.capitalize()}/{archive_name}")
+            expected.append(f"{env}/Data_{diff.lower()}/{archive_name}")
+        raise ValueError(
+            f"No TartanAir archive found for env={env}, difficulties={difficulties}, "
+            f"archive={archive_name}. "
+            f"Expected entries like: {expected}"
+        )
+
+    return sorted(selected)
+
+
+def extract_zip_archives(zip_paths: list[Path], delete_zip: bool) -> None:
+    for zip_path in zip_paths:
+        print(f"Verifying archive: {zip_path}")
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            bad = zf.testzip()
+            if bad is not None:
+                raise RuntimeError(f"Corrupted zip archive {zip_path}, first bad file: {bad}")
+
+            print(f"Extracting {zip_path} into {zip_path.parent}")
+            zf.extractall(path=zip_path.parent)
+
+        if delete_zip:
+            print(f"Deleting {zip_path}")
+            zip_path.unlink(missing_ok=True)
+
+
+def download_tartanair_direct(
+    root: Path,
+    env: str,
+    difficulties: list[str],
+    file_list: Path,
+    bucket_name: str,
+    archive_name: str,
+    workers: int,
+    delete_zip: bool,
+) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+
+    file_sizes = load_tartanair_file_sizes(file_list)
+    archives = select_tartanair_archives(
+        file_sizes,
+        env,
+        difficulties,
+        archive_name,
+    )
+    total_size = sum(file_sizes[source_file] for source_file in archives)
+
+    print("Direct TartanAir download")
+    print(f"  env:          {env}")
+    print(f"  difficulties: {', '.join(difficulties)}")
+    print(f"  archive:      {archive_name}")
+    print(f"  file list:    {file_list}")
+    print(f"  bucket:       {bucket_name}")
+    print(f"  total size:   {total_size:.3f} GB")
+
+    downloader = DirectAirLabDownloader(bucket_name=bucket_name, workers=workers)
+    zip_paths = downloader.download(archives, root)
+    extract_zip_archives(zip_paths, delete_zip=delete_zip)
+
+
+def write_cam_time_from_event_timestamps(timestamps_file: Path, cam_time_file: Path) -> None:
+    values = []
+    with open(timestamps_file, "r") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                values.append(float(line))
+
+    if not values:
+        return
+
+    scale = 1e-9 if max(abs(v) for v in values) > 1e6 else 1.0
+    cam_time_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(cam_time_file, "w") as fh:
+        for value in values:
+            fh.write(f"{value * scale:.12f}\n")
+
+
+def prepare_training_layout(
+    root: Path,
+    env_event: str,
+    difficulties: list[str],
+    air_archive_name: str,
+    keep_air_payload: bool,
+) -> None:
+    env_dir = root / env_event.lower()
+    air_payload_dir_name = Path(air_archive_name).stem
+    for diff in difficulties:
+        diff_dir = env_dir / diff.capitalize()
+        if not diff_dir.exists():
+            continue
+
+        for traj_dir in sorted(p for p in diff_dir.iterdir() if p.is_dir()):
+            pose_left = traj_dir / "pose_left.txt"
+            pose_lcam_front = traj_dir / "pose_lcam_front.txt"
+            if pose_left.exists() and not pose_lcam_front.exists():
+                shutil.copy2(pose_left, pose_lcam_front)
+
+            timestamps_file = traj_dir / "timestamps.txt"
+            cam_time_file = traj_dir / "imu" / "cam_time.txt"
+            if timestamps_file.exists() and not cam_time_file.exists():
+                write_cam_time_from_event_timestamps(timestamps_file, cam_time_file)
+
+            air_payload_dir = traj_dir / air_payload_dir_name
+            if air_payload_dir.exists() and air_payload_dir.is_dir() and not keep_air_payload:
+                shutil.rmtree(air_payload_dir)
 
 
 def move_contents(src: Path, dst: Path) -> None:
@@ -392,6 +636,41 @@ def main() -> int:
     parser.add_argument("--skip-air", action="store_true")
     parser.add_argument("--keep-zip", action="store_true")
     parser.add_argument(
+        "--air-source",
+        choices=["direct", "package"],
+        default="direct",
+        help="Download TartanAir directly from AirLab or through the tartanair package.",
+    )
+    parser.add_argument(
+        "--air-file-list",
+        type=Path,
+        default=TARTANAIR_FILE_LIST,
+        help="TartanAir zip list used by the direct downloader.",
+    )
+    parser.add_argument(
+        "--air-bucket",
+        type=str,
+        default=None,
+        help="AirLab S3 bucket used by the direct downloader.",
+    )
+    parser.add_argument(
+        "--air-archive-name",
+        type=str,
+        default="flow_mask.zip",
+        help="Archive name to download from the TartanAir file list. For v1 training, flow_mask.zip is the small archive used to get pose_left.txt.",
+    )
+    parser.add_argument(
+        "--air-workers",
+        type=int,
+        default=8,
+        help="Number of parallel TartanAir direct download workers.",
+    )
+    parser.add_argument(
+        "--keep-air-images",
+        action="store_true",
+        help="Keep the extracted TartanAir payload folder after extracting pose_left.txt.",
+    )
+    parser.add_argument(
         "--merge-root",
         type=Path,
         action="append",
@@ -406,13 +685,32 @@ def main() -> int:
     root = args.root.resolve()
     root.mkdir(parents=True, exist_ok=True)
     merge_roots = [path.resolve() for path in args.merge_root]
+    air_bucket = args.air_bucket
+    if air_bucket is None:
+        air_bucket = (
+            "tartanair"
+            if args.air_file_list.name == "download_training_zipfiles.txt"
+            else "tartanair_v2"
+        )
     
     if not args.skip_air:
-        download_tartanair_imu(
-            root=root,
-            env=args.env_air,
-            difficulties=args.difficulty,
-        )
+        if args.air_source == "direct":
+            download_tartanair_direct(
+                root=root,
+                env=args.env_air,
+                difficulties=args.difficulty,
+                file_list=args.air_file_list,
+                bucket_name=air_bucket,
+                archive_name=args.air_archive_name,
+                workers=args.air_workers,
+                delete_zip=not args.keep_zip,
+            )
+        else:
+            download_tartanair_imu(
+                root=root,
+                env=args.env_air,
+                difficulties=args.difficulty,
+            )
 
     if not args.skip_event:
         download_tartanevent(
@@ -430,6 +728,13 @@ def main() -> int:
         env_air=args.env_air,
         difficulties=args.difficulty,
         merge_roots=merge_roots,
+    )
+    prepare_training_layout(
+        root=root,
+        env_event=args.env_event,
+        difficulties=args.difficulty,
+        air_archive_name=args.air_archive_name,
+        keep_air_payload=args.keep_air_images,
     )
 
     print("\nDone.")
