@@ -318,7 +318,7 @@ def show_interactive_3d_plot(
     ground_truth_trajectory: np.ndarray,
     regressed_trajectory: np.ndarray | None = None,
 ) -> None:
-    """Apre una finestra nativa di Matplotlib interattiva e rotante."""
+    """Open an interactive 3D plot with Matplotlib."""
     import matplotlib.pyplot as plt
 
     fig = plt.figure(figsize=(10, 10))
