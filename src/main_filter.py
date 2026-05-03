@@ -40,8 +40,8 @@ class RunnerConfig:
 
     # Paths
     data_root: Path = ROOT / "data"
-    dataset: str = "processed"
-    sequence: str = "seasidetown_Hard_P004"
+    dataset: str = "eds"
+    sequence: str = "00_peanuts_dark"
     out_dir: Path = ROOT / "outputs" / "main_filter"
 
     @property
@@ -57,16 +57,10 @@ class RunnerConfig:
     # Optional sequence truncation
     max_frames: int | None = None
 
-    # IMU preprocessing
+    # # IMU preprocessing
     imu_axis_multipliers: tuple[float, float, float] = (1.0, 1.0, 1.0)
 
-    # # IMU process noise (EDS)
-    # sigma_na: float = 5.90e-03
-    # sigma_ng: float = 9.57e-03
-    # sigma_nba: float = 8.81e-05
-    # sigma_nbg: float = 3.99e-05
-
-    # IMU process noise (Tartanair)
+    # IMU process noise
     sigma_na: float = 2.3488e-01
     sigma_ng: float = 2.5087e-03
     sigma_nba: float = 2.4505e-05
@@ -666,6 +660,15 @@ def parse_args():
 def main() -> None:
     """Run the minimal relative-motion filter with the top-of-file configuration."""
     args = parse_args()
+    # Deals with different axis directions of EDS dataset
+    dataset_params = {}
+    dataset_name = args.dataset.lower()
+    
+    if dataset_name == "eds":
+        dataset_params = {
+            "imu_axis_multipliers": (-1.0, -1.0, 1.0),
+            "gravity_world_mps2": (0.0, 0.0, -9.80665)
+        }
 
     # Create a new config based on CONFIG but overriding attributes from args
     active_config = replace(
@@ -675,7 +678,8 @@ def main() -> None:
         sequence=args.sequence,
         plot_transformer=args.plot_transformer,
         interactive_plot=args.interactive_plot,
-        plot_projections=args.plot_projections
+        plot_projections=args.plot_projections,
+        **dataset_params
     )
     # Execute EKF processing
     results = run_filter(active_config)
