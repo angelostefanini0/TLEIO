@@ -59,7 +59,7 @@ def parse_args():
                         help="derotate events into a reference frame at the voxel anchor")
     parser.add_argument("--derotation_slices", type=int, default=100,
                         help="number of temporal slices used for event-space derotation")
-    parser.add_argument("--precomputed_voxels", type=str2bool, default=False,
+    parser.add_argument("--precomputed_voxels", type=str2bool, default=True,
                         help="read precomputed voxel .npy files instead of events.h5")
     parser.add_argument("--voxel_filename", type=str, default="derotated_voxels.npy",
                         help="precomputed voxel file name inside each sequence folder")
