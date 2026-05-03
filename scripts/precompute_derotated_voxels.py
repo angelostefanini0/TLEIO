@@ -53,7 +53,8 @@ def parse_args():
 def write_sequence_voxels(dataset, seq_idx, output_dir, args):
     seq_info = dataset.seq_infos[seq_idx]
     seq_path = seq_info["seq_path"]
-    anchors_us = seq_info["anchors_us"].astype(np.int64)
+    rel_transf = seq_info["rel_transf"]
+    anchors_us = np.concatenate([rel_transf[:1, 0], rel_transf[:, 1]], axis=0).astype(np.int64)
     out_seq_dir = output_dir / seq_path.name
     out_voxels = out_seq_dir / args.voxel_filename
 
@@ -97,6 +98,7 @@ def write_sequence_voxels(dataset, seq_idx, output_dir, args):
         "voxel_file": args.voxel_filename,
         "voxel_shape": list(voxels.shape),
         "voxel_format": "[N, C, H, W]",
+        "anchor_source": "relative_motions.txt",
         "window": "[anchor - delta_t, anchor)",
         "delta_t_ms": args.delta_t_ms,
         "num_bins": args.num_bins,
