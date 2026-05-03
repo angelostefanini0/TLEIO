@@ -415,6 +415,54 @@ def _build_ground_truth_trajectory(
         ]
     )
 
+def _compute_transformer_trajectory(
+    sequence_path: Path,
+    anchor_timestamps_us: np.ndarray,
+    anchor_positions: np.ndarray,
+    anchor_quaternions: np.ndarray,
+    max_frames: int | None
+) -> np.ndarray | None:
+    """
+    Computes the trajectory based solely on the Transformer's
+    predictions, without any EKF filtering. 
+    Useful for visualizing the raw network performance in the 3D plot.
+    """
+    try:
+        # Reload the Transformer's predictions 
+        regressed_table = _load_relative_motion_table(sequence_path, use_gt=False)
+        
+        reg_dp = regressed_table[:, 2:5]
+        
+        # Apply truncation if requested
+        if max_frames is not None:
+            reg_dp = reg_dp[: max(0, max_frames - 1)]
+                
+        # Ensure the lengths match
+        if len(reg_dp) == len(anchor_timestamps_us) - 1:
+            regr_positions = [anchor_positions[0].astype(np.float64)]
+            regr_quaternions = [anchor_quaternions[0].astype(np.float64)]
+            
+            # Integrate the poses 
+            for i in range(len(reg_dp)):
+                R_curr = Rotation.from_quat(regr_quaternions[-1])
+                
+                # Translate into the global frame
+                p_next = regr_positions[-1] + R_curr.as_matrix() @ reg_dp[i]
+                regr_positions.append(p_next)
+
+                regr_quaternions.append(anchor_quaternions[i + 1])
+                    
+            return _build_ground_truth_trajectory(
+                anchor_timestamps_us,
+                np.array(regr_positions),
+                np.array(regr_quaternions), 
+            )
+            
+    except Exception as e:
+        print(f"Warning: Failed to generate the regressed trajectory for the plot: {e}")
+        
+    return None
+
 
 def run_filter(config: RunnerConfig) -> dict:
     """Run the relative-motion EKF on one processed sequence."""
@@ -544,44 +592,14 @@ def run_filter(config: RunnerConfig) -> dict:
     regressed_trajectory = None
     #Adds a plot for the transformer output before EKF
     if config.plot_transformer:
-        try:
-            regressed_table = _load_relative_motion_table(sequence_path, use_gt=False)
-            
-            reg_dp = regressed_table[:, 2:5]
-            
-            has_rotations = regressed_table.shape[1] >= 9
-            if has_rotations:
-                reg_dq = regressed_table[:, 5:9]
-            
-            if config.max_frames is not None:
-                reg_dp = reg_dp[: max(0, config.max_frames - 1)]
-                if has_rotations:
-                    reg_dq = reg_dq[: max(0, config.max_frames - 1)]
-                    
-            if len(reg_dp) == len(anchor_timestamps_us) - 1:
-                regr_positions = [anchor_positions[0].astype(np.float64)]
-                regr_quaternions = [anchor_quaternions[0].astype(np.float64)]
-                
-                for i in range(len(reg_dp)):
-                    R_curr = Rotation.from_quat(regr_quaternions[-1])
-                    
-                    p_next = regr_positions[-1] + R_curr.as_matrix() @ reg_dp[i]
-                    regr_positions.append(p_next)
-                    
-                    if has_rotations:
-                        dR = Rotation.from_quat(reg_dq[i])
-                        q_next = (R_curr * dR).as_quat()
-                        regr_quaternions.append(q_next)
-                    else:
-                        regr_quaternions.append(anchor_quaternions[i + 1])
-                        
-                regressed_trajectory = _build_ground_truth_trajectory(
-                    anchor_timestamps_us,
-                    np.array(regr_positions),
-                    np.array(regr_quaternions), 
-                )
-        except Exception as e:
-            print(f"Warning: Failed to plot regressed trajectory: {e}")
+        regressed_trajectory = _compute_transformer_trajectory(
+            sequence_path,
+            anchor_timestamps_us,
+            anchor_positions,
+            anchor_quaternions,
+            config.max_frames
+        )
+        
     # Diagnostics: compute error metrics
     diagnostics = compute_filter_diagnostics(
         trajectory_table,

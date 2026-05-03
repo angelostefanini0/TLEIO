@@ -72,16 +72,22 @@ class ImuBuffer:
         else:
             try:
                 # Create a linear interpolator using the previous and current timestamps
-                acc_interp = interp1d(
-                    np.array([last_t_us, t_us], dtype=np.uint64).T,
-                    np.concatenate([last_acc.T, acc.T]),
-                    axis=0,
-                )(requested_interpolated_tus)
-                gyr_interp = interp1d(
-                    np.array([last_t_us, t_us], dtype=np.uint64).T,
-                    np.concatenate([last_gyr.T, gyr.T]),
-                    axis=0,
-                )(requested_interpolated_tus)
+                times = np.array([last_t_us, t_us], dtype=np.uint64).T
+
+                # Combine measurements at t-1 and t along feature axis
+                last_kinematics = np.concatenate([last_acc.T, last_gyr.T], axis=1) 
+                curr_kinematics = np.concatenate([acc.T, gyr.T], axis=1)
+
+                # Create an interpolator for all 6 DoF
+                kinematics_interp_func = interp1d(
+                    times,
+                    np.concatenate([last_kinematics, curr_kinematics], axis=0),
+                    axis=0
+                )
+                # Interpolates and separate results
+                interpolated_data = kinematics_interp_func(requested_interpolated_tus)
+                acc_interp = interpolated_data[:, 0:3]
+                gyr_interp = interpolated_data[:, 3:6]
             except ValueError as exc:
                 print(
                     f"Trying to do interpolation at {requested_interpolated_tus} between {last_t_us} and {t_us}"

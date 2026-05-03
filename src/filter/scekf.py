@@ -11,9 +11,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from filter.measurement_triplet import build_triplet_update, make_default_joint_covariance
-from filter.utils.math_utils import hat, mat_exp,Jr_exp
-
-eps=1e-9
+from filter.utils.math_utils import hat, mat_exp,Jr_exp, enforce_symmetry_and_pos_def
 
 
 class State:
@@ -31,14 +29,7 @@ class State:
     [15:]   - Appended stochastic clones (6 DoF per clone: 3 rotation, 3 position)
     """
 
-    def __init__(
-        self,
-        initial_attitude_sigma_rad=0.01,
-        initial_velocity_sigma_mps=0.5,
-        initial_position_sigma_m=0.01,
-        initial_bg_sigma_rps=0.01,
-        initial_ba_sigma_mps2=0.2,
-    ):
+    def __init__(self):
         """Initialize the nominal state, empty clone list, and small covariance."""
 
         self.R = np.eye(3)       # rotation from body to world
@@ -54,11 +45,6 @@ class State:
         self.clone_ps = []       # cloned world positions, oldest first
         # Initialize the covariance matrix for the IMU state
         self.P = np.zeros((15, 15))
-        self.P[0:3, 0:3] = np.eye(3) * initial_attitude_sigma_rad**2
-        self.P[3:6, 3:6] = np.eye(3) * initial_velocity_sigma_mps**2
-        self.P[6:9, 6:9] = np.eye(3) * initial_position_sigma_m**2
-        self.P[9:12, 9:12] = np.eye(3) * initial_bg_sigma_rps**2
-        self.P[12:15, 12:15] = np.eye(3) * initial_ba_sigma_mps2**2
 
     def get_clone_count(self):
         """Return how many stochastic clones are currently stored."""
@@ -68,6 +54,12 @@ class State:
 
 class ImuMSCKF:
     """Run IMU propagation and the TLEIO relative-pose update on cloned poses."""
+
+    #Constants
+    IMU_STATE_DIM = 15
+    CLONE_STATE_DIM = 6
+    CHI2_THRESHOLD = 12.59 #95% confidence for 6 DoF
+
 
     def __init__(self, args):
         """Read filter hyperparameters and prepare the default measurement noise."""
@@ -90,12 +82,14 @@ class ImuMSCKF:
         self.initial_ba_sigma_mps2 = getattr(args, "initial_ba_sigma_mps2", 0.04)
 
         self.g = np.array([0.0, 0.0, -9.80665])
-        self.state = State(
-            initial_attitude_sigma_rad=self.initial_attitude_sigma_rad,
-            initial_velocity_sigma_mps=self.initial_velocity_sigma_mps,
-            initial_position_sigma_m=self.initial_position_sigma_m,
-            initial_bg_sigma_rps=self.initial_bg_sigma_rps,
-            initial_ba_sigma_mps2=self.initial_ba_sigma_mps2,
+        self.state = State()
+        self.initialize_with_state(
+            t=0.0, 
+            R=np.eye(3), 
+            v=np.zeros(3), 
+            p=np.zeros(3), 
+            bg=np.zeros(3), 
+            ba=np.zeros(3)
         )
         self.default_measurement_covariance = make_default_joint_covariance(
             self.sigma_rel_t
@@ -116,7 +110,7 @@ class ImuMSCKF:
         self.state.clone_Rs = []
         self.state.clone_ps = []
         if P is None:
-            self.state.P = np.zeros((15, 15))
+            self.state.P = np.zeros((self.IMU_STATE_DIM, self.IMU_STATE_DIM))
             self.state.P[0:3, 0:3] = np.eye(3) * self.initial_attitude_sigma_rad**2
             self.state.P[3:6, 3:6] = np.eye(3) * self.initial_velocity_sigma_mps**2
             self.state.P[6:9, 6:9] = np.eye(3) * self.initial_position_sigma_m**2
@@ -168,15 +162,14 @@ class ImuMSCKF:
         """Append the current pose as a stochastic clone and expand covariance."""
 
         n_clones = self.state.get_clone_count()
-        n_imu = 15
-        n_old = n_imu + 6 * n_clones
-        n_new = n_old + 6
+        n_old = self.IMU_STATE_DIM + self.CLONE_STATE_DIM * n_clones
+        n_new = n_old + self.CLONE_STATE_DIM
         # Save clone
         self.state.clone_Rs.append(self.state.R.copy())
         self.state.clone_ps.append(self.state.p.copy())
         # Jacobian mapping current IMU state to the new clone state 
         # (Identity matrices mapping IMU rotation to clone rotation, IMU pos to clone pos)
-        clone_jacobian = np.zeros((6, n_old))
+        clone_jacobian = np.zeros((self.CLONE_STATE_DIM, n_old))
         clone_jacobian[0:3, 0:3] = np.eye(3)
         clone_jacobian[3:6, 6:9] = np.eye(3)
         # Expand covariance
@@ -187,8 +180,8 @@ class ImuMSCKF:
         P_new[:n_old, n_old:] = (clone_jacobian @ P_old).T
         P_new[n_old:, n_old:] = clone_jacobian @ P_old @ clone_jacobian.T
         # Enforce symmetry
-        P_sym = 0.5 * (P_new + P_new.T)
-        self.state.P = P_sym + eps * np.eye(P_sym.shape[0])
+        self.state.P = enforce_symmetry_and_pos_def(P_new)
+
 
     def marginalize_oldest_clone(self):
         """Drop the oldest clone and remove its covariance rows and columns."""
@@ -199,16 +192,15 @@ class ImuMSCKF:
         self.state.clone_Rs.pop(0)
         self.state.clone_ps.pop(0)
 
-        n_imu = 15
         n_clones_after = self.state.get_clone_count()
         # Indices to keep: IMU state (0-14) + remaining clones (skipping the dropped one at index 15-20)
-        keep = list(range(n_imu)) + list(
-            range(n_imu + 6, n_imu + 6 + 6 * n_clones_after)
+        keep = list(range(self.IMU_STATE_DIM)) + list(
+            range(self.IMU_STATE_DIM + self.CLONE_STATE_DIM, self.IMU_STATE_DIM + self.CLONE_STATE_DIM + self.CLONE_STATE_DIM * n_clones_after)
         )
 
         P = self.state.P
-        P_sym = 0.5 * (P[np.ix_(keep, keep)] + P[np.ix_(keep, keep)].T)
-        self.state.P = P_sym + eps * np.eye(P_sym.shape[0])
+        P_kept = P[np.ix_(keep, keep)]
+        self.state.P = enforce_symmetry_and_pos_def(P_kept)
 
     def update(self, network_output):
         """Run the stacked TLEIO relative-pose EKF update on the three clones.
@@ -237,8 +229,7 @@ class ImuMSCKF:
         innovation_covariance = H @ P @ H.T + R_adaptive
         # Mahalanobis distance check
         mahalanobis_sq = residual.T @ np.linalg.solve(innovation_covariance, residual)
-        chi2_threshold=12.59 #95% confidence for 6 DoF
-        if mahalanobis_sq>chi2_threshold:
+        if mahalanobis_sq>self.CHI2_THRESHOLD:
             return {
                 "residual": residual,
                 "jacobian": H,
@@ -260,7 +251,7 @@ class ImuMSCKF:
         identity = np.eye(P.shape[0])
         joseph_left = identity - K @ H
         P_updated = joseph_left @ P @ joseph_left.T + K @ R_adaptive @ K.T
-        self.state.P = 0.5 * (P_updated + P_updated.T)
+        self.state.P = enforce_symmetry_and_pos_def(P_updated,epsilon=0.0)
 
         return {
             "residual": residual,
@@ -288,7 +279,7 @@ class ImuMSCKF:
         self.state.ba = self.state.ba + delta_x[12:15]
         # Update cloned states
         for clone_idx in range(self.state.get_clone_count()):
-            offset = 15 + 6 * clone_idx
+            offset = self.IMU_STATE_DIM + self.CLONE_STATE_DIM * clone_idx
             self.state.clone_Rs[clone_idx] = (
                 self.state.clone_Rs[clone_idx] @ mat_exp(delta_x[offset : offset + 3])
                 )
@@ -362,10 +353,8 @@ class AdaptiveCovariance:
 
         R_adaptive = R_base + Q_hat
         # Enforce simmetry
-        R_adaptive = 0.5 * (R_adaptive + R_adaptive.T)
-        
+        R_adaptive = enforce_symmetry_and_pos_def(R_adaptive)
         return R_adaptive
-
 
 def propagate_rvt_and_jac(R, v, p, bg, ba, wm_raw, am_raw, dt, g):
     """Propagate the nominal IMU state and its first-order transition matrix."""
@@ -430,9 +419,10 @@ def propagate_covariance(P, R, wm, am, dt, sg, sa, sbg, sba):
     # Propagate covariance
     P_new = Phi @ P @ Phi.T
     P_new[:n_imu, :n_imu] += Q_d
-    P_sym = 0.5 * (P_new + P_new.T)
     
-    return P_sym + eps * np.eye(P_sym.shape[0])
+    return enforce_symmetry_and_pos_def(P_new)
+
+
 
 def integrate_quaternion_3rd_order(R, wm, dt, oldomega4):
     """
@@ -467,3 +457,4 @@ def integrate_quaternion_3rd_order(R, wm, dt, oldomega4):
     R_next = Rotation.from_quat(q_next_xyzw).as_matrix()
     
     return R_next, omega4
+

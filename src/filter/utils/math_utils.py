@@ -1,8 +1,5 @@
 # Copyright 2004-present Facebook. All Rights Reserved.
 
-import contextlib
-import warnings
-
 import numpy as np
 
 from .from_scipy import compute_q_from_matrix
@@ -29,32 +26,18 @@ def inv_SE3(T):
     Tinv[:3,3:4] = - T[:3,:3].T @ T[:3,3:4]
     return Tinv
 
-def Jr_exp(v):
-    """
-    Right Jacobian of the SO(3) exponential map.
-    Maps a small change in the tangent space (so(3)) to a change in the 
-    rotation matrix space (SO(3)). Handles the singularity at theta = 0 
-    using a Taylor series expansion.
-    """
-    theta = np.linalg.norm(v)
-    K = hat(v)
-    I = np.eye(3)
-    # Taylor expansion for stability nearby 0
-    if theta < 1e-6:
-        return I - 0.5 * K + (1/6) * K @ K
-    
-    K2 = K @ K
-    # Rodrigues formula
-    return I - ((1 - np.cos(theta)) / (theta**2)) * K + ((theta - np.sin(theta)) / (theta**3)) * K2
-
-
+@jit(nopython=True, cache=True)
 def hat(v):
     """
     Maps a 3D vector to a 3x3 skew-symmetric matrix (so(3)).
     Used to represent cross products as matrix multiplications (a x b = hat(a) * b).
     """
-    v = np.squeeze(v)
-    R = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    v = v.flatten()
+    R = np.array([
+        [ 0.0,  -v[2],  v[1]], 
+        [ v[2],  0.0,  -v[0]], 
+        [-v[1],  v[0],  0.0 ]
+    ])
     return R
 
 def vee(w_x):
@@ -71,11 +54,7 @@ def rot_2vec(a, b):
     """
     assert a.shape == (3, 1)
     assert b.shape == (3, 1)
-    # Redefined inside to satisfy numba's nopython requirement
-    def hat(v):
-        v = v.flatten()
-        R = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
-        return R
+
     # Normalize input vectors
     a_n = np.linalg.norm(a)
     b_n = np.linalg.norm(b)
@@ -99,11 +78,6 @@ def mat_exp(omega):
     """
     if len(omega) != 3:
         raise ValueError("tangent vector must have length 3")
-
-    def hat(v):
-        v = v.flatten()
-        R = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
-        return R
 
     angle = np.linalg.norm(omega)
 
@@ -239,11 +213,6 @@ def Jr_exp(phi):
     Jitted version of the right Jacobian for the exponential map on SO(3).
     Relates small perturbations in the tangent space to the manifold.
     """
-    def hat(v):
-        v = v.flatten()
-        R = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
-        return R
-
     theta = np.linalg.norm(phi)
     # Taylor expansion for stability nearby 0
     if theta < 1e-3:
@@ -352,3 +321,8 @@ def wrap_rpy(uw_rpys, radians=False):
     while rpys.max() >= bound:
         rpys[rpys >= bound] = rpys[rpys >= bound] - 2*bound
     return rpys
+
+def enforce_symmetry_and_pos_def(P: np.ndarray, epsilon: float = 1e-9) -> np.ndarray:
+    """Enforce symmetry and adds epsilon for stability."""
+    P_sym = 0.5 * (P + P.T)
+    return P_sym + epsilon * np.eye(P_sym.shape[0])

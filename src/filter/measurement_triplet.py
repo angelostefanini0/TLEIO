@@ -7,9 +7,7 @@ covariance for the `(1 -> 2, 2 -> 3)` update.
 """
 
 import numpy as np
-from scipy.spatial.transform import Rotation
-
-from filter.utils.math_utils import Jl_SO3_inv, hat, mat_log
+from filter.utils.math_utils import hat,enforce_symmetry_and_pos_def
 
 
 def extract_raw_triplet_measurement(network_output):
@@ -117,7 +115,7 @@ def predict_relative_pose(R_i, p_i, R_j, p_j):
     return t_hat, R_hat, delta_p
 
 
-def build_pair_residual_and_local_jacobian(R_i, p_i, R_j, p_j, measurement_7d):
+def build_pair_residual_and_local_jacobian(R_i, p_i, R_j, p_j, measurement):
     """Build one 3D residual and its local 3x12 Jacobian for clones `(i, j)`.
 
     The local Jacobian is ordered as:
@@ -129,7 +127,7 @@ def build_pair_residual_and_local_jacobian(R_i, p_i, R_j, p_j, measurement_7d):
     the inverse left Jacobian of SO(3).
     """
     # Extract the 3D measurements and get the current predictions
-    t_meas = measurement_7d[:3]
+    t_meas = measurement[:3]
     t_hat, R_hat, delta_p = predict_relative_pose(R_i, p_i, R_j, p_j)
     #Calculate residual
     residual = t_meas - t_hat
@@ -177,14 +175,14 @@ def build_triplet_update(state, network_output, default_covariance, covariance_s
     measurement = extract_raw_triplet_measurement(network_output)
     covariance = extract_joint_measurement_covariance(network_output)
 
-    residual_12, jacobians = [], []
+    residual_list, jacobians = [], []
     # Define the two edges: 0->1 and 1->2
     pair_specs = ((0, 1, measurement[0]), (1, 2, measurement[1]))
 
     state_dim = state.P.shape[0]
     # Loop over both edges to build and stack the local matrices
     for clone_i, clone_j, measurement_7d in pair_specs:
-        residual_6, local_jacobian = build_pair_residual_and_local_jacobian(
+        residual_, local_jacobian = build_pair_residual_and_local_jacobian(
             state.clone_Rs[clone_i],
             state.clone_ps[clone_i],
             state.clone_Rs[clone_j],
@@ -192,17 +190,17 @@ def build_triplet_update(state, network_output, default_covariance, covariance_s
             measurement_7d,
         )
         # Store the 3D residual block
-        residual_12.append(residual_6)
+        residual_list.append(residual_)
         # Expand the local 3x12 Jacobian to 3xN and store it
         jacobians.append(embed_pair_jacobian(local_jacobian, clone_i, clone_j, state_dim))
     # Stack the two 3D residuals into a single 6D vector
-    residual = np.concatenate(residual_12, axis=0)
+    residual = np.concatenate(residual_list, axis=0)
     # Stack the two 3xN Jacobians into a single 6xN matrix
     jacobian = np.vstack(jacobians)
     # Fallback to default block-diagonal covariance
     measurement_covariance = default_covariance if covariance is None else covariance
     # Scale the covariance
     measurement_covariance = covariance_scale * measurement_covariance
-    # Enforce simmetry
-    measurement_covariance = 0.5 * (measurement_covariance + measurement_covariance.T)
+    # Enforce symmetry
+    measurement_covariance = enforce_symmetry_and_pos_def(measurement_covariance, epsilon=0.0)
     return residual, jacobian, measurement_covariance
