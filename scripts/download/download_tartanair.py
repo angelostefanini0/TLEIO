@@ -467,6 +467,7 @@ def check_timestamps_pose_line_count(timestamps_file: Path, pose_file: Path) -> 
             f"{timestamps_file.name} has {timestamps_count} lines, "
             f"{pose_file.name} has {pose_count} lines."
         )
+    print(f"[OK] {pose_file.parent.name}: {timestamps_file.name} and {pose_file.name} have {timestamps_count} lines.")
 
 
 def write_cam_time_from_event_timestamps(timestamps_file: Path, cam_time_file: Path) -> None:
