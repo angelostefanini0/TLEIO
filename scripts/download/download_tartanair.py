@@ -514,6 +514,9 @@ def prepare_training_layout(
             if timestamps_file.exists() and not cam_time_file.exists():
                 write_cam_time_from_event_timestamps(timestamps_file, cam_time_file)
 
+            timestamps_file.unlink(missing_ok=True)
+            pose_left.unlink(missing_ok=True)
+
             air_payload_dir = traj_dir / air_payload_dir_name
             if air_payload_dir.exists() and air_payload_dir.is_dir() and not keep_air_payload:
                 shutil.rmtree(air_payload_dir)
