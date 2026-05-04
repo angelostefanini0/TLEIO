@@ -6,6 +6,23 @@ python scripts/download_tartanair.py \
   --env-event office \
   --env-air Office \
   --difficulty easy hard
+
+Multiple environments can be passed as paired lists:
+python scripts/download_tartanair.py \
+  --root data/tartanair \
+  --env-event office carwelding \
+  --env-air Office CarWelding \
+  --difficulty easy hard
+
+Run this when these TartanEvent folders are already present under --root.
+The office_events folder is the staging folder for office, so office is the
+environment name to pass here.
+python scripts/download/download_tartanair.py \
+  --root data/tartanair \
+  --env-event abandonedfactory abandonedfactory_night amusement carwelding endofworld gascola hospital japanesealley neighborhood ocean office oldtown seasidetown seasonsforest seasonsforest_winter soulcity westerndesert \
+  --env-air abandonedfactory abandonedfactory_night amusement carwelding endofworld gascola hospital japanesealley neighborhood ocean office oldtown seasidetown seasonsforest seasonsforest_winter soulcity westerndesert \
+  --difficulty easy hard \
+  --skip-event
 """
 
 from __future__ import annotations
@@ -470,6 +487,20 @@ def unique_paths(paths: Iterable[Path]) -> list[Path]:
     return unique
 
 
+def parse_env_pairs(
+    parser: argparse.ArgumentParser,
+    env_event: list[str],
+    env_air: list[str],
+) -> list[tuple[str, str]]:
+    if len(env_event) != len(env_air):
+        parser.error(
+            "--env-event and --env-air must have the same number of values "
+            "so each TartanEvent environment can be paired with its TartanAir environment."
+        )
+
+    return list(zip(env_event, env_air))
+
+
 def collect_difficulty_sources(
     source_root: Path,
     env_event: str,
@@ -624,8 +655,20 @@ def normalize_tartanair_layout(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True, help="Common root folder")
-    parser.add_argument("--env-event", type=str, required=True, help='TartanEvent env, e.g. "office"')
-    parser.add_argument("--env-air", type=str, required=True, help='TartanAir env, e.g. "Office"')
+    parser.add_argument(
+        "--env-event",
+        type=str,
+        nargs="+",
+        required=True,
+        help='TartanEvent env(s), e.g. "office" or "office carwelding"',
+    )
+    parser.add_argument(
+        "--env-air",
+        type=str,
+        nargs="+",
+        required=True,
+        help='TartanAir env(s), e.g. "Office" or "Office CarWelding"',
+    )
     parser.add_argument(
         "--difficulty",
         nargs="+",
@@ -686,6 +729,7 @@ def main() -> int:
     root = args.root.resolve()
     root.mkdir(parents=True, exist_ok=True)
     merge_roots = [path.resolve() for path in args.merge_root]
+    env_pairs = parse_env_pairs(parser, args.env_event, args.env_air)
     air_bucket = args.air_bucket
     if air_bucket is None:
         air_bucket = (
@@ -693,53 +737,58 @@ def main() -> int:
             if args.air_file_list.name == "download_training_zipfiles.txt"
             else "tartanair_v2"
         )
-    
-    if not args.skip_air:
-        if args.air_source == "direct":
-            download_tartanair_direct(
+
+    for env_event, env_air in env_pairs:
+        print("\n" + "=" * 72)
+        print(f"Preparing Tartan environment pair: event={env_event}, air={env_air}")
+        print("=" * 72)
+
+        if not args.skip_air:
+            if args.air_source == "direct":
+                download_tartanair_direct(
+                    root=root,
+                    env=env_air,
+                    difficulties=args.difficulty,
+                    file_list=args.air_file_list,
+                    bucket_name=air_bucket,
+                    archive_name=args.air_archive_name,
+                    workers=args.air_workers,
+                    delete_zip=not args.keep_zip,
+                )
+            else:
+                download_tartanair_imu(
+                    root=root,
+                    env=env_air,
+                    difficulties=args.difficulty,
+                )
+
+        if not args.skip_event:
+            download_tartanevent(
                 root=root,
-                env=args.env_air,
-                difficulties=args.difficulty,
-                file_list=args.air_file_list,
-                bucket_name=air_bucket,
-                archive_name=args.air_archive_name,
-                workers=args.air_workers,
+                env_zip=env_event,
+                unzip=True,
                 delete_zip=not args.keep_zip,
             )
-        else:
-            download_tartanair_imu(
-                root=root,
-                env=args.env_air,
-                difficulties=args.difficulty,
-            )
 
-    if not args.skip_event:
-        download_tartanevent(
+        normalize_tartanair_layout(
             root=root,
-            env_zip=args.env_event,
-            unzip=True,
-            delete_zip=not args.keep_zip,
+            env_event=env_event,
+            env_air=env_air,
+            difficulties=args.difficulty,
+            merge_roots=merge_roots,
+        )
+        prepare_training_layout(
+            root=root,
+            env_event=env_event,
+            difficulties=args.difficulty,
+            air_archive_name=args.air_archive_name,
+            keep_air_payload=args.keep_air_images,
         )
 
-    
-
-    normalize_tartanair_layout(
-        root=root,
-        env_event=args.env_event,
-        env_air=args.env_air,
-        difficulties=args.difficulty,
-        merge_roots=merge_roots,
-    )
-    prepare_training_layout(
-        root=root,
-        env_event=args.env_event,
-        difficulties=args.difficulty,
-        air_archive_name=args.air_archive_name,
-        keep_air_payload=args.keep_air_images,
-    )
-
     print("\nDone.")
-    print(f"Unified dataset root: {root / args.env_event}")
+    print("Unified dataset roots:")
+    for env_event, _ in env_pairs:
+        print(f"  - {root / env_event.lower()}")
     return 0
 
 
