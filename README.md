@@ -115,6 +115,7 @@ python scripts/processing_tartan.py data/tartanair \
 ```
 When running on the server, add argument `--materialize-events-file`, so that the event file is not symlinked from the raw folder and `--remove-raw-after-materialize`, so as not to use space on the disk in the cluster. 
 
+
 ## 5. Visualization of event data: 
 Run the `scripts/viz/play_events_on_rgb.py` script to playback the input video with events overlayed onto RGB frames. `root` expects the absolute path to the dataset root, `sequence` expects the name of the sequence to inspect, and `height` / `width` are the image dimensions to display. To have the playback uncapped, set `fps` to `0`.
 
@@ -153,30 +154,67 @@ Run the `main_network.py` script to train the model. A bunch of arguments can be
 
 Important parameters:
 - `downsampling_factor` decreases the event image resolution before voxelization.
-- The downsampled spatial size must stay divisible by `patch_size`. For example, with `patch_size=16`, `downsampling_factor=0.7` gives `336x448`, which is valid.
+- The downsampled spatial size must stay divisible by `patch_size`. For example, with `patch_size=16`, `downsampling_factor=0.7` gives `336x448`, which is valid. The model build step now prints the effective image size, patch grid, and resulting token count to verify the downsampling is doing what is expected.
 - `denoising` enables the shared background-activity filter before voxelization.
+- `derotate` enables the de-rotation to rotate events into a common frame for each voxel.
 
-The model build step now prints the effective image size, patch grid, and resulting token count, so you can verify the downsampling is doing what you expect.
-
-Example training command:
+For the big training run on the A100's activate DDP (multi-GPU training), and run the following command: 
 
  ```bash
-python src/main_network.py \
---root_dir data/eds/processed_train \
---val_root_dir data/eds/processed_validation \
---checkpoint_path checkpoints/eds_ds07_denoise_wl0 \
---b_size 2 \
+torchrun --standalone --nproc_per_node=8 src/main_network.py \
+--root_dir data/tartanair/processed_train_subfolder \
+--val_root_dir data/tartanair/processed_validation \
+--checkpoint_path checkpoints/tartan_ddp_amp \
+--b_size 4 \
 --depth 12 \
 --heads 6 \
 --num_workers 8 \
+--persistent_workers true \
+--prefetch_factor 2 \
+--amp true \
+--amp_dtype bfloat16 \
 --downsampling_factor 0.7 \
---denoising true \
---denoise_dt_us 2000 \
---denoise_radius 1 \
---denoise_min_supporters 2 \
---derotate true
-
+--denoising false \
+--derotate false \
+--clip_len 5 \
 ```
+
+Before training on all the sequences, it would be smart to run a sweep of runs to profile speed:
+- Fix a small but representative training subset, for example `processed_train_subfolder`.
+- Keep `--amp true --amp_dtype bfloat16`, because that is usually the best default on A100s.
+- Start with `--b_size 4` and `--num_workers 8`.
+- Then sweep `--b_size` over `4, 8`.
+- For the best batch size, sweep `--num_workers` per GPU over `8, 10`.
+- Keep `--persistent_workers true` and `--prefetch_factor 2` fixed at first.
+- Run each configuration with `--profile_timing true --epoch 1`.
+
+An example profiling run on the server is:
+
+```bash
+torchrun --standalone --nproc_per_node=8 src/main_network.py \
+--root_dir data/tartanair/processed_train_subfolder \
+--val_root_dir data/tartanair/processed_validation \
+--checkpoint_path checkpoints/tartan_ddp_profile \
+--b_size 4 \
+--depth 12 \
+--heads 6 \
+--num_workers 8 \
+--persistent_workers true \
+--prefetch_factor 2 \
+--amp true \
+--amp_dtype bfloat16 \
+--downsampling_factor 0.7 \
+--denoising false \
+--derotate false \
+--clip_len 5 \
+--profile_timing true \
+--epoch 1
+```
+
+Compare the printed timing line at the end of the epoch:
+- If `avg_data_wait` is still larger than `avg_compute`, try more workers before increasing batch size further.
+- If `avg_compute` is dominant and GPU memory is still comfortable, try a larger `--b_size`.
+- If throughput stops improving, that configuration is already near the sweet spot.
 
 ## 7. Testing the model: 
 Run the `test.py` script to test the model and save the motions into a file.
