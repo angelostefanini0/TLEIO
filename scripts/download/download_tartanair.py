@@ -516,6 +516,7 @@ def prepare_training_layout(
 
             timestamps_file.unlink(missing_ok=True)
             pose_left.unlink(missing_ok=True)
+            shutil.rmtree(traj_dir / "flow", ignore_errors=True)
 
             air_payload_dir = traj_dir / air_payload_dir_name
             if air_payload_dir.exists() and air_payload_dir.is_dir() and not keep_air_payload:
