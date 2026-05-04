@@ -1,3 +1,5 @@
+"""Voxel-grid event representation used by the online dataloader."""
+
 import cv2
 import numpy as np
 import torch
@@ -8,21 +10,14 @@ cv2.setNumThreads(1)
 if hasattr(cv2, "ocl"):
     cv2.ocl.setUseOpenCL(False)
 
+from .event_derotation import derotate_events_in_slices
+from .trilinear_interpolation import trilinear_voxel_interpolation
 
-def quat_xyzw_to_rotmat(q: np.ndarray) -> np.ndarray:
-    qx, qy, qz, qw = q
-    xx, yy, zz = qx * qx, qy * qy, qz * qz
-    xy, xz, yz = qx * qy, qx * qz, qy * qz
-    wx, wy, wz = qw * qx, qw * qy, qw * qz
-
-    return np.array([
-        [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz),       2.0 * (xz + wy)],
-        [2.0 * (xy + wz),       1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
-        [2.0 * (xz - wy),       2.0 * (yz + wx),       1.0 - 2.0 * (xx + yy)],
-    ], dtype=np.float64)
 
 
 class EventRepresentation:
+    """Base interface for event representations."""
+
     def convert(
         self,
         x: torch.Tensor,
@@ -31,9 +26,16 @@ class EventRepresentation:
         time: torch.Tensor,
         metadata: Dict | None = None,
     ) -> torch.Tensor:
+        """Convert typed event tensors into an event representation."""
         raise NotImplementedError
 
     def convert_events(self, events: Dict[str, np.ndarray | torch.Tensor]) -> torch.Tensor:
+        """
+        Convert a dictionary of event arrays into the representation tensor.
+
+        The default implementation converts `x`, `y`, `p`, and `t` to
+        `torch.float32` tensors and forwards all remaining keys as metadata.
+        """
         x = events["x"]
         y = events["y"]
         pol = events["p"]
@@ -53,51 +55,58 @@ class EventRepresentation:
 
 
 class VoxelGrid(EventRepresentation):
-    def __init__(self, channels: int, height: int, width: int, derotate: bool):
+    """
+    Convert raw events into dense temporal voxel grids.
+
+    In the standard path, event times are normalized between the first and last
+    event in the requested window. In the de-rotation path, event timestamps are
+    kept absolute until coordinates are warped into the reference pose; then
+    time is normalized with respect to the fixed event window
+    `[ts_start_us, ts_end_us)`.
+    """
+
+    def __init__(
+        self,
+        channels: int,
+        height: int,
+        width: int,
+        derotate: bool,
+        derotation_slices: int | None = None,
+    ):
         self.nb_channels = channels
         self.height = height
         self.width = width
         self.derotate = derotate
+        self.derotation_slices = derotation_slices
 
-    def derotate_voxel_grid(
-        self,
-        voxel_grid: torch.Tensor,
-        camera_matrix: np.ndarray,
-        bin_quat_xyzw: np.ndarray,
-        ref_quat_xyzw: np.ndarray,
-    ) -> torch.Tensor:
-        C, H, W = voxel_grid.shape
-        if len(bin_quat_xyzw) != C:
-            raise ValueError(f"Expected {C} bin quaternions, got {len(bin_quat_xyzw)}.")
+    @staticmethod
+    def _as_numpy_array(value: np.ndarray | torch.Tensor, dtype: np.dtype) -> np.ndarray:
+        """Return ``value`` as a CPU numpy array with the requested dtype."""
+        if isinstance(value, torch.Tensor):
+            value = value.detach().cpu().numpy()
+        return np.asarray(value, dtype=dtype)
 
-        K = np.asarray(camera_matrix, dtype=np.float64)
-        K_inv = np.linalg.inv(K)
-        R_ref = quat_xyzw_to_rotmat(np.asarray(ref_quat_xyzw, dtype=np.float64))
+    def convert_events(self, events: Dict[str, np.ndarray | torch.Tensor]) -> torch.Tensor:
+        """
+        Convert event dictionaries while preserving numpy arrays for de-rotation.
 
-        voxel_np = voxel_grid.detach().cpu().numpy().astype(np.float32, copy=False)
-        warped = np.empty((C, H, W), dtype=np.float32)
+        The non-de-rotation path delegates to the base implementation where events 
+        are converted to tensors straight away. 
+        The de-rotation path keeps event arrays in numpy because the coordinate warp 
+        uses numpy operations before the shared torch interpolation.
+        """
 
-        for idx in range(C):
-            if not np.any(voxel_np[idx]):
-                warped[idx] = voxel_np[idx]
-                continue
+        if not self.derotate:
+            return super().convert_events(events)
 
-            R_bin = quat_xyzw_to_rotmat(np.asarray(bin_quat_xyzw[idx], dtype=np.float64))
-            R_ref_from_bin = R_ref.T @ R_bin
-            # Pinhole rotation warp for the accumulated temporal slice.
-            H_ref_from_bin = K @ R_ref_from_bin @ K_inv
-            H_ref_from_bin /= H_ref_from_bin[2, 2]
-
-            warped[idx] = cv2.warpPerspective(
-                voxel_np[idx],
-                H_ref_from_bin,
-                dsize=(W, H),
-                flags=cv2.INTER_LINEAR,
-                borderMode=cv2.BORDER_CONSTANT,
-                borderValue=0,
-            )
-
-        return torch.from_numpy(warped).to(voxel_grid.device)
+        metadata = {k: v for k, v in events.items() if k not in {"x", "y", "p", "t"}}
+        return self.convert(
+            self._as_numpy_array(events["x"], np.float32),
+            self._as_numpy_array(events["y"], np.float32),
+            self._as_numpy_array(events["p"], np.float32),
+            self._as_numpy_array(events["t"], np.float64),
+            metadata=metadata,
+        )
 
     def convert(
         self,
@@ -107,15 +116,29 @@ class VoxelGrid(EventRepresentation):
         time: torch.Tensor,
         metadata: Dict | None = None,
     ):
+        """
+        Convert one event window into a `[C, H, W]` voxel grid.
+
+        Args:
+            x: Event x coordinates.
+            y: Event y coordinates.
+            pol: Event polarities encoded as 0/1.
+            time: Event timestamps. For the non-de-rotation path these may be
+                relative values. For the de-rotation path they must be absolute
+                microsecond timestamps.
+            metadata: Optional metadata required by de-rotation: `ts_start_us`,
+                `ts_end_us`, `camera_matrix`, `bin_quat_xyzw`, and
+                `ref_quat_xyzw`.
+
+        Returns:
+            A `torch.float32` voxel grid with shape
+            `[channels, height, width]`.
+        """
         assert x.shape == y.shape == pol.shape == time.shape
         assert x.ndim == 1
 
         C, H, W = self.nb_channels, self.height, self.width
-        device = x.device
-
         with torch.no_grad():
-            voxel_grid = torch.zeros((C, H, W), dtype=torch.float32, device=device)
-
             if self.derotate:
                 # When de-rotation happens, the time has a slightly different meaning
                 # Without de-rotation, the exact physical timestamp of each bin is not important.
@@ -125,10 +148,33 @@ class VoxelGrid(EventRepresentation):
                 
                 if metadata is None:
                     raise ValueError("Derotation requires metadata.")
-                window_duration_us = float(metadata["window_duration_us"])
+                ts_start_us = int(metadata["ts_start_us"])
+                ts_end_us = int(metadata["ts_end_us"])
+                window_duration_us = float(metadata.get("window_duration_us", ts_end_us - ts_start_us))
                 if window_duration_us <= 0:
                     raise ValueError("window_duration_us must be positive.")
-                t_norm = (C - 1) * time / window_duration_us
+
+                x_np = self._as_numpy_array(x, np.float32)
+                y_np = self._as_numpy_array(y, np.float32)
+                pol_np = self._as_numpy_array(pol, np.float32)
+                time_np = self._as_numpy_array(time, np.float64)
+
+                t_norm_np = (C - 1) * (time_np - float(ts_start_us)) / window_duration_us
+                derot_x, derot_y, derot_valid, _ = derotate_events_in_slices(
+                    x=x_np,
+                    y=y_np,
+                    t_us=time_np,
+                    ts_start_us=ts_start_us,
+                    ts_end_us=ts_end_us,
+                    context=metadata,
+                    height=H,
+                    width=W,
+                )
+                x = torch.from_numpy(derot_x[derot_valid].astype(np.float32, copy=False))
+                y = torch.from_numpy(derot_y[derot_valid].astype(np.float32, copy=False))
+                pol = torch.from_numpy(pol_np[derot_valid].astype(np.float32, copy=False))
+                t_norm = torch.from_numpy(t_norm_np[derot_valid].astype(np.float32, copy=False))
+
             else:
                 t_min, t_max = time[0], time[-1]
                 if t_max > t_min:
@@ -136,37 +182,13 @@ class VoxelGrid(EventRepresentation):
                 else:
                     t_norm = torch.zeros_like(time)
 
-            x0 = x.int()
-            y0 = y.int()
-            t0 = t_norm.int()
-
-            value = 2 * pol - 1
-
-            for dx in [0, 1]:
-                for dy in [0, 1]:
-                    for dt in [0, 1]:
-                        xlim, ylim, tlim = x0 + dx, y0 + dy, t0 + dt
-
-                        mask = (xlim < W) & (xlim >= 0) & \
-                               (ylim < H) & (ylim >= 0) & \
-                               (tlim < C) & (tlim >= 0)
-
-                        interp_weights = value * (1 - (xlim.float() - x).abs()) * \
-                                                 (1 - (ylim.float() - y).abs()) * \
-                                                 (1 - (tlim.float() - t_norm).abs())
-
-                        index = H * W * tlim.long() + \
-                                W * ylim.long() + \
-                                xlim.long()
-
-                        voxel_grid.put_(index[mask], interp_weights[mask], accumulate=True)
-
-            if self.derotate:
-                voxel_grid = self.derotate_voxel_grid(
-                    voxel_grid=voxel_grid,
-                    camera_matrix=np.asarray(metadata["camera_matrix"], dtype=np.float64),
-                    bin_quat_xyzw=np.asarray(metadata["bin_quat_xyzw"], dtype=np.float64),
-                    ref_quat_xyzw=np.asarray(metadata["ref_quat_xyzw"], dtype=np.float64),
-                )
-                
+            voxel_grid = trilinear_voxel_interpolation(
+                x=x,
+                y=y,
+                pol=pol,
+                t_norm=t_norm,
+                channels=C,
+                height=H,
+                width=W,
+            )
         return voxel_grid

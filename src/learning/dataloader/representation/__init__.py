@@ -1,1 +1,1 @@
-# Package marker for representation.
+"""Event representation modules used by the dataloader."""

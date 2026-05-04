@@ -169,7 +169,7 @@ def main() -> None:
             denoise_text = "denoise ON" if args.denoising else "denoise OFF"
             cv2.putText(
                 frame_bgr,
-                f"{status_text} | {denoise_text}",
+                f"frame {imgi} | t {t1:.6f} s | {status_text} | {denoise_text}",
                 (12, 28),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.7,
@@ -179,7 +179,12 @@ def main() -> None:
             )
             cv2.imshow(window_name, frame_bgr)
             events_text = f"{len(ev)}/{num_raw}" if args.denoising else f"{num_raw}"
-            print(f"Frame {imgi} | events: {events_text} | dt: {t2 - t1:.6f} s", end="\r", flush=True)
+            print(
+                f"Frame {imgi} | timestamp: {t1:.6f} s | "
+                f"next: {t2:.6f} s | dt: {t2 - t1:.6f} s | events: {events_text}",
+                end="\r",
+                flush=True,
+            )
 
             key = cv2.waitKey(frame_delay_ms) & 0xFF
             if key in (27, ord("q")):
