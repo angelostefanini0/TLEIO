@@ -193,50 +193,50 @@ if __name__ == "__main__":
             print("Loading data...")
         
     
-    if args["precomputed_voxels"]:
-        train_data = PrecomputedVoxelClipDataset(
-            root_path=Path(args["root_dir"]),
-            clip_len=args["clip_len"],
-            num_bins=args["num_bins"],
-            voxel_filename=args["voxel_filename"],
-        )
-        val_data = PrecomputedVoxelClipDataset(
-            root_path=Path(args["val_root_dir"]),
-            clip_len=args["clip_len"],
-            num_bins=args["num_bins"],
-            voxel_filename=args["voxel_filename"],
-        )
-    else:
-        train_data = MultiEventVoxelClipDataset(
-            root_path=Path(args["root_dir"]),
-            delta_t_ms=args["delta_t_ms"],
-            num_bins=args["num_bins"],
-            clip_len=args["clip_len"],
-            downsampling_factor=args["downsampling_factor"],
-            patch_size=args["patch_size"],
-            denoising=args["denoising"],
-            denoise_dt_us=args["denoise_dt_us"],
-            denoise_radius=args["denoise_radius"],
-            denoise_min_supporters=args["denoise_min_supporters"],
-            denoise_same_polarity_only=args["denoise_same_polarity_only"],
-            derotate=args["derotate"],
-            derotation_slices=args["derotation_slices"],
-        )
-        val_data = MultiEventVoxelClipDataset(
-            root_path=Path(args["val_root_dir"]),
-            delta_t_ms=args["delta_t_ms"],
-            num_bins=args["num_bins"],
-            clip_len=args["clip_len"],
-            downsampling_factor=args["downsampling_factor"],
-            patch_size=args["patch_size"],
-            denoising=args["denoising"],
-            denoise_dt_us=args["denoise_dt_us"],
-            denoise_radius=args["denoise_radius"],
-            denoise_min_supporters=args["denoise_min_supporters"],
-            denoise_same_polarity_only=args["denoise_same_polarity_only"],
-            derotate=args["derotate"],
-            derotation_slices=args["derotation_slices"]
-        )
+        if args["precomputed_voxels"]:
+            train_data = PrecomputedVoxelClipDataset(
+                root_path=Path(args["root_dir"]),
+                clip_len=args["clip_len"],
+                num_bins=args["num_bins"],
+                voxel_filename=args["voxel_filename"],
+            )
+            val_data = PrecomputedVoxelClipDataset(
+                root_path=Path(args["val_root_dir"]),
+                clip_len=args["clip_len"],
+                num_bins=args["num_bins"],
+                voxel_filename=args["voxel_filename"],
+            )
+        else:
+            train_data = MultiEventVoxelClipDataset(
+                root_path=Path(args["root_dir"]),
+                delta_t_ms=args["delta_t_ms"],
+                num_bins=args["num_bins"],
+                clip_len=args["clip_len"],
+                downsampling_factor=args["downsampling_factor"],
+                patch_size=args["patch_size"],
+                denoising=args["denoising"],
+                denoise_dt_us=args["denoise_dt_us"],
+                denoise_radius=args["denoise_radius"],
+                denoise_min_supporters=args["denoise_min_supporters"],
+                denoise_same_polarity_only=args["denoise_same_polarity_only"],
+                derotate=args["derotate"],
+                derotation_slices=args["derotation_slices"],
+            )
+            val_data = MultiEventVoxelClipDataset(
+                root_path=Path(args["val_root_dir"]),
+                delta_t_ms=args["delta_t_ms"],
+                num_bins=args["num_bins"],
+                clip_len=args["clip_len"],
+                downsampling_factor=args["downsampling_factor"],
+                patch_size=args["patch_size"],
+                denoising=args["denoising"],
+                denoise_dt_us=args["denoise_dt_us"],
+                denoise_radius=args["denoise_radius"],
+                denoise_min_supporters=args["denoise_min_supporters"],
+                denoise_same_polarity_only=args["denoise_same_polarity_only"],
+                derotate=args["derotate"],
+                derotation_slices=args["derotation_slices"]
+            )
 
         # Compute the mean and std only on training data
         train_data.compute_stats(list(range(len(train_data))))
