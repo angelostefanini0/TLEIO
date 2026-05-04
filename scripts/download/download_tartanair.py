@@ -52,6 +52,7 @@ TARTANAIR_AIRLAB_ENDPOINT = (
     "https://airlab-cloud.andrew.cmu.edu:8080/swift/v1/"
     "AUTH_ac8533a83cff4d48bc8c608ad222d330"
 )
+TARTANAIR_HF_REPO_ID = "theairlabcmu/tartanair"
 
 def download_with_retry(url: str, target: str) -> None:
     import os
@@ -274,6 +275,36 @@ class DirectAirLabDownloader:
         return downloaded
 
 
+class HuggingFaceTartanAirDownloader:
+    def __init__(self, repo_id: str = TARTANAIR_HF_REPO_ID, chunk_size: int = 100) -> None:
+        try:
+            from huggingface_hub import snapshot_download
+        except ImportError as exc:
+            raise ImportError(
+                "Hugging Face TartanAir download requires huggingface-hub: "
+                "pip install huggingface-hub"
+            ) from exc
+
+        self.repo_id = repo_id
+        self.chunk_size = chunk_size
+        self.snapshot_download = snapshot_download
+
+    def download(self, filelist: list[str], root: Path) -> list[Path]:
+        downloaded = []
+        print(f"Downloading {len(filelist)} TartanAir file(s) from Hugging Face: {self.repo_id}")
+        for start in range(0, len(filelist), self.chunk_size):
+            chunk = filelist[start : start + self.chunk_size]
+            self.snapshot_download(
+                repo_id=self.repo_id,
+                repo_type="dataset",
+                local_dir=str(root),
+                allow_patterns=chunk,
+            )
+            downloaded.extend(root / PurePosixPath(source_file) for source_file in chunk)
+
+        return downloaded
+
+
 def ensure_tartanair_file_list(file_list: Path) -> None:
     if file_list.exists():
         return
@@ -387,6 +418,57 @@ def download_tartanair_direct(
     extract_zip_archives(zip_paths, delete_zip=delete_zip)
 
 
+def download_tartanair_huggingface(
+    root: Path,
+    env: str,
+    difficulties: list[str],
+    file_list: Path,
+    archive_name: str,
+    delete_zip: bool,
+) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+
+    file_sizes = load_tartanair_file_sizes(file_list)
+    archives = select_tartanair_archives(
+        file_sizes,
+        env,
+        difficulties,
+        archive_name,
+    )
+    total_size = sum(file_sizes[source_file] for source_file in archives)
+
+    print("Hugging Face TartanAir download")
+    print(f"  env:          {env}")
+    print(f"  difficulties: {', '.join(difficulties)}")
+    print(f"  archive:      {archive_name}")
+    print(f"  file list:    {file_list}")
+    print(f"  repo:         {TARTANAIR_HF_REPO_ID}")
+    print(f"  total size:   {total_size:.3f} GB")
+
+    downloader = HuggingFaceTartanAirDownloader()
+    zip_paths = downloader.download(archives, root)
+    extract_zip_archives(zip_paths, delete_zip=delete_zip)
+
+
+def count_nonempty_lines(path: Path) -> int:
+    with open(path, "r") as fh:
+        return sum(1 for line in fh if line.strip())
+
+
+def check_timestamps_pose_line_count(timestamps_file: Path, pose_file: Path) -> None:
+    if not timestamps_file.exists() or not pose_file.exists():
+        return
+
+    timestamps_count = count_nonempty_lines(timestamps_file)
+    pose_count = count_nonempty_lines(pose_file)
+    if timestamps_count != pose_count:
+        raise RuntimeError(
+            f"TartanEvent/TartanAir frame count mismatch in {pose_file.parent}: "
+            f"{timestamps_file.name} has {timestamps_count} lines, "
+            f"{pose_file.name} has {pose_count} lines."
+        )
+
+
 def write_cam_time_from_event_timestamps(timestamps_file: Path, cam_time_file: Path) -> None:
     values = []
     with open(timestamps_file, "r") as fh:
@@ -422,10 +504,11 @@ def prepare_training_layout(
         for traj_dir in sorted(p for p in diff_dir.iterdir() if p.is_dir()):
             pose_left = traj_dir / "pose_left.txt"
             pose_lcam_front = traj_dir / "pose_lcam_front.txt"
+            timestamps_file = traj_dir / "timestamps.txt"
+            check_timestamps_pose_line_count(timestamps_file, pose_left)
             if pose_left.exists() and not pose_lcam_front.exists():
                 shutil.copy2(pose_left, pose_lcam_front)
 
-            timestamps_file = traj_dir / "timestamps.txt"
             cam_time_file = traj_dir / "imu" / "cam_time.txt"
             if timestamps_file.exists() and not cam_time_file.exists():
                 write_cam_time_from_event_timestamps(timestamps_file, cam_time_file)
@@ -681,9 +764,9 @@ def main() -> int:
     parser.add_argument("--keep-zip", action="store_true")
     parser.add_argument(
         "--air-source",
-        choices=["direct", "package"],
-        default="direct",
-        help="Download TartanAir directly from AirLab or through the tartanair package.",
+        choices=["huggingface", "direct", "package"],
+        default="huggingface",
+        help="Download TartanAir from Hugging Face, AirLab, or through the tartanair package.",
     )
     parser.add_argument(
         "--air-file-list",
@@ -744,7 +827,16 @@ def main() -> int:
         print("=" * 72)
 
         if not args.skip_air:
-            if args.air_source == "direct":
+            if args.air_source == "huggingface":
+                download_tartanair_huggingface(
+                    root=root,
+                    env=env_air,
+                    difficulties=args.difficulty,
+                    file_list=args.air_file_list,
+                    archive_name=args.air_archive_name,
+                    delete_zip=not args.keep_zip,
+                )
+            elif args.air_source == "direct":
                 download_tartanair_direct(
                     root=root,
                     env=env_air,
