@@ -14,23 +14,28 @@ from .utils import (
     normalize_quaternions,
 )
 
+"""
+Online event-to-voxel dataset used by the training pipeline. Methods of this class 
+are also used by the offline processing script to build precomputed voxels for faster
+training.
+The dataset reads partially processed EDS/Tartan-style sequence folders,
+constructs one voxel grid per anchor timestamp, and groups consecutive anchors
+into clips for TSformer-VO training.
+"""
+
 class MultiEventVoxelClipDataset(Dataset):
-    # We use the voxel grid representation + clipping for TSformer-VO
-    #
-    # This class assumes the following structure in a sequence directory:
-    #
-    # processed
-    # ├──seq_name (e.g. 01_peanuts_light)
-    # ├     ├── events.h5
-    # ├     | └── events/y
-    # ├     | └── events/t
-    # ├     | └── events/p
-    # ├     | ├── events/x
-    # ├     | └── ms_to_idx
-    # ├     ├── imu.csv
-    # ├     ├── stamped_groundtruth.csv
-    # ├──seq_name (e.g. 02_rocket_earth_light)
-    # ...
+    """Build clips of event voxel grids from partially processed sequences.
+
+    Each valid sequence directory under `root_path` must contain
+    `anchor_poses.txt`, `relative_motions.txt`, and `events.h5`.
+    When de-rotation is enabled, the sequence must also contain
+    `stamped_groundtruth.txt` and a `K.yaml` calibration file.
+
+    A dataset item corresponds to `clip_len` consecutive anchors from one
+    sequence. For every anchor, the dataset reads the event window ending at
+    that anchor, optionally denoises/downsamples/de-rotates the events, and
+    voxelizes them.
+    """
 
     @staticmethod
     def get_downsampled_size(
@@ -39,6 +44,12 @@ class MultiEventVoxelClipDataset(Dataset):
         downsampling_factor: float,
         patch_size: int,
     ) -> tuple[int, int]:
+        """Compute and validate the spatial size after event downsampling.
+
+        The resulting height and width must stay positive and be divisible by
+        `patch_size` so the downstream patch-based model can consume the
+        voxel grids without padding.
+        """
         if downsampling_factor <= 0:
             raise ValueError("downsampling_factor must be > 0.")
         if patch_size <= 0:
@@ -74,9 +85,35 @@ class MultiEventVoxelClipDataset(Dataset):
                  denoise_dt_us: int = 1000,
                  denoise_radius: int = 1,
                  denoise_min_supporters: int = 1,
-                 denoise_same_polarity_only: bool = False, 
-                 derotate: bool = False):
-        
+                 denoise_same_polarity_only: bool = False,
+                 derotate: bool = False,
+                 derotation_slices: int = 100):
+        """Initialize the Event-to-Voxel clip dataset.
+
+        Args:
+            root_path: Directory containing one subdirectory per processed
+                sequence.
+            delta_t_ms: Duration of each voxel event window in milliseconds.
+                For an anchor at `t`, events are read from
+                `[t - delta_t_ms, t)`.
+            num_bins: Number of temporal bins in the final voxel grid.
+            clip_len: Number of consecutive anchor voxels returned per item.
+            downsampling_factor: Spatial scaling applied to event coordinates.
+            patch_size: Size of the patch being used to tokenize voxels. 
+                Required here to check for divisibility for the downsampled image size.
+            denoising: to apply background activity filtering before
+                voxelization.
+            denoise_dt_us: Temporal support window for denoising.
+            denoise_radius: Spatial radius for denoising support checks.
+            denoise_min_supporters: Minimum neighbors required to keep an event.
+            denoise_same_polarity_only: Whether denoising only counts events
+                with the same polarity.
+            derotate: Whether to de-rotate event coordinates before
+                voxelization.
+            derotation_slices: Number of pose slices used for event-space
+                de-rotation. This is independent from `num_bins`.
+        """
+
         assert num_bins >= 1
         assert clip_len >= 1
         assert delta_t_ms <= 100, 'if duration is higher than 100 ms'
@@ -89,10 +126,13 @@ class MultiEventVoxelClipDataset(Dataset):
         total = 0
 
         # Set constants
+        self.clip_len = clip_len
         self.patch_size = patch_size
         self.root_path = root_path
         self.original_height = 480
         self.original_width = 640
+        
+        #Downsampling
         self.downsampling_factor = downsampling_factor
         self.new_height, self.new_width = self.get_downsampled_size(
             self.original_height,
@@ -103,29 +143,35 @@ class MultiEventVoxelClipDataset(Dataset):
         self.scale_y = self.new_height / self.original_height
         self.scale_x = self.new_width / self.original_width
         self.num_bins = num_bins
-        self.clip_len = clip_len
+
+        #Denoising
         self.denoising = denoising
         self.denoise_dt_us = denoise_dt_us
         self.denoise_radius = denoise_radius
         self.denoise_min_supporters = denoise_min_supporters
         self.denoise_same_polarity_only = denoise_same_polarity_only
+
+        #Derotation
         self.derotate = derotate
+        self.derotation_slices = derotation_slices
+
         #the duration of a voxel
         self.delta_t_us = delta_t_ms * 1000
 
         # Set event representation
-        # Set normalization to FALSE FOR testing
         self.voxel_grid = VoxelGrid(self.num_bins,
                                     self.new_height,
-                                    self.new_width, 
-                                    derotate=derotate)
+                                    self.new_width,
+                                    derotate=self.derotate,
+                                    derotation_slices=self.derotation_slices)
 
         #Set the normalization stats to None: 
         self.train_std = None
         self.train_mean = None
         self.eps = 1e-7
 
-        #Load lightweight data
+        #TARGET DATA LOADING: LIGHTWEIGHT, CAN BE LOADED IN RAM EASILY
+
         total = 0
         sequence_dirs = sorted([p for p in self.root_path.iterdir() if p.is_dir()])
 
@@ -157,6 +203,11 @@ class MultiEventVoxelClipDataset(Dataset):
             }
 
             # De-rotation TRUE path
+            # De-rotation needs the following: 
+            # - the ground truth to find the rotation matrices from each event slice to 
+            #   the reference frame (the anchor of each voxel)
+            # - the camera matrix to warp the events according to the camera intrinsics
+
             if self.derotate:
                 gt_full = np.atleast_2d(np.loadtxt(gt_full_fn, dtype=np.float64))
                 if gt_full.shape[1] < 8:
@@ -168,6 +219,7 @@ class MultiEventVoxelClipDataset(Dataset):
                 seq_info["gt_quat_xyzw"] = normalize_quaternions(
                     gt_full[:, 4:8].astype(np.float64)
                 )
+                
                 seq_info["camera_matrix"] = load_event_camera_matrix(
                     root_path=self.root_path,
                     seq_path=seq_path,
@@ -197,12 +249,14 @@ class MultiEventVoxelClipDataset(Dataset):
         self._readers = [None] * len(self.seq_infos)        
     
     def _ensure_reader(self, seq_idx):
+        """Open the HDF5 event reader for a sequence on first use."""
         if self._readers[seq_idx] is None:
             events_file = self.seq_infos[seq_idx]["events_file"]
             events_meta_file = self.seq_infos[seq_idx]["events_meta_file"]
             self._readers[seq_idx] = EDSReader(events_file, metadata_file=events_meta_file)
     
     def close(self):
+        """Close all open sequence readers held by this dataset instance."""
         if not hasattr(self, "_readers"):
             return
         for i, reader in enumerate(self._readers):
@@ -211,26 +265,59 @@ class MultiEventVoxelClipDataset(Dataset):
                 self._readers[i] = None
 
     def __del__(self):
+        """Cleanup for HDF5 readers."""
         self.close()
 
     def __len__(self):
-        # The number of samples of the dataset: 
-        #Our supervision is made up of transforms in between voxels
+        """Return the number of valid clips across all loaded sequences:
+           the number of samples of the dataset"""
+        
         return self.cum_lengths[-1] if self.cum_lengths else 0
     
     def locate_index(self, idx, cum_lengths):
+        """Map a global dataset index to ``(sequence_index, local_index)``."""
         seq_idx = bisect.bisect_right(cum_lengths, idx)
         prev_cum = 0 if seq_idx == 0 else cum_lengths[seq_idx - 1]
         local_idx = idx - prev_cum
         return seq_idx, local_idx
     
     def _empty_voxel(self):
+        """Return an all-zero voxel grid for empty event windows."""
         return torch.zeros(
             (self.num_bins, self.new_height, self.new_width),
             dtype=torch.float32
         )
 
-    def events_to_voxel_grid(self, x, y, p, t, ts_start_us=None, ts_end_us=None, seq_info=None):
+    def events_to_voxel_grid(
+            self, 
+            x,
+            y,
+            p, 
+            t, 
+            ts_start_us=None, 
+            ts_end_us=None, 
+            seq_info=None
+            ):
+        
+        """Convert one raw event window into a voxel grid.
+
+        Args:
+            x: Event x coordinates in the original sensor resolution.
+            y: Event y coordinates in the original sensor resolution.
+            p: Event polarities, encoded as 0/1.
+            t: Absolute event timestamps in microseconds.
+            ts_start_us: Start timestamp of the event window. Required
+                when `self.derotate` is true.
+            ts_end_us: End timestamp of the event window. Required when
+                `self.derotate` is true.
+            seq_info: Sequence metadata dictionary. The de-rotation path
+                expects ground-truth pose timestamps/quaternions and the event
+                camera matrix in this dictionary.
+
+        Returns:
+            A `torch.float32` tensor with shape
+            `[num_bins, new_height, new_width]`.
+        """
         if len(t) == 0:
             return self._empty_voxel()
 
@@ -255,7 +342,7 @@ class MultiEventVoxelClipDataset(Dataset):
         downsampled_x = x * self.scale_x
         downsampled_y = y * self.scale_y
 
-        #Build de-rotation context for later
+        #Build and add the de-rotation context for later. Skip time normalization 
         if self.derotate:
             if ts_start_us is None or ts_end_us is None or seq_info is None:
                 raise ValueError("Derotation requires window bounds and sequence metadata.")
@@ -264,15 +351,17 @@ class MultiEventVoxelClipDataset(Dataset):
                 "x": downsampled_x.astype(np.float32),
                 "y": downsampled_y.astype(np.float32),
                 "p": p.astype(np.float32),
-                "t": (t - ts_start_us).astype(np.float32),
+                "t": t.astype(np.float64),
+                "ts_start_us": int(ts_start_us),
+                "ts_end_us": int(ts_end_us),
             }
-            event_data.update(
-                build_derotation_context(
-                    seq_info=seq_info,
-                    ts_start_us=ts_start_us,
-                    ts_end_us=ts_end_us,
-                    num_bins=self.num_bins,
-                )
+            
+            event_data.update(build_derotation_context(
+                            seq_info=seq_info,
+                            ts_start_us=ts_start_us,
+                            ts_end_us=ts_end_us,
+                            num_bins=self.derotation_slices,
+                            )
             )
         else:
             t = t.astype(np.float32)
@@ -290,10 +379,18 @@ class MultiEventVoxelClipDataset(Dataset):
                 "t": t,
             }
 
+        #Convert the events into voxels
         voxel = self.voxel_grid.convert_events(event_data)
         return voxel
     
     def get_relative_motion(self, rel_transf, t0_idx, t0, t1):
+        """Return the translation target between two consecutive anchors.
+
+        `relative_motions.txt` is expected to contain the source and target
+        anchor timestamps in the first two columns, followed by the supervision
+        values. This method asserts that the requested anchor pair matches the
+        stored row before returning columns 2:5, which are the displacement values.
+        """
         
         #Check also the timestamps matches
         assert (t0 == rel_transf[t0_idx, 0]) and (t1 == rel_transf[t0_idx, 1])
@@ -302,7 +399,18 @@ class MultiEventVoxelClipDataset(Dataset):
 
 
     def __getitem__(self, index):
+        """Return one clip and its pairwise motion targets.
+
+        The output dictionary contains:
+            `representation`: voxel clip with shape `[C, T, H, W]`.
+            `anchors_us`: anchor timestamps for the clip.
+            `target`: relative translation targets with shape
+            `[T - 1, target_dim]`.
+        """
+        #Find sequence index in the whole dataset + local index within that sequence
         seq_idx, local_idx = self.locate_index(index, self.cum_lengths)
+
+        #Open the reader for that sequence (get ready to open the h5 file with events)
         self._ensure_reader(seq_idx)
 
         #Get the anchor timestamps and build a voxel for each anchor
@@ -315,6 +423,7 @@ class MultiEventVoxelClipDataset(Dataset):
             ts_end_us = int(anchor)
             ts_start_us = ts_end_us - self.delta_t_us
 
+            #Slicing events in the requested window
             reader = self._readers[seq_idx]
             event_data = reader.get_events(ts_start_us, ts_end_us)
 
@@ -362,6 +471,12 @@ class MultiEventVoxelClipDataset(Dataset):
         return output
     
     def compute_stats(self, indices): 
+        """Compute target normalization statistics over a subset of indices.
+
+        The method scans the pairwise motion targets for the provided dataset
+        indices and stores `self.train_mean` and `self.train_std`. These
+        values are later used by `__getitem__` to normalize returned targets.
+        """
         all_train_targets = []
         for index in indices: 
             seq_idx, local_idx = self.locate_index(index, self.cum_lengths)

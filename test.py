@@ -2,7 +2,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
-
+#
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -17,6 +17,7 @@ for path in (REPO_ROOT, SRC_DIR):
 
 from learning.network.build_model import build_model
 from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
+from learning.dataloader.events_to_voxel.precomputed_voxel_clip import PrecomputedVoxelClipDataset
 
 "python test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
 
@@ -39,6 +40,9 @@ def load_inference_args(checkpoint_file: Path):
 
     loaded["checkpoint"] = None
     loaded["checkpoint_path"] = str(checkpoint_file.parent)
+    loaded.setdefault("precomputed_voxels", False)
+    loaded.setdefault("voxel_filename", "derotated_voxels.npy")
+    loaded.setdefault("derotation_slices", 100)
     return loaded
 
 
@@ -47,24 +51,38 @@ def build_inference_dataset(sequence_dir: Path, args_dict):
 
     dataset_root = sequence_dir
     requested_sequence = None
-    if (sequence_dir / "events.h5").exists():
-        dataset_root = sequence_dir.parent
-        requested_sequence = sequence_dir
+    if args_dict["precomputed_voxels"]:
+        voxel_filename = args_dict["voxel_filename"]
+        if (sequence_dir / voxel_filename).exists():
+            dataset_root = sequence_dir.parent
+            requested_sequence = sequence_dir
 
-    dataset = MultiEventVoxelClipDataset(
-        root_path=dataset_root,
-        delta_t_ms=args_dict["delta_t_ms"],
-        num_bins=args_dict["num_bins"],
-        clip_len=args_dict["clip_len"],
-        downsampling_factor=args_dict["downsampling_factor"],
-        patch_size=args_dict["patch_size"],
-        denoising=args_dict["denoising"],
-        denoise_dt_us=args_dict["denoise_dt_us"],
-        denoise_radius=args_dict["denoise_radius"],
-        denoise_min_supporters=args_dict["denoise_min_supporters"],
-        denoise_same_polarity_only=args_dict["denoise_same_polarity_only"],
-        derotate=args_dict["derotate"],
-    )
+        dataset = PrecomputedVoxelClipDataset(
+            root_path=dataset_root,
+            clip_len=args_dict["clip_len"],
+            num_bins=args_dict["num_bins"],
+            voxel_filename=voxel_filename,
+        )
+    else:
+        if (sequence_dir / "events.h5").exists():
+            dataset_root = sequence_dir.parent
+            requested_sequence = sequence_dir
+
+        dataset = MultiEventVoxelClipDataset(
+            root_path=dataset_root,
+            delta_t_ms=args_dict["delta_t_ms"],
+            num_bins=args_dict["num_bins"],
+            clip_len=args_dict["clip_len"],
+            downsampling_factor=args_dict["downsampling_factor"],
+            patch_size=args_dict["patch_size"],
+            denoising=args_dict["denoising"],
+            denoise_dt_us=args_dict["denoise_dt_us"],
+            denoise_radius=args_dict["denoise_radius"],
+            denoise_min_supporters=args_dict["denoise_min_supporters"],
+            denoise_same_polarity_only=args_dict["denoise_same_polarity_only"],
+            derotate=args_dict["derotate"],
+            derotation_slices=args_dict["derotation_slices"],
+        )
 
     if requested_sequence is None:
         return dataset
@@ -204,6 +222,7 @@ def main():
     output_file = Path(args_cli.output_file)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
     infer_args = load_inference_args(checkpoint_file)
     dataset = build_inference_dataset(sequence_dir, infer_args)
 
@@ -211,7 +230,7 @@ def main():
         dataset,
         batch_size=infer_args["b_size"],
         shuffle=False,
-        num_workers=max(args_cli.num_workers, 0),
+        num_workers=args_cli.num_workers,
         pin_memory=torch.cuda.is_available(),
         drop_last=False,
     )

@@ -1,3 +1,5 @@
+"""Background-activity event denoising utilities."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -22,6 +24,7 @@ def _background_activity_keep_numba(
     radius: int,
     min_supporters: int,
 ) -> np.ndarray:
+    # Numba kernel for the polarity-agnostic background activity filter.
     keep = np.zeros(x.shape[0], dtype=np.bool_)
     neg_inf = np.int64(-(1 << 60))
     last_ts = np.full((height, width), neg_inf, dtype=np.int64)
@@ -66,6 +69,7 @@ def _background_activity_keep_numba_same_polarity(
     radius: int,
     min_supporters: int,
 ) -> np.ndarray:
+    # Numba kernel for the same-polarity background activity filter.
     keep = np.zeros(x.shape[0], dtype=np.bool_)
     neg_inf = np.int64(-(1 << 60))
     last_ts = np.full((2, height, width), neg_inf, dtype=np.int64)
@@ -111,6 +115,31 @@ def background_activity_filter_raw(
     min_supporters: int = 1,
     same_polarity_only: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Filter raw event arrays with background activity.
+
+    An event is kept only if there are enough neighboring supporters in time and space. 
+    The function clips out-of-bounds events before filtering and sorts valid events by 
+    timestamp for deterministic support checks.
+
+    Args:
+        x: Event x coordinates.
+        y: Event y coordinates.
+        p: Event polarities.
+        t_us: Event timestamps in microseconds.
+        height: image height.
+        width: image width.
+        dt_us: Maximum temporal distance for a neighboring event to count as
+            support.
+        radius: Spatial support radius in pixels.
+        min_supporters: Minimum recent neighboring events required to keep an
+            event.
+        same_polarity_only: If true, only events with the same polarity count
+            as support.
+
+    Returns:
+        Filtered `x`, `y`, `p`, and `t_us` arrays, plus a boolean mask
+        aligned with the original input arrays.
+    """
     if not (len(x) == len(y) == len(p) == len(t_us)):
         raise ValueError("x, y, p, and t_us must have the same length.")
     if dt_us <= 0:
@@ -190,6 +219,24 @@ def background_activity_filter_events(
     min_supporters: int = 1,
     same_polarity_only: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Filter an `[N, 4]` event array.
+    Wrapper for the function background_activity_filter_raw used in visualization 
+    scripts to support time in seconds
+    Args:
+        events: Array in `[y, x, t_sec, p]` format.
+        height: Sensor/image height.
+        width: Sensor/image width.
+        dt_us: Maximum temporal support distance in microseconds.
+        radius: Spatial support radius in pixels.
+        min_supporters: Minimum recent neighboring events required to keep an
+            event.
+        same_polarity_only: If true, only same-polarity events count as support.
+
+    Returns:
+        The filtered event array in the same `[y, x, t_sec, p]` format and a
+        boolean mask aligned with the original input events.
+    
+    """
     if events.ndim != 2 or events.shape[1] != 4:
         raise ValueError("Expected events with shape [N, 4] in [y, x, t_sec, p] format.")
 

@@ -28,7 +28,7 @@ Usage: write the directory to save it into first, then pass the exact sequence n
 
 ### 2.2 TartanAir + TartanEvent
 
-Run the `download_tartanair.py` script to download sequences from a specified environment in the TartanAir dataset. TartanAir is downloaded using an API, but does not come with events (or doesn't look to come with it by default), and TartanEvent is taken from UZH RPG resources found in the RAMPVO github repo. Argument  `env-event` asks for the environment of TartanEvent (see list here: https://download.ifi.uzh.ch/rpg/web/data/iros24_rampvo/datasets/TartanEvent/), while `env-air` asks for the environment of TartanAir (see list at: https://github.com/castacks/tartanair_tools/blob/master/download_training_zipfiles.txt). All environments have two difficulties: easy and hard, which must be passed as an argument. 
+Run the `download_tartanair.py` script to download sequences from one or more paired TartanEvent/TartanAir environments. TartanAir is downloaded using an API, but does not come with events (or doesn't look to come with it by default), and TartanEvent is taken from UZH RPG resources found in the RAMPVO github repo. Argument `env-event` asks for the environment of TartanEvent (see list here: https://download.ifi.uzh.ch/rpg/web/data/iros24_rampvo/datasets/TartanEvent/), while `env-air` asks for the environment of TartanAir (see list at: https://github.com/castacks/tartanair_tools/blob/master/download_training_zipfiles.txt). If multiple environments are passed, the two lists must have the same length and are matched by position. All environments have two difficulties: easy and hard, which must be passed as an argument.
 The python API installed by `pip install` is not updated with the code from the current github repo of the official dataset, so to make the script work do the following: 
 
 If already installed, otherwise skip: 
@@ -52,6 +52,16 @@ python scripts/download/download_tartanair.py \
 --root data/tartanair \
 --env-event office \
 --env-air Office \
+--difficulty easy hard
+```
+
+Multiple environments can be downloaded and merged in one run by passing paired lists:
+
+```bash
+python scripts/download/download_tartanair.py \
+--root data/tartanair \
+--env-event office carwelding endofworld \
+--env-air Office CarWelding EndofTheWorld \
 --difficulty easy hard
 ```
 

@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
 from learning.network.train import *
 from learning.network.build_model import *
 from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
+from learning.dataloader.events_to_voxel.precomputed_voxel_clip import PrecomputedVoxelClipDataset
 import argparse
 
 
@@ -29,7 +30,7 @@ def str2bool(v):
     if v.lower() in {"false", "0", "no", "n"}:
         return False
     raise argparse.ArgumentTypeError(f"Invalid boolean value: {v}")
-
+#
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Training configuration")
@@ -59,6 +60,12 @@ def parse_args():
                         help="require denoising support to come from the same polarity")
     parser.add_argument("--derotate", type=str2bool, default=False,
                         help="derotate events into a reference frame at the voxel anchor")
+    parser.add_argument("--derotation_slices", type=int, default=100,
+                        help="number of temporal slices used for event-space derotation")
+    parser.add_argument("--precomputed_voxels", type=str2bool, default=True,
+                        help="read precomputed voxel .npy files instead of events.h5")
+    parser.add_argument("--voxel_filename", type=str, default="derotated_voxels.npy",
+                        help="precomputed voxel file name inside each sequence folder")
                        
     # optimization
     parser.add_argument("--optimizer", type=str, default="AdamW",
@@ -185,6 +192,21 @@ if __name__ == "__main__":
             print("Using CUDA: ", torch.cuda.is_available())
             print("Loading data...")
         
+    
+    if args["precomputed_voxels"]:
+        train_data = PrecomputedVoxelClipDataset(
+            root_path=Path(args["root_dir"]),
+            clip_len=args["clip_len"],
+            num_bins=args["num_bins"],
+            voxel_filename=args["voxel_filename"],
+        )
+        val_data = PrecomputedVoxelClipDataset(
+            root_path=Path(args["val_root_dir"]),
+            clip_len=args["clip_len"],
+            num_bins=args["num_bins"],
+            voxel_filename=args["voxel_filename"],
+        )
+    else:
         train_data = MultiEventVoxelClipDataset(
             root_path=Path(args["root_dir"]),
             delta_t_ms=args["delta_t_ms"],
@@ -197,10 +219,9 @@ if __name__ == "__main__":
             denoise_radius=args["denoise_radius"],
             denoise_min_supporters=args["denoise_min_supporters"],
             denoise_same_polarity_only=args["denoise_same_polarity_only"],
-            derotate=args["derotate"]
+            derotate=args["derotate"],
+            derotation_slices=args["derotation_slices"],
         )
-        
-
         val_data = MultiEventVoxelClipDataset(
             root_path=Path(args["val_root_dir"]),
             delta_t_ms=args["delta_t_ms"],
@@ -213,7 +234,8 @@ if __name__ == "__main__":
             denoise_radius=args["denoise_radius"],
             denoise_min_supporters=args["denoise_min_supporters"],
             denoise_same_polarity_only=args["denoise_same_polarity_only"],
-            derotate=args["derotate"]
+            derotate=args["derotate"],
+            derotation_slices=args["derotation_slices"]
         )
 
         # Compute the mean and std only on training data
@@ -303,3 +325,4 @@ if __name__ == "__main__":
         )
     finally:
         cleanup_distributed(args)
+           
