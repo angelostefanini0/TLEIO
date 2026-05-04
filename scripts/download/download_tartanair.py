@@ -507,7 +507,7 @@ def prepare_training_layout(
             pose_lcam_front = traj_dir / "pose_lcam_front.txt"
             timestamps_file = traj_dir / "timestamps.txt"
             check_timestamps_pose_line_count(timestamps_file, pose_left)
-            if pose_left.exists() and not pose_lcam_front.exists():
+            if pose_left.exists():
                 shutil.copy2(pose_left, pose_lcam_front)
 
             cam_time_file = traj_dir / "imu" / "cam_time.txt"
@@ -696,6 +696,9 @@ def normalize_tartanair_layout(
 
                     if item.is_file():
                         if not target_item.exists():
+                            shutil.move(str(item), str(target_item))
+                        elif item.name in {"pose_left.txt", "pose_lcam_front.txt"}:
+                            target_item.unlink()
                             shutil.move(str(item), str(target_item))
                     elif item.is_dir():
                         target_item.mkdir(parents=True, exist_ok=True)
