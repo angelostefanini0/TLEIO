@@ -28,7 +28,7 @@ Usage: write the directory to save it into first, then pass the exact sequence n
 
 ### 2.2 TartanAir + TartanEvent
 
-Run the `download_tartanair.py` script to download sequences from one or more paired TartanEvent/TartanAir environments. TartanAir is downloaded using an API, but does not come with events (or doesn't look to come with it by default), and TartanEvent is taken from UZH RPG resources found in the RAMPVO github repo. Argument `env-event` asks for the environment of TartanEvent (see list here: https://download.ifi.uzh.ch/rpg/web/data/iros24_rampvo/datasets/TartanEvent/), while `env-air` asks for the environment of TartanAir (see list at: https://github.com/castacks/tartanair_tools/blob/master/download_training_zipfiles.txt). If multiple environments are passed, the two lists must have the same length and are matched by position. All environments have two difficulties: easy and hard, which must be passed as an argument.
+Run the `download_tartanair.py` script to download sequences from one or more paired TartanEvent/TartanAir environments. TartanAir is downloaded using an API, but does not come with events (or doesn't look to come with it by default), and TartanEvent is taken from UZH RPG resources found in the RAMPVO github repo. Argument `env-event` asks for the environment of TartanEvent (see list here: https://download.ifi.uzh.ch/rpg/web/data/iros24_rampvo/datasets/TartanEvent/), while `env-air` asks for the environment of TartanAir. If multiple environments are passed, the two lists must have the same length and are matched by position. All environments have two difficulties: easy and hard, which must be passed as an argument.
 The python API installed by `pip install` is not updated with the code from the current github repo of the official dataset, so to make the script work do the following: 
 
 If already installed, otherwise skip: 
@@ -153,18 +153,19 @@ When denoising is enabled, the overlay shows `kept/raw` event counts so it is ea
 Run the `main_network.py` script to train the model. A bunch of arguments can be passed for general data handling, optimization strategies and model parameters.
 
 Important parameters:
-- `downsampling_factor` decreases the event image resolution before voxelization.
-- The downsampled spatial size must stay divisible by `patch_size`. For example, with `patch_size=16`, `downsampling_factor=0.7` gives `336x448`, which is valid. The model build step now prints the effective image size, patch grid, and resulting token count to verify the downsampling is doing what is expected.
-- `denoising` enables the shared background-activity filter before voxelization.
-- `derotate` enables the de-rotation to rotate events into a common frame for each voxel.
+- `precomputed_voxels` switches between online voxelization from `events.h5` and loading precomputed voxel tensors from `.npy` files.
+- `num_bins`, `clip_len`, and `downsampling_factor` define the tensor shape expected by the model. When using precomputed voxels, these values must match the precomputation run.
+- `downsampling_factor` decreases the event image resolution before voxelization. The downsampled spatial size must stay divisible by `patch_size`. For example, with `patch_size=16`, `downsampling_factor=0.7` gives `336x448`, which is valid.
+- `denoising` and `derotate` affect online voxelization only. For precomputed voxels, those operations have already happened during precomputation.
 
-For the big training run on the A100's activate DDP (multi-GPU training), and run the following command: 
+Single GPU training with online voxelization from processed event files:
 
- ```bash
-torchrun --standalone --nproc_per_node=8 src/main_network.py \
---root_dir data/tartanair/processed_train_subfolder \
+```bash
+python src/main_network.py \
+--root_dir data/tartanair/processed_train \
 --val_root_dir data/tartanair/processed_validation \
---checkpoint_path checkpoints/tartan_ddp_amp \
+--checkpoint_path checkpoints/tartan_single_online \
+--precomputed_voxels false \
 --b_size 4 \
 --depth 12 \
 --heads 6 \
@@ -173,43 +174,90 @@ torchrun --standalone --nproc_per_node=8 src/main_network.py \
 --prefetch_factor 2 \
 --amp true \
 --amp_dtype bfloat16 \
+--num_bins 5 \
 --downsampling_factor 0.7 \
---denoising false \
---derotate false \
 --clip_len 5 \
+--denoising false \
+--derotate true \
+--derotation_slices 100
 ```
 
-Before training on all the sequences, it would be smart to run a sweep of runs to profile speed:
-- Fix a small but representative training subset, for example `processed_train_subfolder`.
+Single GPU training with precomputed voxelization:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python src/main_network.py \
+--root_dir data/tartanair/precomputed_train \
+--val_root_dir data/tartanair/precomputed_validation \
+--checkpoint_path checkpoints/tartan_single_precomputed \
+--precomputed_voxels true \
+--voxel_filename derotated_voxels.npy \
+--b_size 4 \
+--depth 12 \
+--heads 6 \
+--num_workers 8 \
+--persistent_workers true \
+--prefetch_factor 2 \
+--amp true \
+--amp_dtype bfloat16 \
+--num_bins 5 \
+--downsampling_factor 0.7 \
+--clip_len 5
+```
+
+DDP training with online voxelization from processed event files:
+
+```bash
+torchrun --standalone --nproc_per_node=8 src/main_network.py \
+--root_dir data/tartanair/processed_train \
+--val_root_dir data/tartanair/processed_validation \
+--checkpoint_path checkpoints/tartan_ddp_online \
+--precomputed_voxels false \
+--b_size 4 \
+--depth 12 \
+--heads 6 \
+--num_workers 8 \
+--persistent_workers true \
+--prefetch_factor 2 \
+--amp true \
+--amp_dtype bfloat16 \
+--num_bins 5 \
+--downsampling_factor 0.7 \
+--clip_len 5 \
+--denoising false \
+--derotate true \
+--derotation_slices 100
+```
+
+DDP training with precomputed voxelization:
+
+```bash
+torchrun --standalone --nproc_per_node=8 src/main_network.py \
+--root_dir data/tartanair/precomputed_train \
+--val_root_dir data/tartanair/precomputed_validation \
+--checkpoint_path checkpoints/tartan_ddp_precomputed \
+--precomputed_voxels true \
+--voxel_filename derotated_voxels.npy \
+--b_size 4 \
+--depth 12 \
+--heads 6 \
+--num_workers 8 \
+--persistent_workers true \
+--prefetch_factor 2 \
+--amp true \
+--amp_dtype bfloat16 \
+--num_bins 5 \
+--downsampling_factor 0.7 \
+--clip_len 5
+```
+
+Before training on all the sequences, it is useful to run a short profiling job:
+- Fix a small but representative training subset.
 - Keep `--amp true --amp_dtype bfloat16`, because that is usually the best default on A100s.
 - Start with `--b_size 4` and `--num_workers 8`.
 - Then sweep `--b_size` over `4, 8`.
 - For the best batch size, sweep `--num_workers` per GPU over `8, 10`.
 - Keep `--persistent_workers true` and `--prefetch_factor 2` fixed at first.
 - Run each configuration with `--profile_timing true --epoch 1`.
-
-An example profiling run on the server is:
-
-```bash
-torchrun --standalone --nproc_per_node=8 src/main_network.py \
---root_dir data/tartanair/processed_train_subfolder \
---val_root_dir data/tartanair/processed_validation \
---checkpoint_path checkpoints/tartan_ddp_profile \
---b_size 4 \
---depth 12 \
---heads 6 \
---num_workers 8 \
---persistent_workers true \
---prefetch_factor 2 \
---amp true \
---amp_dtype bfloat16 \
---downsampling_factor 0.7 \
---denoising false \
---derotate false \
---clip_len 5 \
---profile_timing true \
---epoch 1
-```
 
 Compare the printed timing line at the end of the epoch:
 - If `avg_data_wait` is still larger than `avg_compute`, try more workers before increasing batch size further.
