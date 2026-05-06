@@ -115,6 +115,11 @@ python scripts/processing_tartan.py data/tartanair \
 ```
 When running on the server, add argument `--materialize-events-file`, so that the event file is not symlinked from the raw folder and `--remove-raw-after-materialize`, so as not to use space on the disk in the cluster. 
 
+## 4.1 Run second run of processing
+If you want to train on already voxelized and/or derotated events please run
+```bash
+python scripts\precompute_derotated_voxels.py --root_dir data\eds\processed_validation --output_dir data\eds\processed_2_val --delta_t_ms 50 --num_bins 5 --downsampling_factor 0.7 --patch_size 16 --denoising true --denoise_dt_us 2000 --denoise_radius 1 --denoise_min_supporters 2 --denoise_same_polarity_only false --derotate false --derotation_slices 100 --overwrite
+```
 
 ## 5. Visualization of event data: 
 Run the `scripts/viz/play_events_on_rgb.py` script to playback the input video with events overlayed onto RGB frames. `root` expects the absolute path to the dataset root, `sequence` expects the name of the sequence to inspect, and `height` / `width` are the image dimensions to display. To have the playback uncapped, set `fps` to `0`.
