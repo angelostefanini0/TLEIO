@@ -49,7 +49,7 @@ OUTPUT_IMU_FILENAME = "imu.csv"
 IMU_RATE_HZ = 200.0
 
 # World gravity used by src/main_filter.py.
-GRAVITY_WORLD_MPS2 = np.array([0.0, 0.0, -9.80665], dtype=np.float64)
+GRAVITY_WORLD_MPS2 = np.array([0.0, 0.0, 9.80665], dtype=np.float64)
 
 # Add zero-mean Gaussian noise after ideal IMU generation. Keep at 0.0 for an
 # ideal IMU stream.
