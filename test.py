@@ -15,7 +15,7 @@ for path in (REPO_ROOT, SRC_DIR):
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
-from learning.network.build_model import build_model
+from learning.network.build_model import build_model, normalize_checkpoint_state_dict
 from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 from learning.dataloader.events_to_voxel.precomputed_voxel_clip import PrecomputedVoxelClipDataset
 
@@ -40,6 +40,11 @@ def load_inference_args(checkpoint_file: Path):
 
     loaded["checkpoint"] = None
     loaded["checkpoint_path"] = str(checkpoint_file.parent)
+    loaded["distributed"] = False
+    loaded["world_size"] = 1
+    loaded["rank"] = 0
+    loaded["local_rank"] = 0
+    loaded["is_main_process"] = True
     loaded.setdefault("precomputed_voxels", False)
     loaded.setdefault("voxel_filename", "derotated_voxels.npy")
     loaded.setdefault("derotation_slices", 100)
@@ -224,6 +229,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     infer_args = load_inference_args(checkpoint_file)
+    infer_args["device"] = str(device)
     dataset = build_inference_dataset(sequence_dir, infer_args)
 
     loader = DataLoader(
@@ -244,7 +250,7 @@ def main():
     else:
         state_dict = ckpt
 
-    model.load_state_dict(state_dict)
+    model.load_state_dict(normalize_checkpoint_state_dict(state_dict))
     model.to(device)
     model.eval()
 
