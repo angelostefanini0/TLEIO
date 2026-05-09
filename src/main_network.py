@@ -162,6 +162,29 @@ def cleanup_distributed(args):
     if args.get("distributed", False) and dist.is_available() and dist.is_initialized():
         dist.destroy_process_group()
 
+
+def save_args(args):
+    with open(os.path.join(args["checkpoint_path"], 'args.pkl'), 'wb') as f:
+        pickle.dump(args, f)
+    with open(os.path.join(args["checkpoint_path"], 'args.txt'), 'w') as f:
+        f.write(json.dumps(args))
+
+
+def apply_precomputed_voxel_args(args, dataset):
+    for key in (
+        "num_bins",
+        "denoising",
+        "denoise_dt_us",
+        "denoise_radius",
+        "denoise_min_supporters",
+        "denoise_same_polarity_only",
+        "derotate",
+        "derotation_slices",
+    ):
+        value = getattr(dataset, key, None)
+        if value is not None:
+            args[key] = value
+
         
 if __name__ == "__main__":
     args = setup_distributed(parse_args())
@@ -173,12 +196,6 @@ if __name__ == "__main__":
             os.makedirs(args["checkpoint_path"])
         if args["distributed"]:
             dist.barrier()
-
-        if args["is_main_process"]:
-            with open(os.path.join(args["checkpoint_path"], 'args.pkl'), 'wb') as f:
-                pickle.dump(args, f)
-            with open(os.path.join(args["checkpoint_path"], 'args.txt'), 'w') as f:
-                f.write(json.dumps(args))
 
         # tensorboard writer
         TensorBoardWriter = (
@@ -197,9 +214,10 @@ if __name__ == "__main__":
             train_data = PrecomputedVoxelClipDataset(
                 root_path=Path(args["root_dir"]),
                 clip_len=args["clip_len"],
-                num_bins=args["num_bins"],
+                num_bins=None,
                 voxel_filename=args["voxel_filename"],
             )
+            apply_precomputed_voxel_args(args, train_data)
             val_data = PrecomputedVoxelClipDataset(
                 root_path=Path(args["val_root_dir"]),
                 clip_len=args["clip_len"],
@@ -237,6 +255,9 @@ if __name__ == "__main__":
                 derotate=args["derotate"],
                 derotation_slices=args["derotation_slices"]
             )
+
+        if args["is_main_process"]:
+            save_args(args)
 
         # Compute the mean and std only on training data
         train_data.compute_stats(list(range(len(train_data))))

@@ -1,5 +1,6 @@
 from pathlib import Path
 import bisect
+import json
 
 import numpy as np
 import torch
@@ -27,6 +28,7 @@ class PrecomputedVoxelClipDataset(Dataset):
         self.seq_infos = []
         self.cum_lengths = []
         self._voxels = []
+        self.preprocessing_args = {}
         self.train_std = None
         self.train_mean = None
         self.eps = 1e-7
@@ -55,10 +57,32 @@ class PrecomputedVoxelClipDataset(Dataset):
                 raise ValueError(
                     f"{voxels_file}: expected shape [N, C, H, W], got {voxel_shape}"
                 )
-            if self.num_bins is not None and voxel_shape[1] != self.num_bins:
+            if self.num_bins is None:
+                self.num_bins = int(voxel_shape[1])
+            elif voxel_shape[1] != self.num_bins:
                 raise ValueError(
                     f"{voxels_file}: expected {self.num_bins} bins, got {voxel_shape[1]}"
                 )
+
+            metadata_file = seq_path / "metadata.json"
+            if metadata_file.exists():
+                with open(metadata_file, "r") as fh:
+                    metadata = json.load(fh)
+                if "num_bins" in metadata and metadata["num_bins"] != self.num_bins:
+                    raise ValueError(f"{seq_path}: metadata num_bins does not match voxel shape.")
+                for key in (
+                    "denoising",
+                    "denoise_dt_us",
+                    "denoise_radius",
+                    "denoise_min_supporters",
+                    "denoise_same_polarity_only",
+                    "derotate",
+                    "derotation_slices",
+                ):
+                    if key in metadata:
+                        if key in self.preprocessing_args and self.preprocessing_args[key] != metadata[key]:
+                            raise ValueError(f"{seq_path}: inconsistent precomputed voxel metadata for {key}.")
+                        self.preprocessing_args[key] = metadata[key]
 
             anchors_us = np.concatenate(
                 [rel_transf[:1, 0], rel_transf[:, 1]],
@@ -82,6 +106,10 @@ class PrecomputedVoxelClipDataset(Dataset):
             self._voxels.append(None)
             total += num_samples
             self.cum_lengths.append(total)
+
+        self.preprocessing_args.setdefault("num_bins", self.num_bins)
+        for key, value in self.preprocessing_args.items():
+            setattr(self, key, value)
 
     def __len__(self):
         return self.cum_lengths[-1] if self.cum_lengths else 0

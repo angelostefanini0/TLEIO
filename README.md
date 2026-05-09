@@ -204,8 +204,6 @@ CUDA_VISIBLE_DEVICES=0 python src/main_network.py \
 --prefetch_factor 2 \
 --amp true \
 --amp_dtype bfloat16 \
---num_bins 5 \
---downsampling_factor 0.7 \
 --clip_len 5
 ```
 
@@ -250,8 +248,6 @@ torchrun --standalone --nproc_per_node=8 src/main_network.py \
 --prefetch_factor 2 \
 --amp true \
 --amp_dtype bfloat16 \
---num_bins 5 \
---downsampling_factor 0.7 \
 --clip_len 5
 ```
 

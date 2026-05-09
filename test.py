@@ -51,6 +51,22 @@ def load_inference_args(checkpoint_file: Path):
     return loaded
 
 
+def apply_precomputed_voxel_args(args_dict, dataset):
+    for key in (
+        "num_bins",
+        "denoising",
+        "denoise_dt_us",
+        "denoise_radius",
+        "denoise_min_supporters",
+        "denoise_same_polarity_only",
+        "derotate",
+        "derotation_slices",
+    ):
+        value = getattr(dataset, key, None)
+        if value is not None:
+            args_dict[key] = value
+
+
 def build_inference_dataset(sequence_dir: Path, args_dict):
     sequence_dir = sequence_dir.resolve()
 
@@ -65,9 +81,10 @@ def build_inference_dataset(sequence_dir: Path, args_dict):
         dataset = PrecomputedVoxelClipDataset(
             root_path=dataset_root,
             clip_len=args_dict["clip_len"],
-            num_bins=args_dict["num_bins"],
+            num_bins=None,
             voxel_filename=voxel_filename,
         )
+        apply_precomputed_voxel_args(args_dict, dataset)
     else:
         if (sequence_dir / "events.h5").exists():
             dataset_root = sequence_dir.parent
