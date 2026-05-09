@@ -221,11 +221,67 @@ def collect_averaged_predictions(loader, model, device, infer_args, target_mean,
     return average_overlapping_predictions(prediction_store)
 
 
+def collect_raw_model_outputs(loader, model, device, infer_args, target_mean, target_std):
+    rows = []
+
+    with torch.no_grad():
+        for batch in loader:
+            x = batch["representation"].to(device).float()
+            anchors = batch["anchors_us"].cpu().numpy()
+            y_hat = model(x)
+            y_hat_tr = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 3)
+
+            if target_mean is not None and target_std is not None:
+                y_hat_tr = y_hat_tr * target_std + target_mean
+
+            y_hat_tr = y_hat_tr.cpu().numpy()
+
+            for i in range(y_hat_tr.shape[0]):
+                row = []
+                anc_i = anchors[i]
+                for step_idx in range(y_hat_tr.shape[1]):
+                    row.extend(
+                        [
+                            int(anc_i[step_idx]),
+                            int(anc_i[step_idx + 1]),
+                            *y_hat_tr[i, step_idx],
+                        ]
+                    )
+                rows.append(row)
+
+    return np.asarray(rows, dtype=np.float64).reshape(-1, 5 * (infer_args["clip_len"] - 1))
+
+
+def raw_model_output_path(output_file: Path):
+    return output_file.with_name(f"{output_file.stem}_raw_model_outputs{output_file.suffix}")
+
+
+def raw_model_output_header(clip_len: int):
+    columns = []
+    for step_idx in range(clip_len - 1):
+        columns.extend(
+            [
+                f"step{step_idx}_t0_us",
+                f"step{step_idx}_t1_us",
+                f"step{step_idx}_px",
+                f"step{step_idx}_py",
+                f"step{step_idx}_pz",
+            ]
+        )
+    return " ".join(columns)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sequence_dir", type=str, required=True)
     parser.add_argument("--checkpoint_file", type=str, required=True)
     parser.add_argument("--output_file", type=str, required=True)
+    parser.add_argument(
+        "--raw_model_output_file",
+        type=str,
+        default=None,
+        help="Optional path for one raw model-output row per clip.",
+    )
     parser.add_argument(
         "--num_workers",
         type=int,
@@ -242,6 +298,11 @@ def main():
     sequence_dir = Path(args_cli.sequence_dir)
     checkpoint_file = Path(args_cli.checkpoint_file)
     output_file = Path(args_cli.output_file)
+    raw_output_file = (
+        Path(args_cli.raw_model_output_file)
+        if args_cli.raw_model_output_file is not None
+        else raw_model_output_path(output_file)
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -279,9 +340,13 @@ def main():
         rows_pred, timestamps = collect_last_step_predictions(
             loader, model, device, infer_args, target_mean, target_std
         )
+    raw_model_outputs = collect_raw_model_outputs(
+        loader, model, device, infer_args, target_mean, target_std
+    )
     out = np.concatenate([timestamps, rows_pred], axis=1)
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
+    raw_output_file.parent.mkdir(parents=True, exist_ok=True)
     
     np.savetxt(
         output_file,
@@ -290,9 +355,18 @@ def main():
         header="t0_us t1_us px py pz",
         comments="",
     )
+    np.savetxt(
+        raw_output_file,
+        raw_model_outputs,
+        fmt=(["%d", "%d"] + ["%.10f"] * 3) * (infer_args["clip_len"] - 1),
+        header=raw_model_output_header(infer_args["clip_len"]),
+        comments="",
+    )
 
     print(f"Saved: {output_file}")
+    print(f"Saved raw model outputs: {raw_output_file}")
     print(f"num_relative_motions: {len(rows_pred)}")
+    print(f"num_raw_model_output_clips: {len(raw_model_outputs)}")
     print(f"average_overlaps: {args_cli.average_overlaps}")
 
 
