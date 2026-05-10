@@ -11,7 +11,7 @@ from filter.utils.math_utils import hat,enforce_symmetry_and_pos_def
 
 
 def extract_raw_triplet_measurement(network_output):
-    """Extract the raw `2 x 3` relative-pose means from a flexible input format.
+    """Extract the raw `4 x 3` relative-pose means from a flexible input format.
 
     The filter accepts either a bare NumPy array or a dictionary so that the
     runner can stay simple while the learned model interface is still evolving.
@@ -29,13 +29,13 @@ def extract_raw_triplet_measurement(network_output):
             )
     else:  # Handles a NumPy array
         raw = network_output
-    # Flattened 6D arrays are reshaped into 2 rows (one for each edge), 3 columns (x, y, z)
+    # Flattened 12D arrays are reshaped into 4 rows (one for each edge), 3 columns (x, y, z)
     raw = np.asarray(raw, dtype=float)
-    if raw.shape == (6,):
-        raw = raw.reshape(2, 3)
-    if raw.shape != (2, 3):
+    if raw.shape == (12,):
+        raw = raw.reshape(4, 3)
+    if raw.shape != (4, 3):
         raise ValueError(
-            f"Expected raw relative-pose means with shape (2, 3), got {raw.shape}."
+            f"Expected raw relative-pose means with shape (4, 3), got {raw.shape}."
         )
     return raw.copy()
 
@@ -58,9 +58,9 @@ def normalize_triplet_measurement(raw_measurement):
 
 
 def extract_joint_measurement_covariance(network_output):
-    """Extract an optional joint 6x6 covariance from the network output.
+    """Extract an optional joint 12x12 covariance from the network output.
 
-    The EKF update operates in the stacked 6D residual space, so the provided
+    The EKF update operates in the stacked 12D residual space, so the provided
     covariance is expected to already live in that space.
     """
 
@@ -77,25 +77,27 @@ def extract_joint_measurement_covariance(network_output):
         return None
 
     covariance = np.asarray(covariance, dtype=float)
-    # Reshape 1D arrays of length 36 into 6x6 matrices
-    if covariance.shape == (36,):
-        covariance = covariance.reshape(6, 6)
-    if covariance.shape != (6, 6):
+    # Reshape 1D arrays of length 144 into 12x12 matrices
+    if covariance.shape == (144,):
+        covariance = covariance.reshape(12, 12)
+    if covariance.shape != (12, 12):
         raise ValueError(
-            f"Expected a joint measurement covariance with shape (6, 6), got {covariance.shape}."
+            f"Expected a joint measurement covariance with shape (12, 12), got {covariance.shape}."
         )
     return covariance
 
 
 def make_default_joint_covariance(sigma_translation):
-    """Build a conservative block-diagonal joint covariance for both pose edges."""
+    """Build a conservative block-diagonal joint covariance for all pose edges."""
     # Create a 3x3 diagonal matrix for a single edge
     pair_cov = np.diag(
         [sigma_translation**2] * 3 )
-    # Stacks two 3x3 matrices in a 6x6 joint covariance matrix
-    joint_cov = np.zeros((6, 6), dtype=float)
+    # Stacks four 3x3 matrices in a 12x12 joint covariance matrix
+    joint_cov = np.zeros((12, 12), dtype=float)
     joint_cov[0:3, 0:3] = pair_cov
     joint_cov[3:6, 3:6] = pair_cov
+    joint_cov[6:9, 6:9] = pair_cov
+    joint_cov[9:12, 9:12] = pair_cov
     return joint_cov
 
 def predict_relative_pose(R_i, p_i, R_j, p_j):
@@ -162,22 +164,22 @@ def embed_pair_jacobian(local_jacobian, clone_i, clone_j, state_dim, imu_dim=15)
 def build_triplet_update(state, network_output, default_covariance, covariance_scale=1.0):
     """Build the stacked TLEIO measurement residual, Jacobian, and covariance.
 
-    The filter expects exactly three clones because the learned triplet
-    measurement corresponds to the consecutive clone pairs `(1 -> 2)` and
-    `(2 -> 3)`.
+    The filter expects exactly five clones because the learned triplet
+    measurement corresponds to the consecutive clone pairs `(1 -> 2)`,
+    `(2 -> 3)`,`(3 -> 4)` and `(4 -> 5)`.
     """
     # Enforce triplet constraint
-    if len(state.clone_Rs) != 3 or len(state.clone_ps) != 3:
+    if len(state.clone_Rs) != 5 or len(state.clone_ps) != 5:
         raise ValueError(
-            "TLEIO update requires exactly three clones before building the triplet measurement."
+            "TLEIO update requires exactly five clones before building the triplet measurement."
         )
-    # Extract 2x3 measurement and 6x6 covariance
+    # Extract 4x3 measurement and 12x12 covariance
     measurement = extract_raw_triplet_measurement(network_output)
     covariance = extract_joint_measurement_covariance(network_output)
 
     residual_list, jacobians = [], []
     # Define the two edges: 0->1 and 1->2
-    pair_specs = ((0, 1, measurement[0]), (1, 2, measurement[1]))
+    pair_specs = ((0, 1, measurement[0]), (1, 2, measurement[1]),(2,3,measurement[2]),(3,4,measurement[3]))
 
     state_dim = state.P.shape[0]
     # Loop over both edges to build and stack the local matrices

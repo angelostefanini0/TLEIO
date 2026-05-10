@@ -144,8 +144,8 @@ def _load_relative_motion_table(sequence_path: Path, use_gt: bool) -> np.ndarray
             f"{rel_path} has shape {relative_motions.shape}, expected N x 5 or N x 9: "
             "t0 t1 px py pz [qx qy qz qw]."
         )
-    if relative_motions.shape[0] < 2:
-        raise ValueError(f"{rel_path} needs at least two rows to form one triplet update.")
+    if relative_motions.shape[0] < 4:
+        raise ValueError(f"{rel_path} needs at least four rows to form one triplet update.")
     return relative_motions
 
 
@@ -248,8 +248,8 @@ def _truncate_sequence(
     if max_frames is None:
         return anchor_timestamps_us, anchor_positions, anchor_quaternions, relative_measurements, relative_sigmas
 
-    if max_frames < 3:
-        raise ValueError("`max_frames` must be at least 3 to run triplet updates.")
+    if max_frames < 5:
+        raise ValueError("`max_frames` must be at least 5 to run triplet updates.")
     # Truncate all related arrays
     anchor_timestamps_us = anchor_timestamps_us[:max_frames]
     anchor_positions = anchor_positions[:max_frames]
@@ -525,20 +525,20 @@ def run_filter(config: RunnerConfig) -> dict:
     rejected_updates = 0
     # The first state clone (anchor 0) is recorded before propagating
     ekf.augment_clone()
-    # Propagate EKF state forward using IMU segment 0 (from anchor 0 to anchor 1)
-    ekf.propagate(anchor_imu_segments[0])
-    trajectory_rows.append(_state_to_row(anchor_times_s[1], ekf.state))
-    # Augment clone for anchor 1
-    ekf.augment_clone()
+    # Propagate EKF state forward using IMU segment 0 and augment clone (Initialization)
+    for anchor_idx in range(1, 4):
+        ekf.propagate(anchor_imu_segments[anchor_idx - 1])
+        ekf.augment_clone()
+        trajectory_rows.append(_state_to_row(anchor_times_s[anchor_idx], ekf.state))
 
     # MAIN FILTER LOOP (Triplets)
     # Iterating starting from anchor 2 ensures we have a triplet window available
-    for anchor_idx in range(2, len(anchor_times_s)):
+    for anchor_idx in range(4, len(anchor_times_s)):
         # Prediction Step (IMU Integration)
         ekf.propagate(anchor_imu_segments[anchor_idx - 1])
         ekf.augment_clone()
         # Measurement Extraction
-        measurement = relative_measurements[anchor_idx - 2 : anchor_idx].copy()
+        measurement = relative_measurements[anchor_idx - 4 : anchor_idx].copy()
         # Optionally inject extra noise into the measurement for testing
         if config.extra_measurement_noise_t > 0.0:
             measurement += rng.normal(
@@ -549,9 +549,9 @@ def run_filter(config: RunnerConfig) -> dict:
         # If relative sigmas from Transformer are available, inject them 
         # dynamically into the covariance diagonal.
         if relative_sigmas is not None:
-            sigmas = relative_sigmas[anchor_idx - 2 : anchor_idx] # shape (2, 3)
+            sigmas = relative_sigmas[anchor_idx - 4 : anchor_idx] # shape (2, 3)
             variances = (sigmas.flatten()) ** 2 
-            np.fill_diagonal(current_joint_covariance[0:6, 0:6], variances)
+            np.fill_diagonal(current_joint_covariance[0:12, 0:12], variances)
         # Measurement update
         update_info = ekf.update(
             {
@@ -608,7 +608,7 @@ def run_filter(config: RunnerConfig) -> dict:
         "dataset": config.dataset,
         "sequence": config.sequence,
         "num_anchors": int(len(anchor_times_s)),
-        "num_updates_attempted": int(len(anchor_times_s) - 2),
+        "num_updates_attempted": int(len(anchor_times_s) - 4),
         "num_updates_rejected": int(rejected_updates),
         "mean_residual_norm": float(np.mean(residual_norms)) if residual_norms else None,
         "mean_delta_norm": float(np.mean(delta_norms)) if delta_norms else None,

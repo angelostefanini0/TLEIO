@@ -2,8 +2,8 @@
 
 This file is the core of the filter branch. It keeps the current IMU state,
 manages stochastic pose clones at the three frame times, propagates with IMU
-measurements, and performs the stacked `(1 -> 2, 2 -> 3)` relative-pose update
-using the transformer's `2 x 3` output after converting it to a minimal 12D
+measurements, and performs the stacked `(1 -> 2, 2 -> 3, 3 -> 4, 4 -> 5)` relative-pose update
+using the transformer's `4 x 3` output after converting it to a minimal 12D
 EKF residual.
 """
 
@@ -58,7 +58,7 @@ class ImuMSCKF:
     #Constants
     IMU_STATE_DIM = 15
     CLONE_STATE_DIM = 6
-    CHI2_THRESHOLD = 12.59 #95% confidence for 6 DoF
+    CHI2_THRESHOLD = 21.026 #95% confidence for 6 DoF
 
 
     def __init__(self, args):
@@ -205,8 +205,8 @@ class ImuMSCKF:
     def update(self, network_output):
         """Run the stacked TLEIO relative-pose EKF update on the three clones.
 
-        The input is expected to contain the transformer's raw `2 x 3` mean
-        output and, optionally, one joint `6 x 6` covariance for the stacked
+        The input is expected to contain the transformer's raw `4 x 3` mean
+        output and, optionally, one joint `12 x 12` covariance for the stacked
         residual space.
 
         `build_triplet_update()` returns the Jacobian of the residual itself,
