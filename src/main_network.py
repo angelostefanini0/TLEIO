@@ -173,6 +173,7 @@ def save_args(args):
 def apply_precomputed_voxel_args(args, dataset):
     for key in (
         "num_bins",
+        "downsampling_factor",
         "denoising",
         "denoise_dt_us",
         "denoise_radius",

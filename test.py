@@ -54,6 +54,7 @@ def load_inference_args(checkpoint_file: Path):
 def apply_precomputed_voxel_args(args_dict, dataset):
     for key in (
         "num_bins",
+        "downsampling_factor",
         "denoising",
         "denoise_dt_us",
         "denoise_radius",

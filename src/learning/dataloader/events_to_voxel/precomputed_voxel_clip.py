@@ -71,6 +71,7 @@ class PrecomputedVoxelClipDataset(Dataset):
                 if "num_bins" in metadata and metadata["num_bins"] != self.num_bins:
                     raise ValueError(f"{seq_path}: metadata num_bins does not match voxel shape.")
                 for key in (
+                    "downsampling_factor",
                     "denoising",
                     "denoise_dt_us",
                     "denoise_radius",
