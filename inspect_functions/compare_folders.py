@@ -6,7 +6,7 @@ The script compares the recursive folder tree, symlinks, regular file bytes,
 and HDF5 internals for .h5/.hdf5 files. It exits with:
   0: folders are identical under the selected checks
   1: differences were found
-  2: usage error or an unreadable/corrupted file was encountered
+  2: usage error or an unreadable/corrupted file was encountere
 """
 
 from __future__ import annotations
