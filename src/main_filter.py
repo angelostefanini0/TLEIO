@@ -62,15 +62,15 @@ class RunnerConfig:
     imu_axis_multipliers: tuple[float, float, float] = (1.0, 1.0, 1.0)
 
     # IMU process noise
-    sigma_na: float = 0.3449470268
-    sigma_ng: float = 0.003342473159
-    sigma_nba: float = 2.04497274e-05
-    sigma_nbg: float = 6.305526159e-05
+    sigma_na: float = 0.09300120794
+    sigma_ng: float = 0.006273406293
+    sigma_nba: float = 7.191712925e-05
+    sigma_nbg: float = 4.625270408e-06
 
     # EKF assumed measurement covariance
-    assumed_sigma_rel_t: float = 0.0005527523297
+    assumed_sigma_rel_t: float = 0.01470286106
     assumed_sigma_rel_r_deg: float = 2.0
-    meas_cov_scale: float = 0.6656121359
+    meas_cov_scale: float = 3.196266367
 
     # Optional extra synthetic noise added on top of measurements
     extra_measurement_noise_t: float = 0.0
@@ -83,11 +83,11 @@ class RunnerConfig:
     initial_bg: tuple[float, float, float] = (0.0, 0.0, 0.0)
     initial_ba: tuple[float, float, float] = (0.0, 0.0, 0.0)
     gravity_world_mps2: tuple[float, float, float] = (0.0, 0.0, 9.80665)
-    initial_attitude_sigma_deg: float = 0.200978225
-    initial_velocity_sigma_mps: float = 0.2084049678
-    initial_position_sigma_m: float = 0.02644018532
-    initial_bg_sigma_rps: float = 0.003446011335
-    initial_ba_sigma_mps2: float = 0.0003773664216
+    initial_attitude_sigma_deg: float = 3.060967044
+    initial_velocity_sigma_mps: float = 0.09736636976
+    initial_position_sigma_m: float = 0.005487937419
+    initial_bg_sigma_rps: float = 0.001374626738
+    initial_ba_sigma_mps2: float = 0.04585903131
 
 # Global instance of default configuration
 CONFIG = RunnerConfig()
@@ -591,7 +591,7 @@ def run_filter(config: RunnerConfig) -> dict:
     sequence_out_dir = config.out_dir / config.sequence
     trajectory_table = np.asarray(trajectory_rows, dtype=np.float64)
     saved_path = _save_trajectory(
-        sequence_out_dir / f"{config.sequence}_trajectory.txt",
+        sequence_out_dir / f"stamped_traj_estimate.txt",
         trajectory_table,
     )
     ground_truth_trajectory = _build_ground_truth_trajectory(
