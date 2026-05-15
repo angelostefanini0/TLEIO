@@ -8,7 +8,8 @@ __pycache__/
 env/
 venv/
 .conda/
-
+azure/
+outputs/
 
 data/*
 !data/.gitkeep

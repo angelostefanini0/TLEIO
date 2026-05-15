@@ -1,0 +1,23 @@
+type: command
+command: >-
+  python src/main_network.py
+  --root_dir ${{inputs.train}}
+  --val_root_dir ${{inputs.val}}
+  --checkpoint_path ${{inputs.checkpoint_folder}}/checkpoints_quick
+  --b_size 8
+  --depth 12
+  --heads 6
+  --clip_len 5
+  --num_bins 5
+  --downsampling 0.7
+  --num_workers 4
+  --lr 10e-5
+  --epoch 2
+code: ./
+environment: azureml:tleio-env:9
+compute: azureml:BigBossV2
+resources:
+  shm_size: 128g
+distribution:
+  type: pytorch
+  process_count_per_instance: 8
