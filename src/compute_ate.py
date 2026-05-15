@@ -3,30 +3,21 @@ import argparse
 from pathlib import Path
 
 def read_trajectory_file(filename, time_scale=1.0, skip_header=False):
-    """
-    Legge un file di traiettoria.
-    Permette di scalare il tempo (es. 1e-6 per convertire microsecondi in secondi).
-    Se skip_header=True, scarta la prima riga del file.
-    """
     trajectory = {}
     with open(filename, 'r') as f:
         if skip_header:
-            next(f)  # Scarta la prima riga
+            next(f)  
             
         for line in f:
             if line.startswith('#') or line.strip() == '':
                 continue
             parts = line.split()
-            # Estraiamo il timestamp e lo scaliamo
             timestamp = float(parts[0]) * time_scale
             position = np.array([float(parts[1]), float(parts[2]), float(parts[3])])
             trajectory[timestamp] = position
     return trajectory
 
 def associate_trajectories(groundtruth, estimate, max_time_diff=0.02):
-    """
-    Associa i punti delle due traiettorie in base al timestamp più vicino.
-    """
     gt_keys = list(groundtruth.keys())
     est_keys = list(estimate.keys())
     
@@ -44,9 +35,6 @@ def associate_trajectories(groundtruth, estimate, max_time_diff=0.02):
     return gt_points, est_points
 
 def align_umeyama(model, data):
-    """
-    Passaggio 1: Algoritmo di Umeyama per trovare s, R, T.
-    """
     N = model.shape[1]
     
     mu_M = model.mean(axis=1, keepdims=True)
@@ -71,9 +59,6 @@ def align_umeyama(model, data):
     return s, R, T
 
 def compute_rmse(gt_points, est_points, s, R, T):
-    """
-    Passaggio 2: Calcolo dell'RMSE dopo l'allineamento.
-    """
     aligned_est_points = s * (R @ est_points) + T
     errors = gt_points - aligned_est_points
     squared_errors = np.sum(errors**2, axis=0)
@@ -81,62 +66,73 @@ def compute_rmse(gt_points, est_points, s, R, T):
     
     return rmse
 
-def main():
-    # Impostazione del parser per gli argomenti da riga di comando
-    parser = argparse.ArgumentParser(description="Calcola l'ATE tra groundtruth e stima.")
-    parser.add_argument("--dataset", type=str, required=True, help="Nome del dataset (es. eds)")
-    parser.add_argument("--sequence", type=str, required=True, help="Nome della sequenza (es. 00_peanuts_dark)")
-    args = parser.parse_args()
-
-    # ROOT è la cartella genitore di 'src' (ovvero la root del progetto)
-    ROOT = Path(__file__).resolve().parent.parent
-
-    # Costruzione dinamica dei percorsi
-    groundtruth_file = ROOT / "data" / args.dataset / "processed" / args.sequence / "stamped_groundtruth.txt"
-    estimate_file = ROOT / "outputs" / "main_filter" / args.sequence / "stamped_traj_estimate.txt"
+def process_sequence(dataset, sequence, root):
+    groundtruth_file = root / "data" / dataset / "processed" / sequence / "stamped_groundtruth.txt"
+    estimate_file = root / "outputs" / "main_filter" / sequence / "stamped_traj_estimate.txt"
     
-    print("Percorsi dei file:")
-    print(f" - Groundtruth: {groundtruth_file}")
-    print(f" - Estimate:    {estimate_file}\n")
+    print(f"\nElaborating sequence: {sequence}")
     
-    print("Lettura dei file in corso...")
     try:
-        # Moltiplichiamo per 10^-6 per portare la groundtruth da microsecondi a secondi (senza scartare righe)
         gt_dict = read_trajectory_file(groundtruth_file, time_scale=1e-6, skip_header=False)
-        
-        # La traiettoria stimata è in secondi (time_scale=1.0) e scartiamo la prima riga (skip_header=True)
         est_dict = read_trajectory_file(estimate_file, time_scale=1.0, skip_header=True)
     except FileNotFoundError as e:
-        print(f"Errore: Il file non esiste. \n{e}")
-        return
+        print(f"  -> Missing file: {e.filename}")
+        return None
     except StopIteration:
-        print("Errore: Il file di stima sembra essere vuoto o contiene solo una riga.")
-        return
+        print("  -> Empty file")
+        return None
 
-    print("Associazione dei timestamp...")
     gt_points, est_points = associate_trajectories(gt_dict, est_dict, max_time_diff=0.02)
     
     if gt_points.shape[1] == 0:
-        print("Errore: Nessun punto associato trovato. Controlla i timestamp dei file.")
-        return
+        print("  -> ERROR: No point found.")
+        return None
         
-    print(f"Trovati {gt_points.shape[1]} punti validi per il calcolo.")
-
-    # --- STEP 1: Allineamento ---
-    print("Calcolo della trasformazione di allineamento (s, R, T)...")
     s, R, T = align_umeyama(gt_points, est_points)
-    
-    # --- STEP 2: Calcolo RMSE ---
-    print("Calcolo dell'RMSE (ATE)...")
     ate_rmse = compute_rmse(gt_points, est_points, s, R, T)
     
-    print("\n" + "-"*30)
-    print(f"RISULTATI PER {args.sequence}:")
-    print(f"Scale (s): {s:.4f}")
-    print(f"Translation (T):\n{T}")
-    print(f"Rotation (R):\n{R}")
-    print(f"-> ATE (RMSE): {ate_rmse:.6f}")
-    print("-"*30)
+    print(f"  -> ATE (RMSE): {ate_rmse:.6f}  |  Scale (s): {s:.4f}")
+    return ate_rmse
+
+def main():
+    parser = argparse.ArgumentParser(description="Evaluate ATE between groundtruth and estimate.")
+    parser.add_argument("--dataset", type=str, required=True, help="Dataset (es. eds)")
+    parser.add_argument("--sequence", type=str, default=None, help="Sequence (optional. If absent, evaluates the entire dataset).")
+    args = parser.parse_args()
+
+    ROOT = Path(__file__).resolve().parent.parent
+    processed_dir = ROOT / "data" / args.dataset / "processed"
+
+    if not processed_dir.exists():
+        print(f"Error: Directory not found: {processed_dir}")
+        return
+
+    if args.sequence:
+        sequences = [args.sequence]
+    else:
+        sequences = [d.name for d in processed_dir.iterdir() if d.is_dir()]
+
+    sequences.sort()
+    
+    print(f"Found {len(sequences)} sequences in dataset '{args.dataset}'.")
+    
+    results = {}
+    for seq in sequences:
+        ate = process_sequence(args.dataset, seq, ROOT)
+        if ate is not None:
+            results[seq] = ate
+
+    if len(results) > 1:
+        print("\n" + "="*40)
+        print("FINAL SUMMARY ATE")
+        print("="*40)
+        for seq, ate in results.items():
+            print(f"{seq:<30} : {ate:.6f}")
+        
+        avg_ate = sum(results.values()) / len(results)
+        print("-" * 40)
+        print(f"{'AVG':<30} : {avg_ate:.6f}")
+        print("="*40)
 
 if __name__ == "__main__":
     main()
