@@ -1,38 +1,44 @@
 
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 
-
+# Environments
 .venv/
 env/
 venv/
 .conda/
 
-
-data/*
-!data/.gitkeep
-results/
-checkpoints/
-*.h5
-*.log
-*.zip
-
-
-thirdparty/*
-!thirdparty/README.md
-
-
-
+# Local/editor files
 .vscode/
 .idea/
 .DS_Store
 
+# Generated experiment outputs
+plots/
+results/
+checkpoints/
+precomputed_office_integer/
+data/*
+!data/.gitkeep
 
+# Large/local artifacts
+*.h5
+*.log
+*.zip
+downloads/
+
+# Local copies / external repos
+azure/
+tartanairpy/*
+thirdparty/*
+!thirdparty/README.md
+
+# Build artifacts
 build/
 develop-eggs/
 dist/
-downloads/
 eggs/
 .eggs/
 lib/
@@ -42,4 +48,3 @@ sdist/
 var/
 wheels/
 *.egg-info/
-tartanairpy/*
