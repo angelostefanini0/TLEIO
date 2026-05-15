@@ -51,6 +51,7 @@ class RunnerConfig:
     # Execution modes
     use_gt: bool = False  # Set via CLI argument
     plot_transformer: bool = False 
+    plot_imu: bool = False
     interactive_plot: bool = False 
     plot_projections: bool = False
 
@@ -61,15 +62,15 @@ class RunnerConfig:
     imu_axis_multipliers: tuple[float, float, float] = (1.0, 1.0, 1.0)
 
     # IMU process noise
-    sigma_na: float = 2.3488e-01
-    sigma_ng: float = 2.5087e-03
-    sigma_nba: float = 2.4505e-05
-    sigma_nbg: float = 1.4933e-05
+    sigma_na: float = 0.3449470268
+    sigma_ng: float = 0.003342473159
+    sigma_nba: float = 2.04497274e-05
+    sigma_nbg: float = 6.305526159e-05
 
     # EKF assumed measurement covariance
-    assumed_sigma_rel_t: float = 0.013836
+    assumed_sigma_rel_t: float = 0.0005527523297
     assumed_sigma_rel_r_deg: float = 2.0
-    meas_cov_scale: float = 1.0609
+    meas_cov_scale: float = 0.6656121359
 
     # Optional extra synthetic noise added on top of measurements
     extra_measurement_noise_t: float = 0.0
@@ -82,11 +83,11 @@ class RunnerConfig:
     initial_bg: tuple[float, float, float] = (0.0, 0.0, 0.0)
     initial_ba: tuple[float, float, float] = (0.0, 0.0, 0.0)
     gravity_world_mps2: tuple[float, float, float] = (0.0, 0.0, 9.80665)
-    initial_attitude_sigma_deg: float = 0.2343
-    initial_velocity_sigma_mps: float = 0.1158
-    initial_position_sigma_m: float = 0.01338
-    initial_bg_sigma_rps: float = 0.001112
-    initial_ba_sigma_mps2: float = 0.001536
+    initial_attitude_sigma_deg: float = 0.200978225
+    initial_velocity_sigma_mps: float = 0.2084049678
+    initial_position_sigma_m: float = 0.02644018532
+    initial_bg_sigma_rps: float = 0.003446011335
+    initial_ba_sigma_mps2: float = 0.0003773664216
 
 # Global instance of default configuration
 CONFIG = RunnerConfig()
@@ -515,6 +516,13 @@ def run_filter(config: RunnerConfig) -> dict:
     ekf = ImuMSCKF(_make_filter_args(config))
     ekf.g = np.asarray(config.gravity_world_mps2, dtype=np.float64)
     ekf.initialize_with_state(anchor_times_s[0], R0, v0, p0, bg0, ba0)
+    # Setting for IMU plot
+    imu_trajectory_rows = []
+    if config.plot_imu:
+        imu_ekf = ImuMSCKF(_make_filter_args(config))
+        imu_ekf.g = np.asarray(config.gravity_world_mps2, dtype=np.float64)
+        imu_ekf.initialize_with_state(anchor_times_s[0], R0.copy(), v0.copy(), p0.copy(), bg0.copy(), ba0.copy())
+        imu_trajectory_rows.append(_state_to_row(anchor_times_s[0], imu_ekf.state))
     # Pre-configure random noise generator and joint covariance matrices for measurements
     rng = np.random.default_rng(config.seed)
     joint_covariance = make_default_joint_covariance(float(config.assumed_sigma_rel_t))
@@ -531,12 +539,21 @@ def run_filter(config: RunnerConfig) -> dict:
         ekf.augment_clone()
         trajectory_rows.append(_state_to_row(anchor_times_s[anchor_idx], ekf.state))
 
+        if config.plot_imu:
+            imu_ekf.propagate(anchor_imu_segments[anchor_idx - 1])
+            imu_trajectory_rows.append(_state_to_row(anchor_times_s[anchor_idx], imu_ekf.state))
+
     # MAIN FILTER LOOP (Triplets)
     # Iterating starting from anchor 2 ensures we have a triplet window available
     for anchor_idx in range(4, len(anchor_times_s)):
         # Prediction Step (IMU Integration)
         ekf.propagate(anchor_imu_segments[anchor_idx - 1])
         ekf.augment_clone()
+
+        if config.plot_imu:
+            imu_ekf.propagate(anchor_imu_segments[anchor_idx - 1])
+            imu_trajectory_rows.append(_state_to_row(anchor_times_s[anchor_idx], imu_ekf.state))
+
         # Measurement Extraction
         measurement = relative_measurements[anchor_idx - 4 : anchor_idx].copy()
         # Optionally inject extra noise into the measurement for testing
@@ -593,12 +610,14 @@ def run_filter(config: RunnerConfig) -> dict:
             anchor_quaternions,
             config.max_frames
         )
+    imu_trajectory = np.asarray(imu_trajectory_rows, dtype=np.float64) if config.plot_imu else None
         
     # Diagnostics: compute error metrics
     diagnostics = compute_filter_diagnostics(
         trajectory_table,
         ground_truth_trajectory,
         regressed_trajectory=regressed_trajectory,
+        imu_trajectory= imu_trajectory,
         output_dir=sequence_out_dir,
         file_prefix=config.sequence,
         plot_projections=config.plot_projections,
@@ -615,6 +634,7 @@ def run_filter(config: RunnerConfig) -> dict:
         "trajectory": trajectory_table,
         "ground_truth": ground_truth_trajectory,
         "regressed": regressed_trajectory,
+        "imu_only": imu_trajectory,
         "saved_file": str(saved_path),
         "diagnostics": diagnostics,
     }
@@ -642,7 +662,12 @@ def parse_args():
     parser.add_argument(
         "--plot_transformer",
         action="store_true",
-        help="Plots the regressed trajectory from the Transformer alongside EKF and GT."
+        help="Plots the regressed trajectory from the Transformer."
+    )
+    parser.add_argument(
+        "--plot_imu",
+        action="store_true",
+        help="Plots the open-loop IMU integration trajectory."
     )
     parser.add_argument(
         "--interactive_plot",
@@ -677,6 +702,7 @@ def main() -> None:
         dataset=args.dataset,
         sequence=args.sequence,
         plot_transformer=args.plot_transformer,
+        plot_imu=args.plot_imu,
         interactive_plot=args.interactive_plot,
         plot_projections=args.plot_projections,
         **dataset_params
@@ -703,11 +729,13 @@ def main() -> None:
                 estimated_trajectory=results["trajectory"],
                 ground_truth_trajectory=results["ground_truth"],
                 regressed_trajectory=results["regressed"],
+                imu_trajectory=results.get("imu_only"),
             )
         else:
             show_interactive_3d_plot(
                 estimated_trajectory=results["trajectory"],
                 ground_truth_trajectory=results["ground_truth"],
+                imu_trajectory=results.get("imu_only"),
             )
 
 

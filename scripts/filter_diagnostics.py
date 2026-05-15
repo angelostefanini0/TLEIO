@@ -97,6 +97,7 @@ def save_trajectory_comparison_plot(
     gt_positions: np.ndarray,
     estimated_positions: np.ndarray,
     regressed_positions: np.ndarray | None = None,
+    imu_positions: np.ndarray | None = None,
 ) -> Path:
     """Save the standard x/y/z position comparison and total position error plot."""
 
@@ -114,6 +115,8 @@ def save_trajectory_comparison_plot(
         axis.plot(t_rel, gt_positions[:, axis_idx], label=f"GT {label}", color="tab:blue")
         if regressed_positions is not None:
             axis.plot(t_rel, regressed_positions[:, axis_idx], label=f"Regressed {label}", color="tab:orange", linestyle="--")
+        if imu_positions is not None:
+            axis.plot(t_rel, imu_positions[:, axis_idx], label=f"IMU {label}", color="tab:purple", linestyle=":")
         axis.plot(t_rel, estimated_positions[:, axis_idx], label=f"EKF {label}", color="tab:green")
         axis.set_title(f"{label.upper()} Position")
         axis.set_xlabel("time [s]")
@@ -126,6 +129,10 @@ def save_trajectory_comparison_plot(
         regressed_error = np.linalg.norm(regressed_positions - gt_positions, axis=1)
         axes[1, 1].plot(t_rel, regressed_error, color="tab:orange", linestyle="--", label="Regressed Error")
 
+    if imu_positions is not None:
+        imu_error = np.linalg.norm(imu_positions - gt_positions, axis=1)
+        axes[1, 1].plot(t_rel, imu_error, color="tab:purple", linestyle=":", label="IMU Error")
+    
     axes[1, 1].plot(t_rel, position_error, color="tab:red", label="EKF Error")
     axes[1, 1].set_title("Total Position Error")
     axes[1, 1].set_xlabel("time [s]")
@@ -144,6 +151,7 @@ def save_rotation_comparison_plot(
     times_s: np.ndarray,
     gt_quaternions_xyzw: np.ndarray,
     estimated_quaternions_xyzw: np.ndarray,
+    imu_quaternions_xyzw: np.ndarray | None = None,
 ) -> Path:
     """Save the standard roll/pitch/yaw comparison and geodesic rotation error plot."""
 
@@ -164,6 +172,15 @@ def save_rotation_comparison_plot(
         ]
     )
 
+    if imu_quaternions_xyzw is not None:
+        imu_euler_rad = Rotation.from_quat(imu_quaternions_xyzw).as_euler("xyz", degrees=False)
+        imu_euler_deg = np.rad2deg(np.unwrap(imu_euler_rad, axis=0))
+        
+        imu_rot_errors_deg = np.array([
+            rotation_error_deg(q_gt, q_imu)
+            for q_gt, q_imu in zip(gt_quaternions_xyzw, imu_quaternions_xyzw)
+        ])
+
     fig, axes = plt.subplots(2, 2, figsize=(12, 9))
     labels = ["Roll (X)", "Pitch (Y)", "Yaw (Z)"]
     for axis_idx, label in enumerate(labels):
@@ -172,6 +189,8 @@ def save_rotation_comparison_plot(
         axis = axes[row, col]
         axis.plot(t_rel, gt_euler_deg[:, axis_idx], label=f"GT {label}", color="tab:blue")
         axis.plot(t_rel, est_euler_deg[:, axis_idx], label=f"EKF {label}", color="tab:green")
+        if imu_quaternions_xyzw is not None:
+            axes[axis_idx//2, axis_idx%2].plot(t_rel, imu_euler_deg[:, axis_idx], color="tab:purple", linestyle=":", label=f"IMU {label}")
         axis.set_title(f"{label} Angle")
         axis.set_xlabel("time [s]")
         axis.set_ylabel("angle [deg]")
@@ -183,6 +202,8 @@ def save_rotation_comparison_plot(
     axes[1, 1].set_xlabel("time [s]")
     axes[1, 1].set_ylabel("Geodesic Error [deg]")
     axes[1, 1].grid(True)
+    if imu_quaternions_xyzw is not None:
+        axes[1, 1].plot(t_rel, imu_rot_errors_deg, color="tab:purple", linestyle=":", label="IMU Error")
     axes[1, 1].legend()
 
     fig.tight_layout()
@@ -196,6 +217,7 @@ def save_3d_trajectory_plot(
     gt_positions: np.ndarray,
     estimated_positions: np.ndarray,
     regressed_positions: np.ndarray | None = None,
+    imu_positions: np.ndarray | None = None,
 ) -> Path:
     """Save a 3D plot comparing the estimated trajectory against ground truth."""
 
@@ -220,10 +242,16 @@ def save_3d_trajectory_plot(
             regressed_positions[:, 0],
             regressed_positions[:, 1],
             regressed_positions[:, 2],
-            label="Regressed (Open Loop)",
+            label="Regressed",
             color="tab:orange",
             linestyle="--",
             linewidth=2,
+        )
+
+    if imu_positions is not None:
+        ax.plot(
+            imu_positions[:, 0], imu_positions[:, 1], imu_positions[:, 2],
+            label="IMU Only", color="tab:purple", linestyle=":", linewidth=2,
         )
 
     ax.plot(
@@ -267,6 +295,7 @@ def save_projections_plot(
     gt_positions: np.ndarray,
     estimated_positions: np.ndarray,
     regressed_positions: np.ndarray | None = None,
+    imu_positions: np.ndarray | None = None,
 ) -> Path:
     """Save 2D projections (XY, XZ, YZ) of the trajectories."""
 
@@ -293,6 +322,9 @@ def save_projections_plot(
                 color="tab:orange", 
                 linestyle="--"
             )
+
+        if imu_positions is not None:
+            ax.plot(imu_positions[:, idx1], imu_positions[:, idx2], label="IMU Only", color="tab:purple", linestyle=":", alpha=0.7)
             
         ax.plot(estimated_positions[:, idx1], estimated_positions[:, idx2], label="EKF Estimated", color="tab:green")
         
@@ -317,6 +349,7 @@ def show_interactive_3d_plot(
     estimated_trajectory: np.ndarray,
     ground_truth_trajectory: np.ndarray,
     regressed_trajectory: np.ndarray | None = None,
+    imu_trajectory: np.ndarray | None = None,
 ) -> None:
     """Open an interactive 3D plot with Matplotlib."""
     import matplotlib.pyplot as plt
@@ -331,7 +364,11 @@ def show_interactive_3d_plot(
     
     if regressed_trajectory is not None:
         reg_pos = regressed_trajectory[:, 1:4]
-        ax.plot(reg_pos[:, 0], reg_pos[:, 1], reg_pos[:, 2], label="Regressed (Open Loop)", color="tab:orange", linestyle="--", linewidth=2)
+        ax.plot(reg_pos[:, 0], reg_pos[:, 1], reg_pos[:, 2], label="Regressed", color="tab:orange", linestyle="--", linewidth=2)
+
+    if imu_trajectory is not None:
+        imu_pos = imu_trajectory[:, 1:4]
+        ax.plot(imu_pos[:, 0], imu_pos[:, 1], imu_pos[:, 2], label="IMU Only", color="tab:purple", linestyle=":", linewidth=2)
         
     ax.plot(est_pos[:, 0], est_pos[:, 1], est_pos[:, 2], label="EKF Estimated", color="tab:green", linewidth=2)
     
@@ -363,6 +400,7 @@ def compute_filter_diagnostics(
     estimated_trajectory: np.ndarray,
     ground_truth_trajectory: np.ndarray,
     regressed_trajectory: np.ndarray | None = None,
+    imu_trajectory: np.ndarray | None = None,
     output_dir: Path | None = None,
     file_prefix: str = "filter",
     plot_projections: bool = False,
@@ -403,6 +441,18 @@ def compute_filter_diagnostics(
         aligned_regr_positions = None
         aligned_regr_quaternions = None
 
+    if imu_trajectory is not None:
+        imu_np = np.asarray(imu_trajectory, dtype=np.float64)
+        aligned_imu_positions, aligned_imu_quaternions = interpolate_poses(
+            imu_np[:, 0],
+            imu_np[:, 1:4],
+            normalize_quaternions(imu_np[:, 4:8]),
+            est_times_s,
+        )
+    else:
+        aligned_imu_positions = None
+        aligned_imu_quaternions = None
+
     position_errors = est_positions - aligned_gt_positions
     x_rmse_m = float(np.sqrt(np.mean(position_errors[:, 0] ** 2)))
     y_rmse_m = float(np.sqrt(np.mean(position_errors[:, 1] ** 2)))
@@ -441,6 +491,7 @@ def compute_filter_diagnostics(
                 aligned_gt_positions,
                 est_positions,
                 regressed_positions=aligned_regr_positions,
+                imu_positions=aligned_imu_positions,
             )
         )
         saved_files["rotation_plot"] = str(
@@ -449,6 +500,7 @@ def compute_filter_diagnostics(
                 est_times_s,
                 aligned_gt_quaternions,
                 est_quaternions,
+                imu_quaternions_xyzw=aligned_imu_quaternions,
             )
         )
         saved_files["trajectory_3d_plot"] = str(
@@ -457,6 +509,7 @@ def compute_filter_diagnostics(
                 aligned_gt_positions,
                 est_positions,
                 regressed_positions=aligned_regr_positions,
+                imu_positions=aligned_imu_positions,
             )
         )
         
@@ -467,6 +520,7 @@ def compute_filter_diagnostics(
                     aligned_gt_positions,
                     est_positions,
                     regressed_positions=aligned_regr_positions,
+                    imu_positions=aligned_imu_positions,
                 )
             )
 
