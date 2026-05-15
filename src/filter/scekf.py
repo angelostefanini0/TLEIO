@@ -78,6 +78,7 @@ class ImuMSCKF:
         self.initial_attitude_sigma_rad = getattr(args, "initial_attitude_sigma_rad", 0.01)
         self.initial_velocity_sigma_mps = getattr(args, "initial_velocity_sigma_mps", 0.5)
         self.initial_position_sigma_m = getattr(args, "initial_position_sigma_m", 0.01)
+        self.initial_z_sigma_m = getattr(args, "initial_z_sigma_m", 0.01)
         self.initial_bg_sigma_rps = getattr(args, "initial_bg_sigma_rps", 0.004)
         self.initial_ba_sigma_mps2 = getattr(args, "initial_ba_sigma_mps2", 0.04)
 
@@ -113,7 +114,8 @@ class ImuMSCKF:
             self.state.P = np.zeros((self.IMU_STATE_DIM, self.IMU_STATE_DIM))
             self.state.P[0:3, 0:3] = np.eye(3) * self.initial_attitude_sigma_rad**2
             self.state.P[3:6, 3:6] = np.eye(3) * self.initial_velocity_sigma_mps**2
-            self.state.P[6:9, 6:9] = np.eye(3) * self.initial_position_sigma_m**2
+            self.state.P[6:8, 6:8] = np.eye(2) * self.initial_position_sigma_m**2
+            self.state.P[8,8]=self.initial_z_sigma_m**2
             self.state.P[9:12, 9:12] = np.eye(3) * self.initial_bg_sigma_rps**2
             self.state.P[12:15, 12:15] = np.eye(3) * self.initial_ba_sigma_mps2**2
         else:

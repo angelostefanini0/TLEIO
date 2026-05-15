@@ -3,7 +3,7 @@
 1. load one processed sequence (`anchor_poses.txt`, `relative_motions.txt`, `imu.csv`);
 2. initialize the EKF from the first two anchor poses;
 3. propagate the IMU exactly from anchor to anchor;
-4. update the EKF with overlapping triplets of relative translations from `regressed_relative_motions.txt`;
+4. update the EKF with overlapping triplets of relative translations from the transformer;
 5. marginalize a single oldest clone after each attempted update.
 
 The transformer's output is assumed to already be available on disk.
@@ -62,15 +62,15 @@ class RunnerConfig:
     imu_axis_multipliers: tuple[float, float, float] = (1.0, 1.0, 1.0)
 
     # IMU process noise
-    sigma_na: float = 0.09300120794
-    sigma_ng: float = 0.006273406293
-    sigma_nba: float = 7.191712925e-05
-    sigma_nbg: float = 4.625270408e-06
+    sigma_na: float = 0.011065875226523246
+    sigma_ng: float = 0.01251528557615725
+    sigma_nba: float = 6.536078678232154e-05
+    sigma_nbg: float = 2.1514640261497524e-05
 
     # EKF assumed measurement covariance
-    assumed_sigma_rel_t: float = 0.01470286106
+    assumed_sigma_rel_t: float = 0.02194332115673975
     assumed_sigma_rel_r_deg: float = 2.0
-    meas_cov_scale: float = 3.196266367
+    meas_cov_scale: float = 1.2649054158337365
 
     # Optional extra synthetic noise added on top of measurements
     extra_measurement_noise_t: float = 0.0
@@ -83,11 +83,12 @@ class RunnerConfig:
     initial_bg: tuple[float, float, float] = (0.0, 0.0, 0.0)
     initial_ba: tuple[float, float, float] = (0.0, 0.0, 0.0)
     gravity_world_mps2: tuple[float, float, float] = (0.0, 0.0, 9.80665)
-    initial_attitude_sigma_deg: float = 3.060967044
-    initial_velocity_sigma_mps: float = 0.09736636976
-    initial_position_sigma_m: float = 0.005487937419
-    initial_bg_sigma_rps: float = 0.001374626738
-    initial_ba_sigma_mps2: float = 0.04585903131
+    initial_attitude_sigma_deg: float = 0.11534784349262132
+    initial_velocity_sigma_mps: float = 1.8658950002457901
+    initial_position_sigma_m: float = 0.04181564546764053
+    initial_z_sigma_m: float = 0.006867502596918262
+    initial_bg_sigma_rps: float = 0.00033573143221825514
+    initial_ba_sigma_mps2: float = 0.1779266257977154
 
 # Global instance of default configuration
 CONFIG = RunnerConfig()
@@ -123,7 +124,7 @@ def _load_anchor_poses(sequence_path: Path) -> tuple[np.ndarray, np.ndarray, np.
 def _load_relative_motion_table(sequence_path: Path, use_gt: bool) -> np.ndarray:
     """Load processed relative motions and skip any stale non-numeric header lines."""
     #Chooses file based on configuration
-    filename = "relative_motions.txt" if use_gt else "regressed_relative_motions.txt"
+    filename = "relative_motions.txt" if use_gt else f"{sequence_path.name}.txt"
     rel_path = sequence_path / filename
     
     rows: list[list[float]] = []
@@ -353,6 +354,7 @@ def _make_filter_args(config: RunnerConfig) -> SimpleNamespace:
         initial_attitude_sigma_rad=float(np.deg2rad(config.initial_attitude_sigma_deg)),
         initial_velocity_sigma_mps=float(config.initial_velocity_sigma_mps),
         initial_position_sigma_m=float(config.initial_position_sigma_m),
+        initial_z_sigma_m=float(config.initial_z_sigma_m),
         initial_bg_sigma_rps=float(config.initial_bg_sigma_rps),
         initial_ba_sigma_mps2=float(config.initial_ba_sigma_mps2),
     )

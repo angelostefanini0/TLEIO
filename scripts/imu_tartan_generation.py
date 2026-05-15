@@ -5,10 +5,10 @@ Edit the USER CONFIGURATION section below, then run:
     python scripts/imu_tartan_generation.py
 
 The script reads:
-    data/tartanair/processed_train/<TRAJECTORY_NAME>/stamped_groundtruth.txt
+    data/tartanair/<TRAJECTORY_NAME>/stamped_groundtruth.txt
 
 and writes:
-    data/tartanair/processed_train/<TRAJECTORY_NAME>/imu.csv
+    data/tartanair/<TRAJECTORY_NAME>/imu.csv
 
 Output columns are:
     timestamp_us,gx,gy,gz,ax,ay,az
@@ -35,11 +35,11 @@ from scipy.spatial.transform import Rotation, RotationSpline, Slerp
 # =============================================================================
 
 # Name of the trajectory folder inside data/tartanair/processed_train.
-TRAJECTORY_NAME = "office_Easy_P003"
+TRAJECTORY_NAME = "office_Easy_P000"
 
 # Root containing the processed TartanAir trajectory folders.
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PROCESSED_TRAIN_ROOT = REPO_ROOT / "data/tartanair/processed_train"
+PROCESSED_TRAIN_ROOT = REPO_ROOT / "data/tartanair/processed/"
 
 # Input and output filenames inside the selected trajectory folder.
 GROUNDTRUTH_FILENAME = "stamped_groundtruth.txt"
@@ -53,15 +53,15 @@ GRAVITY_WORLD_MPS2 = np.array([0.0, 0.0, 9.80665], dtype=np.float64)
 
 # Add zero-mean Gaussian noise after ideal IMU generation. Keep at 0.0 for an
 # ideal IMU stream.
-GYRO_NOISE_STD_RAD_S = 0.0
-ACCEL_NOISE_STD_MPS2 = 0.0
+GYRO_NOISE_STD_RAD_S = 3e-3
+ACCEL_NOISE_STD_MPS2 = 0.1
 
 # Optional IMU biases. The initial bias is added to every sample. Random walk
 # values are continuous-time std devs, scaled internally by sqrt(dt).
-INITIAL_GYRO_BIAS_RAD_S = np.array([0.0, 0.0, 0.0], dtype=np.float64)
-INITIAL_ACCEL_BIAS_MPS2 = np.array([0.0, 0.0, 0.0], dtype=np.float64)
-GYRO_BIAS_RANDOM_WALK_STD_RAD_S_SQRT_S = 0.0
-ACCEL_BIAS_RANDOM_WALK_STD_MPS2_SQRT_S = 0.0
+INITIAL_GYRO_BIAS_RAD_S = np.array([0.004, -0.003, 0.005], dtype=np.float64)
+INITIAL_ACCEL_BIAS_MPS2 = np.array([0.03, -0.02, 0.04], dtype=np.float64)
+GYRO_BIAS_RANDOM_WALK_STD_RAD_S_SQRT_S = 2.0e-5
+ACCEL_BIAS_RANDOM_WALK_STD_MPS2_SQRT_S = 2.0e-4
 RANDOM_SEED = 7
 
 # Refuse to overwrite an existing imu.csv unless this is True.
