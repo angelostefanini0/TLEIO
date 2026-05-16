@@ -217,7 +217,7 @@ def main() -> None:
 
     processed_dir = CONFIG.data_root / args.dataset / "processed"
     if not processed_dir.exists():
-        print(f"Errore: Dataset path {processed_dir} non trovato.")
+        print(f"Error: Dataset path {processed_dir} not found.")
         return
 
     if args.sequence:
@@ -229,7 +229,7 @@ def main() -> None:
 
     for seq in sequences:
         print("\n" + "=" * 50)
-        print(f"OTTIMIZZAZIONE PER LA SEQUENZA: {seq}")
+        print(f"Optimizing: {seq}")
         print("=" * 50)
 
         base_config = replace(
@@ -252,7 +252,7 @@ def main() -> None:
                 seed=args.seed,
             )
         except Exception as exc:
-            print(f"Errore critico durante l'ottimizzazione della sequenza {seq}: {exc}")
+            print(f"Errorwhile optimizing {seq}: {exc}")
             continue
 
         best = summary["best"]
