@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass, replace
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import sys
@@ -42,14 +43,11 @@ class RunnerConfig:
     data_root: Path = ROOT / "data"
     dataset: str = "eds"
     sequence: str = "00_peanuts_dark"
+    out_dir: Path = ROOT / "outputs" / "main_filter"
 
     @property
     def processed_root(self) -> Path:
         return self.data_root / self.dataset / "processed"
-    
-    @property
-    def out_dir(self) -> Path:
-        return ROOT / "outputs" / "main_filter" / self.dataset
 
     # Execution modes
     use_gt: bool = False  # Set via CLI argument
@@ -699,6 +697,14 @@ def main() -> None:
             "imu_axis_multipliers": (-1.0, -1.0, 1.0),
             "gravity_world_mps2": (0.0, 0.0, -9.80665)
         }
+    json_params = {}
+    json_path = ROOT / "outputs" / "tuning" / args.sequence / "best_filter_params.json"
+    
+    if json_path.exists():
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if "best" in data and "params" in data["best"]:
+                json_params = data["best"]["params"]
 
     # Create a new config based on CONFIG but overriding attributes from args
     active_config = replace(
@@ -710,7 +716,8 @@ def main() -> None:
         plot_imu=args.plot_imu,
         interactive_plot=args.interactive_plot,
         plot_projections=args.plot_projections,
-        **dataset_params
+        **dataset_params,
+        **json_params
     )
     # Execute EKF processing
     results = run_filter(active_config)

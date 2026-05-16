@@ -54,22 +54,18 @@ def score_run(results: dict, config: RunnerConfig) -> dict[str, float]:
     pos_rmse = float(diagnostics["position_rmse_m"])
     rot_rmse_deg = float(diagnostics["rotation_rmse_deg"])
     rejected = int(results["num_updates_rejected"])
-    ate_rmse = diagnostics.get("ate_rmse_m")
 
-    if ate_rmse is None:
-        try:
-            ate_rmse, _, _, _ = compute_ate_from_tables(
-                groundtruth_table=results["ground_truth"],
-                estimate_table=results["trajectory"],
-                groundtruth_time_scale=1.0,
-                estimate_time_scale=1.0,
-                max_time_diff=0.02,
-            )
-        except Exception as exc:
-            print(f"  -> Errore nel calcolo dell'ATE: {exc}")
-            ate_rmse = 9999.0
-    else:
-        ate_rmse = float(ate_rmse)
+    try:
+        ate_rmse, _, _, _ = compute_ate_from_tables(
+            groundtruth_table=results["ground_truth"],
+            estimate_table=results["trajectory"],
+            groundtruth_time_scale=1.0,
+            estimate_time_scale=1.0,
+            max_time_diff=0.02,
+        )
+    except Exception as exc:
+        print(f"  -> Errore nel calcolo dell'ATE: {exc}")
+        ate_rmse = 9999.0
 
     score = ate_rmse + 0.05 * rot_rmse_deg + 0.001 * rejected
 
