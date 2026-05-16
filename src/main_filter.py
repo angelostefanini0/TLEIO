@@ -43,11 +43,14 @@ class RunnerConfig:
     data_root: Path = ROOT / "data"
     dataset: str = "eds"
     sequence: str = "00_peanuts_dark"
-    out_dir: Path = ROOT / "outputs" / "main_filter"
 
     @property
     def processed_root(self) -> Path:
         return self.data_root / self.dataset / "processed"
+    
+    @property
+    def out_dir(self) -> Path:
+        return ROOT / "outputs" / "main_filter" / self.dataset
 
     # Execution modes
     use_gt: bool = False  # Set via CLI argument
