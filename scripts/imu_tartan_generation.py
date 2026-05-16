@@ -35,15 +35,15 @@ from scipy.spatial.transform import Rotation, RotationSpline, Slerp
 # =============================================================================
 
 # Name of the trajectory folder inside data/tartanair/processed_train.
-TRAJECTORY_NAME = "office_Easy_P000"
+TRAJECTORY_NAME = "competition_Test_ME000"
 
 # Root containing the processed TartanAir trajectory folders.
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PROCESSED_TRAIN_ROOT = REPO_ROOT / "data/tartanair/processed/"
+PROCESSED_TRAIN_ROOT = REPO_ROOT / "data/test/processed/"
 
 # Input and output filenames inside the selected trajectory folder.
 GROUNDTRUTH_FILENAME = "stamped_groundtruth.txt"
-OUTPUT_IMU_FILENAME = "imu_new.csv"
+OUTPUT_IMU_FILENAME = "imu.csv"
 
 # Synthetic IMU sampling rate.
 IMU_RATE_HZ = 200.0
