@@ -35,7 +35,7 @@ from scipy.spatial.transform import Rotation, RotationSpline, Slerp
 # =============================================================================
 
 # Name of the trajectory folder inside data/tartanair/processed_train.
-TRAJECTORY_NAME = "office_Easy_P003"
+TRAJECTORY_NAME = "office_Easy_P000"
 
 # Root containing the processed TartanAir trajectory folders.
 REPO_ROOT = Path(__file__).resolve().parents[1]
