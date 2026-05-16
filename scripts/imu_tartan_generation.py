@@ -35,7 +35,7 @@ from scipy.spatial.transform import Rotation, RotationSpline, Slerp
 # =============================================================================
 
 # Name of the trajectory folder inside data/tartanair/processed_train.
-TRAJECTORY_NAME = "office_Easy_P000"
+TRAJECTORY_NAME = "office_Hard_P000"
 
 # Root containing the processed TartanAir trajectory folders.
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -53,15 +53,15 @@ GRAVITY_WORLD_MPS2 = np.array([0.0, 0.0, 9.80665], dtype=np.float64)
 
 # Add zero-mean Gaussian noise after ideal IMU generation. Keep at 0.0 for an
 # ideal IMU stream.
-GYRO_NOISE_STD_RAD_S = 3e-3
-ACCEL_NOISE_STD_MPS2 = 0.1
+GYRO_NOISE_STD_RAD_S = 1.5e-03
+ACCEL_NOISE_STD_MPS2 = 6.0e-03
 
 # Optional IMU biases. The initial bias is added to every sample. Random walk
 # values are continuous-time std devs, scaled internally by sqrt(dt).
-INITIAL_GYRO_BIAS_RAD_S = np.array([0.004, -0.003, 0.005], dtype=np.float64)
-INITIAL_ACCEL_BIAS_MPS2 = np.array([0.03, -0.02, 0.04], dtype=np.float64)
-GYRO_BIAS_RANDOM_WALK_STD_RAD_S_SQRT_S = 2.0e-5
-ACCEL_BIAS_RANDOM_WALK_STD_MPS2_SQRT_S = 2.0e-4
+INITIAL_GYRO_BIAS_RAD_S = np.array([0.001, -0.00075, 0.00115], dtype=np.float64)
+INITIAL_ACCEL_BIAS_MPS2 = np.array([0.00045, -0.0003, 0.0007], dtype=np.float64)
+GYRO_BIAS_RANDOM_WALK_STD_RAD_S_SQRT_S = 8.0e-05
+ACCEL_BIAS_RANDOM_WALK_STD_MPS2_SQRT_S = 8.0e-04
 RANDOM_SEED = 7
 
 # Refuse to overwrite an existing imu.csv unless this is True.

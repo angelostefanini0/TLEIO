@@ -13,14 +13,20 @@ from pathlib import Path
 os.environ.setdefault("MPLBACKEND", "Agg")
 
 import matplotlib
+
 matplotlib.use("Agg")
 
-from main_filter import CONFIG, RunnerConfig, run_filter
+try:
+    from compute_ate import compute_ate_from_tables
+    from main_filter import CONFIG, RunnerConfig, run_filter
+except ImportError:
+    from .compute_ate import compute_ate_from_tables
+    from .main_filter import CONFIG, RunnerConfig, run_filter
 
 SEARCH_KEYS = (
     "sigma_na", "sigma_ng", "sigma_nba", "sigma_nbg",
     "assumed_sigma_rel_t", "meas_cov_scale", "initial_attitude_sigma_deg",
-    "initial_velocity_sigma_mps", "initial_position_sigma_m","initial_z_sigma_m",
+    "initial_velocity_sigma_mps", "initial_position_sigma_m", "initial_z_sigma_m",
     "initial_bg_sigma_rps", "initial_ba_sigma_mps2",
 )
 
@@ -40,24 +46,45 @@ REFINE_LOG10_HALF_WIDTH = {
     "initial_bg_sigma_rps": 0.5, "initial_ba_sigma_mps2": 0.5,
 }
 
-def score_run(results: dict) -> dict[str, float]:
+
+def score_run(results: dict, config: RunnerConfig) -> dict[str, float]:
+    del config
+
     diagnostics = results["diagnostics"]
     pos_rmse = float(diagnostics["position_rmse_m"])
     rot_rmse_deg = float(diagnostics["rotation_rmse_deg"])
     rejected = int(results["num_updates_rejected"])
-    score = pos_rmse + 0.05 * rot_rmse_deg + 0.001 * rejected
+
+    try:
+        ate_rmse, _, _, _ = compute_ate_from_tables(
+            groundtruth_table=results["ground_truth"],
+            estimate_table=results["trajectory"],
+            groundtruth_time_scale=1.0,
+            estimate_time_scale=1.0,
+            max_time_diff=0.02,
+        )
+    except Exception as exc:
+        print(f"  -> Errore nel calcolo dell'ATE: {exc}")
+        ate_rmse = 9999.0
+
+    score = ate_rmse + 0.05 * rot_rmse_deg + 0.001 * rejected
+
     return {
         "score": score,
+        "ate_rmse": ate_rmse,
         "position_rmse_m": pos_rmse,
         "rotation_rmse_deg": rot_rmse_deg,
         "num_updates_rejected": rejected,
     }
 
+
 def sample_log_uniform(rng: random.Random, low_log10: float, high_log10: float) -> float:
     return 10.0 ** rng.uniform(low_log10, high_log10)
 
+
 def sample_coarse_params(rng: random.Random) -> dict[str, float]:
     return {key: sample_log_uniform(rng, *COARSE_LOG10_RANGES[key]) for key in SEARCH_KEYS}
+
 
 def sample_refined_params(rng: random.Random, center: dict[str, float]) -> dict[str, float]:
     refined: dict[str, float] = {}
@@ -66,6 +93,7 @@ def sample_refined_params(rng: random.Random, center: dict[str, float]) -> dict[
         center_log10 = math.log10(center[key])
         refined[key] = sample_log_uniform(rng, center_log10 - half_width, center_log10 + half_width)
     return refined
+
 
 def evaluate_candidate(base_config: RunnerConfig, candidate: dict[str, float]) -> dict | None:
     config = replace(
@@ -82,23 +110,27 @@ def evaluate_candidate(base_config: RunnerConfig, candidate: dict[str, float]) -
         print(f"  trial failed: {type(exc).__name__}: {exc} [{candidate_label}, ...]")
         return None
 
-    metrics = score_run(results)
+    metrics = score_run(results, config)
     return {"params": candidate, "metrics": metrics}
+
 
 def print_trial(label: str, trial_index: int, evaluated: dict) -> None:
     metrics = evaluated["metrics"]
     print(
         f"[{label} {trial_index:03d}] "
         f"score={metrics['score']:.6f} "
+        f"ate={metrics['ate_rmse']:.6f} "
         f"pos={metrics['position_rmse_m']:.6f} "
         f"rot={metrics['rotation_rmse_deg']:.6f} "
         f"rej={metrics['num_updates_rejected']}"
     )
 
+
 def maybe_update_best(best: dict | None, candidate: dict) -> tuple[dict | None, bool]:
     if best is None or candidate["metrics"]["score"] < best["metrics"]["score"]:
         return candidate, True
     return best, False
+
 
 def run_search(base_config: RunnerConfig, coarse_trials: int, refine_trials: int, seed: int) -> dict:
     rng = random.Random(seed)
@@ -141,6 +173,7 @@ def run_search(base_config: RunnerConfig, coarse_trials: int, refine_trials: int
         "base_config": asdict(base_config),
     }
 
+
 def to_jsonable(value):
     if isinstance(value, Path):
         return str(value)
@@ -149,6 +182,7 @@ def to_jsonable(value):
     if isinstance(value, list):
         return [to_jsonable(item) for item in value]
     return value
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Tune main_filter hyperparameters with deterministic random search.")
@@ -167,6 +201,7 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
+
 def dataset_specific_overrides(dataset: str) -> dict:
     dataset_name = dataset.lower()
     if dataset_name == "eds":
@@ -176,9 +211,10 @@ def dataset_specific_overrides(dataset: str) -> dict:
         }
     return {}
 
+
 def main() -> None:
     args = parse_args()
-    
+
     processed_dir = CONFIG.data_root / args.dataset / "processed"
     if not processed_dir.exists():
         print(f"Errore: Dataset path {processed_dir} non trovato.")
@@ -188,14 +224,14 @@ def main() -> None:
         sequences = [args.sequence]
     else:
         sequences = [d.name for d in processed_dir.iterdir() if d.is_dir()]
-        
+
     sequences.sort()
 
     for seq in sequences:
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print(f"OTTIMIZZAZIONE PER LA SEQUENZA: {seq}")
-        print("="*50)
-        
+        print("=" * 50)
+
         base_config = replace(
             CONFIG,
             dataset=args.dataset,
@@ -215,8 +251,8 @@ def main() -> None:
                 refine_trials=args.refine_trials,
                 seed=args.seed,
             )
-        except Exception as e:
-            print(f"Errore critico durante l'ottimizzazione della sequenza {seq}: {e}")
+        except Exception as exc:
+            print(f"Errore critico durante l'ottimizzazione della sequenza {seq}: {exc}")
             continue
 
         best = summary["best"]
@@ -225,16 +261,17 @@ def main() -> None:
         print("\nBest result")
         print(
             f"score={best['metrics']['score']:.6f} "
+            f"ate={best['metrics']['ate_rmse']:.6f} "
             f"pos={best['metrics']['position_rmse_m']:.6f} "
             f"rot={best['metrics']['rotation_rmse_deg']:.6f} "
             f"rej={best['metrics']['num_updates_rejected']}"
         )
-        
-        # Salva il risultato in una sottocartella specifica per la sequenza
+
         seq_output_file = args.output_dir / seq / "best_filter_params.json"
         seq_output_file.parent.mkdir(parents=True, exist_ok=True)
         seq_output_file.write_text(json.dumps(to_jsonable(summary), indent=2), encoding="utf-8")
         print(f"Saved summary to {seq_output_file}")
+
 
 if __name__ == "__main__":
     main()
