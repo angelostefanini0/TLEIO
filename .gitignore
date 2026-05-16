@@ -10,6 +10,8 @@ venv/
 .conda/
 azure/
 outputs/
+eval_outputs/
+
 
 data/*
 !data/.gitkeep
