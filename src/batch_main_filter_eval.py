@@ -220,19 +220,18 @@ def main() -> None:
 
         try:
             config = replace(
-                CONFIG,
-                dataset=args.dataset,
-                sequence=sequence,
-                out_dir=ROOT / "outputs" / "main_filter" / args.dataset,
-                use_gt=args.gt,
-                max_frames=args.max_frames,
-                plot_transformer=True,
-                plot_projections=True,
-                interactive_plot=False,
-                plot_imu=False,
-                **dataset_specific_overrides(args.dataset),
-                **load_tuned_params(sequence),
-            )
+                    CONFIG,
+                    dataset=args.dataset,
+                    sequence=sequence,
+                    use_gt=args.gt,
+                    max_frames=args.max_frames,
+                    plot_transformer=True,
+                    plot_projections=True,
+                    interactive_plot=False,
+                    plot_imu=False,
+                    **dataset_specific_overrides(args.dataset),
+                    **load_tuned_params(sequence),
+                )
 
             filter_results = run_filter(config)
             estimate_path = Path(filter_results["saved_file"])
