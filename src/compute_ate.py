@@ -1,6 +1,9 @@
 import numpy as np
 import argparse
 from pathlib import Path
+import subprocess
+import sys
+import re
 
 
 def read_trajectory_table(filename, time_scale=1.0, skip_header=False):
@@ -84,10 +87,12 @@ def interpolate_positions(gt_times, gt_positions, query_times):
         raise ValueError("Need at least two ground-truth samples for interpolation.")
     if np.any(np.diff(gt_times) <= 0.0):
         raise ValueError("Ground-truth timestamps must be strictly increasing.")
+    
     interpolated = np.empty((len(query_times), 3), dtype=np.float64)
     for axis in range(3):
         interpolated[:, axis] = np.interp(query_times, gt_times, gt_positions[:, axis])
     return interpolated
+
 
 def align_umeyama(model, data):
     N = model.shape[1]
@@ -112,6 +117,7 @@ def align_umeyama(model, data):
     T = mu_M - s * (R @ mu_D)
     
     return s, R, T
+
 
 def compute_rmse(gt_points, est_points, s, R, T):
     aligned_est_points = s * (R @ est_points) + T
@@ -149,16 +155,68 @@ def compute_ate_from_tables(
 
     s, R, T = align_umeyama(gt_points, est_points)
     ate_rmse = compute_rmse(gt_points, est_points, s, R, T)
+    
     return ate_rmse, s, R, T
+
 
 def process_sequence(dataset, sequence, root):
     sequence_dir = root / "data" / dataset / "processed" / sequence
     anchor_groundtruth_file = sequence_dir / "anchor_poses.txt"
     dense_groundtruth_file = sequence_dir / "stamped_groundtruth.txt"
-    estimate_file = root / "outputs" / "main_filter" / sequence / "stamped_traj_estimate.txt"
+    estimate_file = root / "outputs" / "main_filter" / dataset / sequence / "stamped_traj_estimate.txt"
     
     print(f"\nElaborating sequence: {sequence}")
     
+    # 1. Eseguiamo main_filter.py per ottenere pos_rmse e rot_rmse
+    main_filter_script = Path(__file__).resolve().parent / "main_filter.py"
+    
+    if not main_filter_script.exists():
+        print(f"  -> ERRORE: Script {main_filter_script} non trovato.")
+        return None
+        
+    cmd = [sys.executable, str(main_filter_script), "--dataset", dataset, "--sequence", sequence]
+    
+    # Esegue main_filter.py catturandone lo standard output
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    
+    if proc.returncode != 0:
+        print(f"  -> ERRORE durante l'esecuzione di main_filter.py:\n{proc.stderr}")
+        return None
+
+    pos_rmse, rot_rmse = None, None
+    
+    # Lettore linea per linea per un'estrazione robusta
+    for line in proc.stdout.split('\n'):
+        line_lower = line.lower()
+        
+        # Estrae i numeri in virgola mobile e scarta le linee senza numeri
+        nums = re.findall(r"([0-9]+\.[0-9]+(?:[eE][-+]?[0-9]+)?)", line)
+        if not nums:
+            continue
+            
+        val = float(nums[-1]) # In genere l'ultimo numero sulla riga è il valore cercato
+        
+        # Posizione: se la riga contiene 'pos' o 'trans' ed è riferita all'RMSE
+        if re.search(r'(pos|trans)', line_lower) and 'rmse' in line_lower:
+            pos_rmse = val
+            
+        # Rotazione: se la riga contiene 'rot', 'ang' o 'att' ed è riferita all'RMSE
+        if re.search(r'(rot|ang|att)', line_lower) and 'rmse' in line_lower:
+            # Assicuriamoci che non stia matchando per via di "Root Mean Square"
+            clean_line = line_lower.replace('root', '')
+            if re.search(r'(rot|ang|att)', clean_line):
+                rot_rmse = val
+        
+    # Avviso di sicurezza in caso di mancato riconoscimento
+    if pos_rmse is None or rot_rmse is None:
+        print("  -> ATTENZIONE: POS_RMSE o ROT_RMSE non trovati! Righe disponibili contenenti 'rmse':")
+        for line in proc.stdout.split('\n'):
+            if 'rmse' in line.lower():
+                print(f"       {line.strip()}")
+        pos_rmse = pos_rmse or 0.0
+        rot_rmse = rot_rmse or 0.0
+
+    # 2. Ora che l'estimate file è stato rigenerato dal filtro, calcoliamo l'ATE
     try:
         if anchor_groundtruth_file.exists():
             gt_table = read_trajectory_table(anchor_groundtruth_file, time_scale=1e-6, skip_header=True)
@@ -183,8 +241,9 @@ def process_sequence(dataset, sequence, root):
         print(f"  -> ERROR: {e}")
         return None
     
-    print(f"  -> ATE (RMSE): {ate_rmse:.6f}  |  Scale (s): {s:.4f}")
-    return ate_rmse
+    print(f"  -> ATE: {ate_rmse:.6f} | POS RMSE: {pos_rmse:.6f} | ROT RMSE: {rot_rmse:.6f}")
+    return ate_rmse, pos_rmse, rot_rmse
+
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate ATE between groundtruth and estimate.")
@@ -210,21 +269,24 @@ def main():
     
     results = {}
     for seq in sequences:
-        ate = process_sequence(args.dataset, seq, ROOT)
-        if ate is not None:
-            results[seq] = ate
+        metrics = process_sequence(args.dataset, seq, ROOT)
+        if metrics is not None:
+            results[seq] = metrics
 
     if len(results) > 1:
-        print("\n" + "="*40)
-        print("FINAL SUMMARY ATE")
-        print("="*40)
-        for seq, ate in results.items():
-            print(f"{seq:<30} : {ate:.6f}")
+        print("\n" + "=" * 75)
+        print(f"{'FINAL SUMMARY':<30} | {'ATE':<10} | {'POS RMSE':<10} | {'ROT RMSE':<10}")
+        print("=" * 75)
+        for seq, (ate, pos, rot) in results.items():
+            print(f"{seq:<30} | {ate:<10.6f} | {pos:<10.6f} | {rot:<10.6f}")
         
-        avg_ate = sum(results.values()) / len(results)
-        print("-" * 40)
-        print(f"{'AVG':<30} : {avg_ate:.6f}")
-        print("="*40)
+        avg_ate = sum(r[0] for r in results.values()) / len(results)
+        avg_pos = sum(r[1] for r in results.values()) / len(results)
+        avg_rot = sum(r[2] for r in results.values()) / len(results)
+        
+        print("-" * 75)
+        print(f"{'AVG':<30} | {avg_ate:<10.6f} | {avg_pos:<10.6f} | {avg_rot:<10.6f}")
+        print("=" * 75)
 
 if __name__ == "__main__":
     main()

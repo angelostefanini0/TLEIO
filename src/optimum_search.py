@@ -54,18 +54,22 @@ def score_run(results: dict, config: RunnerConfig) -> dict[str, float]:
     pos_rmse = float(diagnostics["position_rmse_m"])
     rot_rmse_deg = float(diagnostics["rotation_rmse_deg"])
     rejected = int(results["num_updates_rejected"])
+    ate_rmse = diagnostics.get("ate_rmse_m")
 
-    try:
-        ate_rmse, _, _, _ = compute_ate_from_tables(
-            groundtruth_table=results["ground_truth"],
-            estimate_table=results["trajectory"],
-            groundtruth_time_scale=1.0,
-            estimate_time_scale=1.0,
-            max_time_diff=0.02,
-        )
-    except Exception as exc:
-        print(f"  -> Errore nel calcolo dell'ATE: {exc}")
-        ate_rmse = 9999.0
+    if ate_rmse is None:
+        try:
+            ate_rmse, _, _, _ = compute_ate_from_tables(
+                groundtruth_table=results["ground_truth"],
+                estimate_table=results["trajectory"],
+                groundtruth_time_scale=1.0,
+                estimate_time_scale=1.0,
+                max_time_diff=0.02,
+            )
+        except Exception as exc:
+            print(f"  -> Errore nel calcolo dell'ATE: {exc}")
+            ate_rmse = 9999.0
+    else:
+        ate_rmse = float(ate_rmse)
 
     score = ate_rmse + 0.05 * rot_rmse_deg + 0.001 * rejected
 
@@ -190,8 +194,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sequence", type=str, default=None, help="Sequence to tune. If omitted, tunes all sequences.")
     parser.add_argument("--gt", action="store_true", help="Use relative_motions.txt instead of regressed_relative_motions.txt.")
     parser.add_argument("--max-frames", type=int, default=None)
-    parser.add_argument("--coarse-trials", type=int, default=40)
-    parser.add_argument("--refine-trials", type=int, default=50)
+    parser.add_argument("--coarse-trials", type=int, default=100)
+    parser.add_argument("--refine-trials", type=int, default=100)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
         "--output-dir",
