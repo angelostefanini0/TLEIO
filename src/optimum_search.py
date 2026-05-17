@@ -12,6 +12,7 @@ import random
 from dataclasses import asdict, replace
 from pathlib import Path
 import sys
+import tempfile
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 
@@ -67,7 +68,8 @@ def score_run(results: dict, config: RunnerConfig, optimize_for_pos_rmse: bool =
         ate_rmse = compute_ate_from_results(
             dataset=results["dataset"],
             sequence=results["sequence"],
-            estimate_path=Path(results["saved_file"]),
+            ground_truth_table=results["ground_truth"],
+            estimate_table=results["trajectory"],
         )
     except Exception as exc:
         print(f"  -> Errore nel calcolo dell'ATE: {exc}")
@@ -126,32 +128,33 @@ def write_seconds_pose_table(src_path: Path, dst_path: Path) -> Path:
     return dst_path
 
 
-def compute_ate_from_results(dataset: str, sequence: str, estimate_path: Path) -> float:
+def compute_ate_from_results(
+    dataset: str,
+    sequence: str,
+    ground_truth_table,
+    estimate_table,
+) -> float:
+    import numpy as np
+
     gt_path = ROOT / "data" / dataset / "processed" / sequence / "stamped_groundtruth.txt"
     if not gt_path.exists():
         raise FileNotFoundError(f"Ground-truth file does not exist: {gt_path}")
-    if not estimate_path.exists():
-        raise FileNotFoundError(f"Estimated trajectory file does not exist: {estimate_path}")
 
-    eval_dir = ROOT / "eval_outputs" / dataset / sequence
-    eval_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f"optimum_search_{dataset}_{sequence}_", dir=ROOT) as temp_dir:
+        eval_dir = Path(temp_dir)
+        eval_gt_path = eval_dir / "stamped_groundtruth.txt"
+        eval_est_path = eval_dir / "stamped_traj_estimate.txt"
 
-    eval_gt_path = eval_dir / "stamped_groundtruth.txt"
-    eval_est_path = eval_dir / "stamped_traj_estimate.txt"
-    write_seconds_pose_table(gt_path, eval_gt_path)
-    write_seconds_pose_table(estimate_path, eval_est_path)
+        write_seconds_pose_table(gt_path, eval_gt_path)
+        np.savetxt(eval_est_path, np.asarray(estimate_table, dtype=np.float64), fmt="%.9f")
 
-    stale_matches = eval_dir / "saved_results" / "traj_est" / "stamped_est_gt_matches.txt"
-    if stale_matches.exists():
-        stale_matches.unlink()
-
-    # Silence the RPG toolbox's verbose console output during random search.
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        traj = Trajectory(str(eval_dir), est_type="traj_est")
-        if not traj.data_loaded:
-            raise RuntimeError(f"RPG trajectory loader failed for {eval_dir}")
-        traj.compute_absolute_error()
-    return float(traj.abs_errors["abs_e_trans_stats"]["rmse"])
+        # Silence the RPG toolbox's verbose console output during random search.
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            traj = Trajectory(str(eval_dir), est_type="traj_est")
+            if not traj.data_loaded:
+                raise RuntimeError(f"RPG trajectory loader failed for {eval_dir}")
+            traj.compute_absolute_error()
+        return float(traj.abs_errors["abs_e_trans_stats"]["rmse"])
 
 
 def sample_log_uniform(rng: random.Random, low_log10: float, high_log10: float) -> float:
@@ -182,6 +185,8 @@ def evaluate_candidate(
         interactive_plot=False,
         plot_transformer=False,
         plot_projections=False,
+        save_trajectory_file=False,
+        save_diagnostic_plots=False,
     )
     try:
         results = run_filter(config)
@@ -285,8 +290,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sequence", type=str, default=None, help="Sequence to tune. If omitted, tunes all sequences.")
     parser.add_argument("--gt", action="store_true", help="Use relative_motions.txt instead of regressed_relative_motions.txt.")
     parser.add_argument("--max-frames", type=int, default=None)
-    parser.add_argument("--coarse-trials", type=int, default=100)
-    parser.add_argument("--refine-trials", type=int, default=100)
+    parser.add_argument("--coarse-trials", type=int, default=150)
+    parser.add_argument("--refine-trials", type=int, default=200)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
         "--optimize-for-pos-rmse",
