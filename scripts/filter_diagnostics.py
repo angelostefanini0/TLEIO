@@ -9,6 +9,40 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 
+def umeyama_alignment(source: np.ndarray, target: np.ndarray) -> tuple[float, np.ndarray, np.ndarray]:
+    """
+    Calcola l'allineamento Sim3 (scala, rotazione, traslazione) per mappare source su target.
+    Minimizza ||target - (c * R @ source + t)||.
+    """
+    mu_s = source.mean(axis=0)
+    mu_t = target.mean(axis=0)
+    
+    s_centered = source - mu_s
+    t_centered = target - mu_t
+    
+    # CORREZIONE: divisione per N per avere la covarianza corretta
+    H = (s_centered.T @ t_centered) / len(source)
+    
+    U, D, Vt = np.linalg.svd(H)
+    S = np.eye(3)
+    if np.linalg.det(U) * np.linalg.det(Vt) < 0:
+        S[2, 2] = -1
+        
+    R = Vt.T @ S @ U.T
+    
+    var_s = np.mean(np.sum(s_centered**2, axis=1))
+    c = 1.0 / var_s * np.trace(np.diag(D) @ S) if var_s > 1e-8 else 1.0
+    
+    t = mu_t - c * (R @ mu_s)
+    
+    return c, R, t
+
+
+def apply_sim3(positions: np.ndarray, c: float, R: np.ndarray, t: np.ndarray) -> np.ndarray:
+    """Applica la trasformazione spaziale a un array di posizioni."""
+    return (c * (R @ positions.T)).T + t
+
+
 def load_trajectory_table(path: Path) -> np.ndarray:
     """Load a text trajectory table with columns `timestamp px py pz rx ry rz`."""
 
@@ -98,6 +132,7 @@ def save_trajectory_comparison_plot(
     estimated_positions: np.ndarray,
     regressed_positions: np.ndarray | None = None,
     imu_positions: np.ndarray | None = None,
+    ate_positions: np.ndarray | None = None,
 ) -> Path:
     """Save the standard x/y/z position comparison and total position error plot."""
 
@@ -118,6 +153,10 @@ def save_trajectory_comparison_plot(
         if imu_positions is not None:
             axis.plot(t_rel, imu_positions[:, axis_idx], label=f"IMU {label}", color="tab:purple", linestyle=":")
         axis.plot(t_rel, estimated_positions[:, axis_idx], label=f"EKF {label}", color="tab:green")
+        
+        if ate_positions is not None:
+            axis.plot(t_rel, ate_positions[:, axis_idx], label=f"EKF (ATE) {label}", color="tab:red", linestyle="-.")
+            
         axis.set_title(f"{label.upper()} Position")
         axis.set_xlabel("time [s]")
         axis.set_ylabel(f"{label} [m]")
@@ -133,6 +172,10 @@ def save_trajectory_comparison_plot(
         imu_error = np.linalg.norm(imu_positions - gt_positions, axis=1)
         axes[1, 1].plot(t_rel, imu_error, color="tab:purple", linestyle=":", label="IMU Error")
     
+    if ate_positions is not None:
+        ate_error = np.linalg.norm(ate_positions - gt_positions, axis=1)
+        axes[1, 1].plot(t_rel, ate_error, color="tab:red", linestyle="-.", label="EKF (ATE) Error")
+        
     axes[1, 1].plot(t_rel, position_error, color="tab:red", label="EKF Error")
     axes[1, 1].set_title("Total Position Error")
     axes[1, 1].set_xlabel("time [s]")
@@ -218,6 +261,7 @@ def save_3d_trajectory_plot(
     estimated_positions: np.ndarray,
     regressed_positions: np.ndarray | None = None,
     imu_positions: np.ndarray | None = None,
+    ate_positions: np.ndarray | None = None,
 ) -> Path:
     """Save a 3D plot comparing the estimated trajectory against ground truth."""
 
@@ -262,6 +306,13 @@ def save_3d_trajectory_plot(
         color="tab:green",
         linewidth=2,
     )
+    
+    if ate_positions is not None:
+        ax.plot(
+            ate_positions[:, 0], ate_positions[:, 1], ate_positions[:, 2],
+            label="EKF (ATE Aligned)", color="tab:red", linestyle="-.", linewidth=2,
+        )
+        
     ax.scatter(*gt_positions[0], color="black", marker="o", s=60, label="Start", zorder=5)
     ax.scatter(*gt_positions[-1], color="red", marker="x", s=60, label="End", zorder=5)
     ax.set_title("3D Trajectory Comparison")
@@ -296,6 +347,7 @@ def save_projections_plot(
     estimated_positions: np.ndarray,
     regressed_positions: np.ndarray | None = None,
     imu_positions: np.ndarray | None = None,
+    ate_positions: np.ndarray | None = None,
 ) -> Path:
     """Save 2D projections (XY, XZ, YZ) of the trajectories."""
 
@@ -328,6 +380,9 @@ def save_projections_plot(
             
         ax.plot(estimated_positions[:, idx1], estimated_positions[:, idx2], label="EKF Estimated", color="tab:green")
         
+        if ate_positions is not None:
+            ax.plot(ate_positions[:, idx1], ate_positions[:, idx2], label="EKF (ATE Aligned)", color="tab:red", linestyle="-.")
+            
         ax.scatter(gt_positions[0, idx1], gt_positions[0, idx2], color="black", marker="o", s=40, zorder=5)
         ax.scatter(gt_positions[-1, idx1], gt_positions[-1, idx2], color="red", marker="x", s=40, zorder=5)
 
@@ -404,6 +459,7 @@ def compute_filter_diagnostics(
     output_dir: Path | None = None,
     file_prefix: str = "filter",
     plot_projections: bool = False,
+    plot_ate: bool = False,
 ) -> dict:
     """Compute development metrics and optionally save the standard plots."""
 
@@ -480,6 +536,11 @@ def compute_filter_diagnostics(
     rotation_rmse_deg = float(np.sqrt(np.mean(rotation_errors_deg**2)))
     max_rotation_error_deg = float(np.max(rotation_errors_deg))
 
+    ate_est_positions = None
+    if plot_ate:
+        c, R, t = umeyama_alignment(est_positions, aligned_gt_positions)
+        ate_est_positions = apply_sim3(est_positions, c, R, t)
+
     saved_files: dict[str, str] = {}
     if output_dir is not None:
         output_dir = Path(output_dir)
@@ -492,6 +553,7 @@ def compute_filter_diagnostics(
                 est_positions,
                 regressed_positions=aligned_regr_positions,
                 imu_positions=aligned_imu_positions,
+                ate_positions=ate_est_positions,
             )
         )
         saved_files["rotation_plot"] = str(
@@ -510,6 +572,7 @@ def compute_filter_diagnostics(
                 est_positions,
                 regressed_positions=aligned_regr_positions,
                 imu_positions=aligned_imu_positions,
+                ate_positions=ate_est_positions,
             )
         )
         
@@ -521,6 +584,7 @@ def compute_filter_diagnostics(
                     est_positions,
                     regressed_positions=aligned_regr_positions,
                     imu_positions=aligned_imu_positions,
+                    ate_positions=ate_est_positions,
                 )
             )
 
@@ -607,6 +671,7 @@ def main() -> None:
     parser.add_argument("--output_dir", type=Path, default=None, help="Optional directory for plots.")
     parser.add_argument("--prefix", type=str, default="filter", help="Prefix used for saved plot filenames.")
     parser.add_argument("--plot_projections", action="store_true", help="Save 2D projection plots.")
+    parser.add_argument("--plot_ate", action="store_true", help="Plot Umeyama aligned trajectory to show ATE minimized distance.")
     args = parser.parse_args()
 
     estimated = load_trajectory_table(args.estimated)
@@ -622,6 +687,7 @@ def main() -> None:
         regressed_trajectory=regressed,
         output_dir=args.output_dir,
         file_prefix=args.prefix,
+        plot_ate=args.plot_ate,
     )
     print_filter_run_summary(
         sequence=args.prefix,
@@ -632,7 +698,6 @@ def main() -> None:
         mean_delta_norm=None,
         diagnostics=results,
         saved_trajectory_path=str(args.estimated),
-        plot_projections=args.plot_projections,
     )
 
 

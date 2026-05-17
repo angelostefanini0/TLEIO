@@ -58,6 +58,9 @@ class RunnerConfig:
     plot_imu: bool = False
     interactive_plot: bool = False 
     plot_projections: bool = False
+    plot_ate: bool = False  # Set via CLI argument to plot ATE aligned trajectory
+    save_trajectory_file: bool = True
+    save_diagnostic_plots: bool = True
 
     # Optional sequence truncation
     max_frames: int | None = None
@@ -594,12 +597,14 @@ def run_filter(config: RunnerConfig) -> dict:
         ekf.marginalize_oldest_clone()
 
     # Save the EKF's finalized estimate
-    sequence_out_dir = config.out_dir / config.sequence
     trajectory_table = np.asarray(trajectory_rows, dtype=np.float64)
-    saved_path = _save_trajectory(
-        sequence_out_dir / f"stamped_traj_estimate.txt",
-        trajectory_table,
-    )
+    sequence_out_dir = config.out_dir / config.sequence
+    saved_path = None
+    if config.save_trajectory_file:
+        saved_path = _save_trajectory(
+            sequence_out_dir / "stamped_traj_estimate.txt",
+            trajectory_table,
+        )
     ground_truth_trajectory = _build_ground_truth_trajectory(
         anchor_timestamps_us,
         anchor_positions,
@@ -624,9 +629,10 @@ def run_filter(config: RunnerConfig) -> dict:
         ground_truth_trajectory,
         regressed_trajectory=regressed_trajectory,
         imu_trajectory= imu_trajectory,
-        output_dir=sequence_out_dir,
+        output_dir=sequence_out_dir if config.save_diagnostic_plots else None,
         file_prefix=config.sequence,
         plot_projections=config.plot_projections,
+        plot_ate=config.plot_ate,
     )
 
     return {
@@ -641,7 +647,7 @@ def run_filter(config: RunnerConfig) -> dict:
         "ground_truth": ground_truth_trajectory,
         "regressed": regressed_trajectory,
         "imu_only": imu_trajectory,
-        "saved_file": str(saved_path),
+        "saved_file": str(saved_path) if saved_path is not None else None,
         "diagnostics": diagnostics,
     }
 
@@ -685,6 +691,11 @@ def parse_args():
         action="store_true",
         help="Saves the 2D projections plots."
     )
+    parser.add_argument(
+        "--plot_ate",
+        action="store_true",
+        help="Applies Sim3 alignment (Umeyama) to minimize ATE before plotting the trajectories."
+    )
     return parser.parse_args()
 
 
@@ -719,6 +730,7 @@ def main() -> None:
         plot_imu=args.plot_imu,
         interactive_plot=args.interactive_plot,
         plot_projections=args.plot_projections,
+        plot_ate=args.plot_ate,
         **dataset_params,
         **json_params
     )
