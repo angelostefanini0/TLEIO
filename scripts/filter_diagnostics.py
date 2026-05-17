@@ -335,6 +335,7 @@ def show_interactive_3d_plot(
     ground_truth_trajectory: np.ndarray,
     regressed_trajectory: np.ndarray | None = None,
     imu_trajectory: np.ndarray | None = None,
+    ate_positions: np.ndarray | None = None,
 ) -> None:
     import matplotlib.pyplot as plt
 
@@ -355,7 +356,9 @@ def show_interactive_3d_plot(
         ax.plot(imu_pos[:, 0], imu_pos[:, 1], imu_pos[:, 2], label="IMU Only", color="tab:purple", linestyle=":", linewidth=2)
         
     ax.plot(est_pos[:, 0], est_pos[:, 1], est_pos[:, 2], label="EKF Estimated", color="tab:green", linewidth=2)
-    
+    if ate_positions is not None:
+        min_len = min(len(gt_pos), len(ate_positions))
+        ax.plot(ate_positions[:min_len, 0], ate_positions[:min_len, 1], ate_positions[:min_len, 2], label="EKF (RPG ATE Aligned)", color="tab:red", linestyle="-.", linewidth=2)  
     ax.scatter(*gt_pos[0], color="black", marker="o", s=60, label="Start", zorder=5)
     ax.scatter(*gt_pos[-1], color="red", marker="x", s=60, label="End", zorder=5)
     
@@ -530,6 +533,7 @@ def compute_filter_diagnostics(
         "yaw_rmse_deg": yaw_rmse_deg,
         "max_rotation_error_deg": max_rotation_error_deg,
         "ate_rmse_m": ate_rmse_m,
+        "ate_positions": ate_est_positions,
         "saved_files": saved_files,
     }
 

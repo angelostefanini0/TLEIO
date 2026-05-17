@@ -749,18 +749,21 @@ def main() -> None:
 
     #Plots (if requested)
     if active_config.interactive_plot:
+        ate_positions = results["diagnostics"].get("ate_positions")
         if results["regressed"] is not None:
             show_interactive_3d_plot(
                 estimated_trajectory=results["trajectory"],
                 ground_truth_trajectory=results["ground_truth"],
                 regressed_trajectory=results["regressed"],
                 imu_trajectory=results.get("imu_only"),
+                ate_positions=ate_positions,
             )
         else:
             show_interactive_3d_plot(
                 estimated_trajectory=results["trajectory"],
                 ground_truth_trajectory=results["ground_truth"],
                 imu_trajectory=results.get("imu_only"),
+                ate_positions=ate_positions,
             )
 
 
