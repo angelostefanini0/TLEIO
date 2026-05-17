@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import math
 import os
 import random
 from dataclasses import asdict, replace
 from pathlib import Path
+import sys
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 
@@ -16,12 +19,17 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+ROOT = Path(__file__).resolve().parents[1]
+EVAL_SRC = ROOT / "evaluation" / "rpg_trajectory_evaluation" / "src" / "rpg_trajectory_evaluation"
+if str(EVAL_SRC) not in sys.path:
+    sys.path.insert(0, str(EVAL_SRC))
+
 try:
-    from compute_ate import compute_ate_from_tables
     from main_filter import CONFIG, RunnerConfig, run_filter
 except ImportError:
-    from .compute_ate import compute_ate_from_tables
     from .main_filter import CONFIG, RunnerConfig, run_filter
+
+from trajectory import Trajectory
 
 SEARCH_KEYS = (
     "sigma_na", "sigma_ng", "sigma_nba", "sigma_nbg",
@@ -47,7 +55,7 @@ REFINE_LOG10_HALF_WIDTH = {
 }
 
 
-def score_run(results: dict, config: RunnerConfig) -> dict[str, float]:
+def score_run(results: dict, config: RunnerConfig, optimize_for_pos_rmse: bool = False) -> dict[str, float]:
     del config
 
     diagnostics = results["diagnostics"]
@@ -56,18 +64,19 @@ def score_run(results: dict, config: RunnerConfig) -> dict[str, float]:
     rejected = int(results["num_updates_rejected"])
 
     try:
-        ate_rmse, _, _, _ = compute_ate_from_tables(
-            groundtruth_table=results["ground_truth"],
-            estimate_table=results["trajectory"],
-            groundtruth_time_scale=1.0,
-            estimate_time_scale=1.0,
-            max_time_diff=0.02,
+        ate_rmse = compute_ate_from_results(
+            dataset=results["dataset"],
+            sequence=results["sequence"],
+            estimate_path=Path(results["saved_file"]),
         )
     except Exception as exc:
         print(f"  -> Errore nel calcolo dell'ATE: {exc}")
         ate_rmse = 9999.0
 
-    score = ate_rmse + 0.05 * rot_rmse_deg + 0.001 * rejected
+    if optimize_for_pos_rmse:
+        score = pos_rmse + 0.05 * rot_rmse_deg + 0.001 * rejected
+    else:
+        score = ate_rmse + 0.05 * rot_rmse_deg + 0.001 * rejected
 
     return {
         "score": score,
@@ -76,6 +85,73 @@ def score_run(results: dict, config: RunnerConfig) -> dict[str, float]:
         "rotation_rmse_deg": rot_rmse_deg,
         "num_updates_rejected": rejected,
     }
+
+
+def load_numeric_pose_table(path: Path) -> list[list[float]]:
+    rows: list[list[float]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            parts = line.strip().split()
+            if not parts:
+                continue
+            try:
+                rows.append([float(value) for value in parts])
+            except ValueError:
+                continue
+    return rows
+
+
+def infer_time_scale_to_seconds(timestamps: list[float]) -> float:
+    if len(timestamps) < 2:
+        return 1.0
+
+    diffs = [curr - prev for prev, curr in zip(timestamps[:-1], timestamps[1:]) if curr > prev]
+    median_dt = sorted(diffs)[len(diffs) // 2] if diffs else 0.0
+
+    if median_dt > 1e7:
+        return 1e-9
+    if median_dt > 1e1:
+        return 1e-6
+    return 1.0
+
+
+def write_seconds_pose_table(src_path: Path, dst_path: Path) -> Path:
+    import numpy as np
+
+    table = np.asarray(load_numeric_pose_table(src_path), dtype=np.float64)
+    if table.ndim != 2 or table.shape[1] != 8:
+        raise ValueError(f"{src_path} has shape {table.shape}, expected N x 8 pose rows.")
+    table[:, 0] *= infer_time_scale_to_seconds(table[:, 0].tolist())
+    np.savetxt(dst_path, table, fmt="%.9f")
+    return dst_path
+
+
+def compute_ate_from_results(dataset: str, sequence: str, estimate_path: Path) -> float:
+    gt_path = ROOT / "data" / dataset / "processed" / sequence / "stamped_groundtruth.txt"
+    if not gt_path.exists():
+        raise FileNotFoundError(f"Ground-truth file does not exist: {gt_path}")
+    if not estimate_path.exists():
+        raise FileNotFoundError(f"Estimated trajectory file does not exist: {estimate_path}")
+
+    eval_dir = ROOT / "eval_outputs" / dataset / sequence
+    eval_dir.mkdir(parents=True, exist_ok=True)
+
+    eval_gt_path = eval_dir / "stamped_groundtruth.txt"
+    eval_est_path = eval_dir / "stamped_traj_estimate.txt"
+    write_seconds_pose_table(gt_path, eval_gt_path)
+    write_seconds_pose_table(estimate_path, eval_est_path)
+
+    stale_matches = eval_dir / "saved_results" / "traj_est" / "stamped_est_gt_matches.txt"
+    if stale_matches.exists():
+        stale_matches.unlink()
+
+    # Silence the RPG toolbox's verbose console output during random search.
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        traj = Trajectory(str(eval_dir), est_type="traj_est")
+        if not traj.data_loaded:
+            raise RuntimeError(f"RPG trajectory loader failed for {eval_dir}")
+        traj.compute_absolute_error()
+    return float(traj.abs_errors["abs_e_trans_stats"]["rmse"])
 
 
 def sample_log_uniform(rng: random.Random, low_log10: float, high_log10: float) -> float:
@@ -95,7 +171,11 @@ def sample_refined_params(rng: random.Random, center: dict[str, float]) -> dict[
     return refined
 
 
-def evaluate_candidate(base_config: RunnerConfig, candidate: dict[str, float]) -> dict | None:
+def evaluate_candidate(
+    base_config: RunnerConfig,
+    candidate: dict[str, float],
+    optimize_for_pos_rmse: bool = False,
+) -> dict | None:
     config = replace(
         base_config,
         **candidate,
@@ -110,7 +190,7 @@ def evaluate_candidate(base_config: RunnerConfig, candidate: dict[str, float]) -
         print(f"  trial failed: {type(exc).__name__}: {exc} [{candidate_label}, ...]")
         return None
 
-    metrics = score_run(results, config)
+    metrics = score_run(results, config, optimize_for_pos_rmse=optimize_for_pos_rmse)
     return {"params": candidate, "metrics": metrics}
 
 
@@ -132,13 +212,23 @@ def maybe_update_best(best: dict | None, candidate: dict) -> tuple[dict | None, 
     return best, False
 
 
-def run_search(base_config: RunnerConfig, coarse_trials: int, refine_trials: int, seed: int) -> dict:
+def run_search(
+    base_config: RunnerConfig,
+    coarse_trials: int,
+    refine_trials: int,
+    seed: int,
+    optimize_for_pos_rmse: bool = False,
+) -> dict:
     rng = random.Random(seed)
     completed: list[dict] = []
     best: dict | None = None
 
     for idx in range(coarse_trials):
-        evaluated = evaluate_candidate(base_config, sample_coarse_params(rng))
+        evaluated = evaluate_candidate(
+            base_config,
+            sample_coarse_params(rng),
+            optimize_for_pos_rmse=optimize_for_pos_rmse,
+        )
         if evaluated is None:
             continue
         completed.append(evaluated)
@@ -152,7 +242,11 @@ def run_search(base_config: RunnerConfig, coarse_trials: int, refine_trials: int
 
     refine_center = best["params"]
     for idx in range(refine_trials):
-        evaluated = evaluate_candidate(base_config, sample_refined_params(rng, refine_center))
+        evaluated = evaluate_candidate(
+            base_config,
+            sample_refined_params(rng, refine_center),
+            optimize_for_pos_rmse=optimize_for_pos_rmse,
+        )
         if evaluated is None:
             continue
         completed.append(evaluated)
@@ -170,6 +264,7 @@ def run_search(base_config: RunnerConfig, coarse_trials: int, refine_trials: int
         "seed": seed,
         "coarse_trials": coarse_trials,
         "refine_trials": refine_trials,
+        "objective": "position_rmse_m" if optimize_for_pos_rmse else "ate_rmse",
         "base_config": asdict(base_config),
     }
 
@@ -193,6 +288,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--coarse-trials", type=int, default=100)
     parser.add_argument("--refine-trials", type=int, default=100)
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument(
+        "--optimize-for-pos-rmse",
+        action="store_true",
+        help="Optimize using position RMSE instead of ATE as the main score term.",
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -232,6 +332,14 @@ def main() -> None:
         print(f"Optimizing: {seq}")
         print("=" * 50)
 
+        sequence_dir = processed_dir / seq
+        if not sequence_dir.exists():
+            print(
+                f"Error while optimizing {seq}: sequence folder not found at {sequence_dir}. "
+                f"Check `--dataset` and `--sequence`."
+            )
+            continue
+
         base_config = replace(
             CONFIG,
             dataset=args.dataset,
@@ -250,6 +358,7 @@ def main() -> None:
                 coarse_trials=args.coarse_trials,
                 refine_trials=args.refine_trials,
                 seed=args.seed,
+                optimize_for_pos_rmse=args.optimize_for_pos_rmse,
             )
         except Exception as exc:
             print(f"Errorwhile optimizing {seq}: {exc}")
