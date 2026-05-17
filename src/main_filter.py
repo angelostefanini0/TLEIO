@@ -130,7 +130,7 @@ def _load_anchor_poses(sequence_path: Path) -> tuple[np.ndarray, np.ndarray, np.
 
 def _load_relative_motion_table(sequence_path: Path, use_gt: bool) -> np.ndarray:
     """Load processed relative motions and skip any stale non-numeric header lines."""
-    #Chooses file based on configuration
+    # Chooses file based on configuration
     filename = "relative_motions.txt" if use_gt else f"{sequence_path.name}.txt"
     rel_path = sequence_path / filename
     
@@ -605,11 +605,9 @@ def run_filter(config: RunnerConfig) -> dict:
             sequence_out_dir / "stamped_traj_estimate.txt",
             trajectory_table,
         )
-    ground_truth_trajectory = _build_ground_truth_trajectory(
-        anchor_timestamps_us,
-        anchor_positions,
-        anchor_quaternions,
-    )
+    gt_path = sequence_path / "stamped_groundtruth.txt"
+    ground_truth_trajectory = np.loadtxt(gt_path, comments="#", ndmin=2)
+    ground_truth_trajectory[:, 0] *= _infer_time_scale_to_seconds(ground_truth_trajectory[:, 0])
 
     regressed_trajectory = None
     #Adds a plot for the transformer output before EKF
@@ -694,7 +692,7 @@ def parse_args():
     parser.add_argument(
         "--plot_ate",
         action="store_true",
-        help="Applies Sim3 alignment (Umeyama) to minimize ATE before plotting the trajectories."
+        help="Plots ATE aligned trajectory"
     )
     return parser.parse_args()
 

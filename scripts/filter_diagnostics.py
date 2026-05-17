@@ -3,61 +3,57 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
+import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-
-def umeyama_alignment(source: np.ndarray, target: np.ndarray) -> tuple[float, np.ndarray, np.ndarray]:
-    """
-    Calcola l'allineamento Sim3 (scala, rotazione, traslazione) per mappare source su target.
-    Minimizza ||target - (c * R @ source + t)||.
-    """
-    mu_s = source.mean(axis=0)
-    mu_t = target.mean(axis=0)
-    
-    s_centered = source - mu_s
-    t_centered = target - mu_t
-    
-    # CORREZIONE: divisione per N per avere la covarianza corretta
-    H = (s_centered.T @ t_centered) / len(source)
-    
-    U, D, Vt = np.linalg.svd(H)
-    S = np.eye(3)
-    if np.linalg.det(U) * np.linalg.det(Vt) < 0:
-        S[2, 2] = -1
-        
-    R = Vt.T @ S @ U.T
-    
-    var_s = np.mean(np.sum(s_centered**2, axis=1))
-    c = 1.0 / var_s * np.trace(np.diag(D) @ S) if var_s > 1e-8 else 1.0
-    
-    t = mu_t - c * (R @ mu_s)
-    
-    return c, R, t
+ROOT = Path(__file__).resolve().parents[1]
+EVAL_SRC = ROOT / "evaluation" / "rpg_trajectory_evaluation" / "src" / "rpg_trajectory_evaluation"
+if str(EVAL_SRC) not in sys.path:
+    sys.path.insert(0, str(EVAL_SRC))
 
 
-def apply_sim3(positions: np.ndarray, c: float, R: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """Applica la trasformazione spaziale a un array di posizioni."""
-    return (c * (R @ positions.T)).T + t
+def get_rpg_ate_and_aligned_trajectory(
+    ground_truth_table: np.ndarray,
+    estimated_table: np.ndarray
+) -> tuple[float, np.ndarray]:
+    """Uses UZH RPG Trajectory Evaluation Toolbox to evaluate ATE and align the trajectory."""
+    from trajectory import Trajectory
+
+    with tempfile.TemporaryDirectory(prefix="rpg_eval_", dir=ROOT) as temp_dir:
+        eval_dir = Path(temp_dir)
+        eval_gt_path = eval_dir / "stamped_groundtruth.txt"
+        eval_est_path = eval_dir / "stamped_traj_estimate.txt"
+
+        np.savetxt(eval_gt_path, ground_truth_table, fmt="%.9f")
+        np.savetxt(eval_est_path, estimated_table, fmt="%.9f")
+
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            traj = Trajectory(str(eval_dir), est_type="traj_est")
+            if not traj.data_loaded:
+                raise RuntimeError("RPG trajectory loader failed.")
+            
+            traj.compute_absolute_error()
+            ate_rmse = float(traj.abs_errors["abs_e_trans_stats"]["rmse"])
+            p_es_aligned = np.copy(traj.p_es_aligned)
+            
+    return ate_rmse, p_es_aligned
 
 
 def load_trajectory_table(path: Path) -> np.ndarray:
     """Load a text trajectory table with columns `timestamp px py pz rx ry rz`."""
-
     table = np.loadtxt(path, comments="#", ndmin=2)
     if table.shape[1] != 8:
-        raise ValueError(
-            f"{path} has {table.shape[1]} columns, expected 8: "
-            "timestamp px py pz qx qy qz qw."
-        )
+        raise ValueError(f"{path} has {table.shape[1]} columns, expected 8.")
     return table.astype(np.float64)
 
 
 def normalize_quaternions(quaternions_xyzw: np.ndarray) -> np.ndarray:
-    """Normalize xyzw quaternions and fail on zero-norm entries."""
-
     quaternions_xyzw = np.asarray(quaternions_xyzw, dtype=np.float64)
     norms = np.linalg.norm(quaternions_xyzw, axis=-1, keepdims=True)
     if np.any(norms < 1e-12):
@@ -66,21 +62,16 @@ def normalize_quaternions(quaternions_xyzw: np.ndarray) -> np.ndarray:
 
 
 def slerp(q0: np.ndarray, q1: np.ndarray, alpha: float) -> np.ndarray:
-    """Interpolate two xyzw quaternions with sign-corrected spherical interpolation."""
-
     q0 = q0 / np.linalg.norm(q0)
     q1 = q1 / np.linalg.norm(q1)
-
     dot = float(np.dot(q0, q1))
     if dot < 0.0:
         q1 = -q1
         dot = -dot
-
     dot = np.clip(dot, -1.0, 1.0)
     if dot > 0.9995:
         q = (1.0 - alpha) * q0 + alpha * q1
         return q / np.linalg.norm(q)
-
     theta_0 = np.arccos(dot)
     theta = alpha * theta_0
     s0 = np.sin(theta_0 - theta) / np.sin(theta_0)
@@ -95,21 +86,16 @@ def interpolate_poses(
     gt_quaternions: np.ndarray,
     query_times_s: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Interpolate ground-truth poses onto a target timestamp grid."""
-
     right = np.searchsorted(gt_times_s, query_times_s, side="left")
     right = np.clip(right, 1, len(gt_times_s) - 1)
     left = right - 1
-
     t0 = gt_times_s[left]
     t1 = gt_times_s[right]
     alpha = (query_times_s - t0) / np.maximum(t1 - t0, 1e-12)
     alpha = np.clip(alpha, 0.0, 1.0)
-
     p0 = gt_positions[left]
     p1 = gt_positions[right]
     positions = (1.0 - alpha[:, None]) * p0 + alpha[:, None] * p1
-
     q0 = gt_quaternions[left]
     q1 = gt_quaternions[right]
     quaternions = np.stack([slerp(a, b, w) for a, b, w in zip(q0, q1, alpha)], axis=0)
@@ -117,8 +103,6 @@ def interpolate_poses(
 
 
 def rotation_error_deg(reference_quaternion_xyzw: np.ndarray, estimate_quaternion_xyzw: np.ndarray) -> float:
-    """Compute the geodesic angle between two xyzw quaternions in degrees."""
-
     q_ref = reference_quaternion_xyzw / np.linalg.norm(reference_quaternion_xyzw)
     q_est = estimate_quaternion_xyzw / np.linalg.norm(estimate_quaternion_xyzw)
     dot = np.clip(abs(np.dot(q_ref, q_est)), -1.0, 1.0)
@@ -134,12 +118,9 @@ def save_trajectory_comparison_plot(
     imu_positions: np.ndarray | None = None,
     ate_positions: np.ndarray | None = None,
 ) -> Path:
-    """Save the standard x/y/z position comparison and total position error plot."""
-
     import matplotlib.pyplot as plt
 
     path.parent.mkdir(parents=True, exist_ok=True)
-
     t_rel = gt_times_s - gt_times_s[0]
     fig, axes = plt.subplots(2, 2, figsize=(12, 9))
 
@@ -155,7 +136,8 @@ def save_trajectory_comparison_plot(
         axis.plot(t_rel, estimated_positions[:, axis_idx], label=f"EKF {label}", color="tab:green")
         
         if ate_positions is not None:
-            axis.plot(t_rel, ate_positions[:, axis_idx], label=f"EKF (ATE) {label}", color="tab:red", linestyle="-.")
+            min_len = min(len(t_rel), len(ate_positions))
+            axis.plot(t_rel[:min_len], ate_positions[:min_len, axis_idx], label=f"EKF (RPG ATE) {label}", color="tab:red", linestyle="-.")
             
         axis.set_title(f"{label.upper()} Position")
         axis.set_xlabel("time [s]")
@@ -173,8 +155,9 @@ def save_trajectory_comparison_plot(
         axes[1, 1].plot(t_rel, imu_error, color="tab:purple", linestyle=":", label="IMU Error")
     
     if ate_positions is not None:
-        ate_error = np.linalg.norm(ate_positions - gt_positions, axis=1)
-        axes[1, 1].plot(t_rel, ate_error, color="tab:red", linestyle="-.", label="EKF (ATE) Error")
+        min_len = min(len(gt_positions), len(ate_positions))
+        ate_error = np.linalg.norm(ate_positions[:min_len] - gt_positions[:min_len], axis=1)
+        axes[1, 1].plot(t_rel[:min_len], ate_error, color="tab:red", linestyle="-.", label="EKF (RPG ATE) Error")
         
     axes[1, 1].plot(t_rel, position_error, color="tab:red", label="EKF Error")
     axes[1, 1].set_title("Total Position Error")
@@ -196,33 +179,21 @@ def save_rotation_comparison_plot(
     estimated_quaternions_xyzw: np.ndarray,
     imu_quaternions_xyzw: np.ndarray | None = None,
 ) -> Path:
-    """Save the standard roll/pitch/yaw comparison and geodesic rotation error plot."""
-
     import matplotlib.pyplot as plt
 
     path.parent.mkdir(parents=True, exist_ok=True)
-
     t_rel = times_s - times_s[0]
     gt_euler_rad = Rotation.from_quat(gt_quaternions_xyzw).as_euler("xyz", degrees=False)
     est_euler_rad = Rotation.from_quat(estimated_quaternions_xyzw).as_euler("xyz", degrees=False)
     gt_euler_deg = np.rad2deg(np.unwrap(gt_euler_rad, axis=0))
     est_euler_deg = np.rad2deg(np.unwrap(est_euler_rad, axis=0))
 
-    rot_errors_deg = np.array(
-        [
-            rotation_error_deg(q_gt, q_est)
-            for q_gt, q_est in zip(gt_quaternions_xyzw, estimated_quaternions_xyzw)
-        ]
-    )
+    rot_errors_deg = np.array([rotation_error_deg(q_gt, q_est) for q_gt, q_est in zip(gt_quaternions_xyzw, estimated_quaternions_xyzw)])
 
     if imu_quaternions_xyzw is not None:
         imu_euler_rad = Rotation.from_quat(imu_quaternions_xyzw).as_euler("xyz", degrees=False)
         imu_euler_deg = np.rad2deg(np.unwrap(imu_euler_rad, axis=0))
-        
-        imu_rot_errors_deg = np.array([
-            rotation_error_deg(q_gt, q_imu)
-            for q_gt, q_imu in zip(gt_quaternions_xyzw, imu_quaternions_xyzw)
-        ])
+        imu_rot_errors_deg = np.array([rotation_error_deg(q_gt, q_imu) for q_gt, q_imu in zip(gt_quaternions_xyzw, imu_quaternions_xyzw)])
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 9))
     labels = ["Roll (X)", "Pitch (Y)", "Yaw (Z)"]
@@ -263,55 +234,25 @@ def save_3d_trajectory_plot(
     imu_positions: np.ndarray | None = None,
     ate_positions: np.ndarray | None = None,
 ) -> Path:
-    """Save a 3D plot comparing the estimated trajectory against ground truth."""
-
     import matplotlib.pyplot as plt
 
     path.parent.mkdir(parents=True, exist_ok=True)
-
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection="3d")
     
-    ax.plot(
-        gt_positions[:, 0],
-        gt_positions[:, 1],
-        gt_positions[:, 2],
-        label="Ground Truth",
-        color="tab:blue",
-        linewidth=2,
-    )
+    ax.plot(gt_positions[:, 0], gt_positions[:, 1], gt_positions[:, 2], label="Ground Truth", color="tab:blue", linewidth=2)
     
     if regressed_positions is not None:
-        ax.plot(
-            regressed_positions[:, 0],
-            regressed_positions[:, 1],
-            regressed_positions[:, 2],
-            label="Regressed",
-            color="tab:orange",
-            linestyle="--",
-            linewidth=2,
-        )
+        ax.plot(regressed_positions[:, 0], regressed_positions[:, 1], regressed_positions[:, 2], label="Regressed", color="tab:orange", linestyle="--", linewidth=2)
 
     if imu_positions is not None:
-        ax.plot(
-            imu_positions[:, 0], imu_positions[:, 1], imu_positions[:, 2],
-            label="IMU Only", color="tab:purple", linestyle=":", linewidth=2,
-        )
+        ax.plot(imu_positions[:, 0], imu_positions[:, 1], imu_positions[:, 2], label="IMU Only", color="tab:purple", linestyle=":", linewidth=2)
 
-    ax.plot(
-        estimated_positions[:, 0],
-        estimated_positions[:, 1],
-        estimated_positions[:, 2],
-        label="EKF Estimated",
-        color="tab:green",
-        linewidth=2,
-    )
+    ax.plot(estimated_positions[:, 0], estimated_positions[:, 1], estimated_positions[:, 2], label="EKF Estimated", color="tab:green", linewidth=2)
     
     if ate_positions is not None:
-        ax.plot(
-            ate_positions[:, 0], ate_positions[:, 1], ate_positions[:, 2],
-            label="EKF (ATE Aligned)", color="tab:red", linestyle="-.", linewidth=2,
-        )
+        min_len = min(len(gt_positions), len(ate_positions))
+        ax.plot(ate_positions[:min_len, 0], ate_positions[:min_len, 1], ate_positions[:min_len, 2], label="EKF (RPG ATE Aligned)", color="tab:red", linestyle="-.", linewidth=2)
         
     ax.scatter(*gt_positions[0], color="black", marker="o", s=60, label="Start", zorder=5)
     ax.scatter(*gt_positions[-1], color="red", marker="x", s=60, label="End", zorder=5)
@@ -321,13 +262,11 @@ def save_3d_trajectory_plot(
     ax.set_zlabel("Z [m]")
     ax.legend()
 
-    max_range = np.array(
-        [
-            gt_positions[:, 0].max() - gt_positions[:, 0].min(),
-            gt_positions[:, 1].max() - gt_positions[:, 1].min(),
-            gt_positions[:, 2].max() - gt_positions[:, 2].min(),
-        ]
-    ).max() / 2.0
+    max_range = np.array([
+        gt_positions[:, 0].max() - gt_positions[:, 0].min(),
+        gt_positions[:, 1].max() - gt_positions[:, 1].min(),
+        gt_positions[:, 2].max() - gt_positions[:, 2].min(),
+    ]).max() / 2.0
     mid_x = (gt_positions[:, 0].max() + gt_positions[:, 0].min()) * 0.5
     mid_y = (gt_positions[:, 1].max() + gt_positions[:, 1].min()) * 0.5
     mid_z = (gt_positions[:, 2].max() + gt_positions[:, 2].min()) * 0.5
@@ -349,12 +288,9 @@ def save_projections_plot(
     imu_positions: np.ndarray | None = None,
     ate_positions: np.ndarray | None = None,
 ) -> Path:
-    """Save 2D projections (XY, XZ, YZ) of the trajectories."""
-
     import matplotlib.pyplot as plt
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
     planes = [
@@ -367,13 +303,7 @@ def save_projections_plot(
         ax.plot(gt_positions[:, idx1], gt_positions[:, idx2], label="Ground Truth", color="tab:blue")
         
         if regressed_positions is not None:
-            ax.plot(
-                regressed_positions[:, idx1], 
-                regressed_positions[:, idx2], 
-                label="Regressed", 
-                color="tab:orange", 
-                linestyle="--"
-            )
+            ax.plot(regressed_positions[:, idx1], regressed_positions[:, idx2], label="Regressed", color="tab:orange", linestyle="--")
 
         if imu_positions is not None:
             ax.plot(imu_positions[:, idx1], imu_positions[:, idx2], label="IMU Only", color="tab:purple", linestyle=":", alpha=0.7)
@@ -381,7 +311,8 @@ def save_projections_plot(
         ax.plot(estimated_positions[:, idx1], estimated_positions[:, idx2], label="EKF Estimated", color="tab:green")
         
         if ate_positions is not None:
-            ax.plot(ate_positions[:, idx1], ate_positions[:, idx2], label="EKF (ATE Aligned)", color="tab:red", linestyle="-.")
+            min_len = min(len(gt_positions), len(ate_positions))
+            ax.plot(ate_positions[:min_len, idx1], ate_positions[:min_len, idx2], label="EKF (RPG ATE)", color="tab:red", linestyle="-.")
             
         ax.scatter(gt_positions[0, idx1], gt_positions[0, idx2], color="black", marker="o", s=40, zorder=5)
         ax.scatter(gt_positions[-1, idx1], gt_positions[-1, idx2], color="red", marker="x", s=40, zorder=5)
@@ -391,7 +322,6 @@ def save_projections_plot(
         ax.set_ylabel(f"{label2} [m]")
         ax.grid(True)
         ax.legend()
-        
         ax.axis('equal')
 
     fig.tight_layout()
@@ -406,7 +336,6 @@ def show_interactive_3d_plot(
     regressed_trajectory: np.ndarray | None = None,
     imu_trajectory: np.ndarray | None = None,
 ) -> None:
-    """Open an interactive 3D plot with Matplotlib."""
     import matplotlib.pyplot as plt
 
     fig = plt.figure(figsize=(10, 10))
@@ -461,7 +390,6 @@ def compute_filter_diagnostics(
     plot_projections: bool = False,
     plot_ate: bool = False,
 ) -> dict:
-    """Compute development metrics and optionally save the standard plots."""
 
     est = np.asarray(estimated_trajectory, dtype=np.float64)
     gt = np.asarray(ground_truth_trajectory, dtype=np.float64)
@@ -527,19 +455,21 @@ def compute_filter_diagnostics(
     pitch_rmse_deg = float(np.sqrt(np.mean(euler_errors_deg[:, 1] ** 2)))
     yaw_rmse_deg = float(np.sqrt(np.mean(euler_errors_deg[:, 2] ** 2)))
 
-    rotation_errors_deg = np.array(
-        [
-            rotation_error_deg(q_gt, q_est)
-            for q_gt, q_est in zip(aligned_gt_quaternions, est_quaternions)
-        ]
-    )
+    rotation_errors_deg = np.array([rotation_error_deg(q_gt, q_est) for q_gt, q_est in zip(aligned_gt_quaternions, est_quaternions)])
     rotation_rmse_deg = float(np.sqrt(np.mean(rotation_errors_deg**2)))
     max_rotation_error_deg = float(np.max(rotation_errors_deg))
 
     ate_est_positions = None
+    ate_rmse_m = None
     if plot_ate:
-        c, R, t = umeyama_alignment(est_positions, aligned_gt_positions)
-        ate_est_positions = apply_sim3(est_positions, c, R, t)
+        try:
+            ate_rmse_m, ate_est_positions = get_rpg_ate_and_aligned_trajectory(
+                ground_truth_table=gt,
+                estimated_table=est
+            )
+        except Exception as e:
+            print(f"Attentioe: Failed to calculate ATE through UZH RPG toolbox ({e})")
+            ate_est_positions = None
 
     saved_files: dict[str, str] = {}
     if output_dir is not None:
@@ -599,6 +529,7 @@ def compute_filter_diagnostics(
         "pitch_rmse_deg": pitch_rmse_deg,
         "yaw_rmse_deg": yaw_rmse_deg,
         "max_rotation_error_deg": max_rotation_error_deg,
+        "ate_rmse_m": ate_rmse_m,
         "saved_files": saved_files,
     }
 
@@ -614,7 +545,6 @@ def print_filter_run_summary(
     diagnostics: dict,
     saved_trajectory_path: str | None = None,
 ) -> None:
-    """Print the development-time filter summary in one place."""
 
     w_label = 26
     w_total = 67
@@ -627,6 +557,8 @@ def print_filter_run_summary(
     
     print(f"{' Position and Rotation RMSE ':-^{w_total}}")
     print(f"{'Position RMSE [m]:':<{w_label}} {diagnostics['position_rmse_m']:.6f}")
+    if diagnostics.get("ate_rmse_m") is not None:
+        print(f"{'ATE RMSE (RPG) [m]:':<{w_label}} {diagnostics['ate_rmse_m']:.6f}")
     print(f"{'Rotation RMSE [deg]:':<{w_label}} {diagnostics['rotation_rmse_deg']:.6f}")
     
     print(f"{' MAX Errors ':-^{w_total}}")
@@ -662,8 +594,6 @@ def print_filter_run_summary(
 
 
 def main() -> None:
-    """Run the diagnostics from the command line on two trajectory files."""
-
     parser = argparse.ArgumentParser(description="Compute diagnostics for a filter trajectory.")
     parser.add_argument("--estimated", type=Path, required=True, help="Estimated trajectory txt file.")
     parser.add_argument("--ground_truth", type=Path, required=True, help="Ground-truth trajectory txt file.")
@@ -671,7 +601,7 @@ def main() -> None:
     parser.add_argument("--output_dir", type=Path, default=None, help="Optional directory for plots.")
     parser.add_argument("--prefix", type=str, default="filter", help="Prefix used for saved plot filenames.")
     parser.add_argument("--plot_projections", action="store_true", help="Save 2D projection plots.")
-    parser.add_argument("--plot_ate", action="store_true", help="Plot Umeyama aligned trajectory to show ATE minimized distance.")
+    parser.add_argument("--plot_ate", action="store_true", help="Plot RPG Toolbox aligned trajectory to show ATE minimized distance.")
     args = parser.parse_args()
 
     estimated = load_trajectory_table(args.estimated)
@@ -690,6 +620,7 @@ def main() -> None:
         plot_ate=args.plot_ate,
     )
     print_filter_run_summary(
+        dataset="N/A",
         sequence=args.prefix,
         num_anchors=int(len(estimated)),
         num_updates_attempted=max(int(len(estimated)) - 2, 0),
