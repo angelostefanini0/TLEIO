@@ -266,16 +266,53 @@ Compare the printed timing line at the end of the epoch:
 - If throughput stops improving, that configuration is already near the sweet spot.
 
 ## 7. Testing the model: 
-Run the `test.py` script to test the model and save the motions into a file.
+Run the `scripts/test.py` script to test the model and save the motions into a file.
 
 The script reads `args.txt` from the checkpoint directory, so the same training-time settings for downsampling and denoising are reused automatically during inference. You can also enable `--average_overlaps` to average multiple predictions that correspond to the same relative motion. Translation-only checkpoints now save `t0_us t1_us px py pz`.
 
 ```bash
-python test.py \
+python scripts/test.py \
 --sequence_dir data/eds/processed_testing \
 --checkpoint_file checkpoints/checkpoint_best.pth \
 --output_file data/eds/path/to/save/outputs.txt \
 --average_overlaps
+```
+
+## 7.1 Batch testing precomputed sequences:
+Use `scripts/batch_test.py` to run `scripts/test.py` on every valid sequence folder inside a precomputed root. A valid sequence folder must contain `derotated_voxels.npy` and `relative_motions.txt`.
+
+Example used for the Office precomputed dataset:
+
+```bash
+python scripts/batch_test.py \
+--batch_root data/tartanair/precomputed_office_integer \
+--checkpoint_file checkpoints/checkpoint_massive/checkpoint_best.pth \
+--output_dir data/tartanair/predicted_relative_motions/precomputed_office_integer \
+--average_overlaps \
+--raw_output
+```
+
+The main prediction files are saved as:
+
+```text
+data/tartanair/predicted_relative_motions/precomputed_office_integer/<sequence>.txt
+```
+
+Files ending in `_raw.txt` are raw model outputs for debugging and are not needed for trajectory plots.
+
+To plot all Office sequences against ground truth:
+
+```bash
+for seq_dir in data/tartanair/precomputed_office_integer/*; do
+  seq=$(basename "$seq_dir")
+
+  python inspect_functions/inspect_relative_motions.py \
+    --gt "data/tartanair/processed_train/$seq/stamped_groundtruth.txt" \
+    --rel "data/tartanair/predicted_relative_motions/precomputed_office_integer/$seq.txt" \
+    --gt_rel "$seq_dir/relative_motions.txt" \
+    --gt_rel_mode rotation \
+    --save_dir "plots/precomputed_office_integer/$seq"
+done
 ```
 
 ## 8. Inspection of model output: 

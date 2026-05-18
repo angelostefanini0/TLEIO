@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR
+REPO_ROOT = SCRIPT_DIR.parent
 SRC_DIR = REPO_ROOT / "src"
 for path in (REPO_ROOT, SRC_DIR):
     path_str = str(path)
@@ -19,7 +19,7 @@ from learning.network.build_model import build_model, normalize_checkpoint_state
 from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 from learning.dataloader.events_to_voxel.precomputed_voxel_clip import PrecomputedVoxelClipDataset
 
-"python test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
+"python scripts/test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
 
 
 def load_inference_args(checkpoint_file: Path):
