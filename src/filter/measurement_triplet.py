@@ -87,11 +87,10 @@ def extract_joint_measurement_covariance(network_output):
     return covariance
 
 
-def make_default_joint_covariance(sigma_translation):
+def make_default_joint_covariance(sigma_x: float, sigma_y: float, sigma_z: float):
     """Build a conservative block-diagonal joint covariance for all pose edges."""
     # Create a 3x3 diagonal matrix for a single edge
-    pair_cov = np.diag(
-        [sigma_translation**2] * 3 )
+    pair_cov = np.diag([sigma_x**2, sigma_y**2, sigma_z**2])
     # Stacks four 3x3 matrices in a 12x12 joint covariance matrix
     joint_cov = np.zeros((12, 12), dtype=float)
     joint_cov[0:3, 0:3] = pair_cov

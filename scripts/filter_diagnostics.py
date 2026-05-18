@@ -117,6 +117,7 @@ def save_trajectory_comparison_plot(
     regressed_positions: np.ndarray | None = None,
     imu_positions: np.ndarray | None = None,
     ate_positions: np.ndarray | None = None,
+    aa_regressed_trajectory: np.ndarray | None = None,
 ) -> Path:
     import matplotlib.pyplot as plt
 
@@ -138,7 +139,9 @@ def save_trajectory_comparison_plot(
         if ate_positions is not None:
             min_len = min(len(t_rel), len(ate_positions))
             axis.plot(t_rel[:min_len], ate_positions[:min_len, axis_idx], label=f"EKF (RPG ATE) {label}", color="tab:red", linestyle="-.")
-            
+        if aa_regressed_trajectory is not None:
+            axis.plot(t_rel, aa_regressed_trajectory[:, axis_idx], label=f"Transformer ATE Aligned {label}", color="y", linestyle="--")
+
         axis.set_title(f"{label.upper()} Position")
         axis.set_xlabel("time [s]")
         axis.set_ylabel(f"{label} [m]")
@@ -233,6 +236,7 @@ def save_3d_trajectory_plot(
     regressed_positions: np.ndarray | None = None,
     imu_positions: np.ndarray | None = None,
     ate_positions: np.ndarray | None = None,
+    aa_regressed_trajectory: np.ndarray | None = None,
 ) -> Path:
     import matplotlib.pyplot as plt
 
@@ -247,6 +251,8 @@ def save_3d_trajectory_plot(
 
     if imu_positions is not None:
         ax.plot(imu_positions[:, 0], imu_positions[:, 1], imu_positions[:, 2], label="IMU Only", color="tab:purple", linestyle=":", linewidth=2)
+    if aa_regressed_trajectory is not None:
+        ax.plot(aa_regressed_trajectory[:, 0], aa_regressed_trajectory[:, 1], aa_regressed_trajectory[:, 2], label="Transformer ATE Aligned", color="y", linestyle="--", linewidth=2)
 
     ax.plot(estimated_positions[:, 0], estimated_positions[:, 1], estimated_positions[:, 2], label="EKF Estimated", color="tab:green", linewidth=2)
     
@@ -287,6 +293,7 @@ def save_projections_plot(
     regressed_positions: np.ndarray | None = None,
     imu_positions: np.ndarray | None = None,
     ate_positions: np.ndarray | None = None,
+    aa_regressed_trajectory: np.ndarray | None = None,
 ) -> Path:
     import matplotlib.pyplot as plt
 
@@ -307,7 +314,9 @@ def save_projections_plot(
 
         if imu_positions is not None:
             ax.plot(imu_positions[:, idx1], imu_positions[:, idx2], label="IMU Only", color="tab:purple", linestyle=":", alpha=0.7)
-            
+        if aa_regressed_trajectory is not None:
+            ax.plot(aa_regressed_trajectory[:, idx1], aa_regressed_trajectory[:, idx2], label="Transformer ATE Aligned", color="y", linestyle="--")
+
         ax.plot(estimated_positions[:, idx1], estimated_positions[:, idx2], label="EKF Estimated", color="tab:green")
         
         if ate_positions is not None:
@@ -336,6 +345,7 @@ def show_interactive_3d_plot(
     regressed_trajectory: np.ndarray | None = None,
     imu_trajectory: np.ndarray | None = None,
     ate_positions: np.ndarray | None = None,
+    aa_regressed_trajectory=None,
 ) -> None:
     import matplotlib.pyplot as plt
 
@@ -354,6 +364,10 @@ def show_interactive_3d_plot(
     if imu_trajectory is not None:
         imu_pos = imu_trajectory[:, 1:4]
         ax.plot(imu_pos[:, 0], imu_pos[:, 1], imu_pos[:, 2], label="IMU Only", color="tab:purple", linestyle=":", linewidth=2)
+
+    if aa_regressed_trajectory is not None:
+        aa_pos = aa_regressed_trajectory[:, 1:4]
+        ax.plot(aa_pos[:, 0], aa_pos[:, 1], aa_pos[:, 2], label="Transformer ATE Aligned", color="y", linestyle="--", linewidth=2)
         
     ax.plot(est_pos[:, 0], est_pos[:, 1], est_pos[:, 2], label="EKF Estimated", color="tab:green", linewidth=2)
     if ate_positions is not None:
@@ -391,6 +405,7 @@ def compute_filter_diagnostics(
     output_dir: Path | None = None,
     file_prefix: str = "filter",
     plot_projections: bool = False,
+    aa_regressed_trajectory: np.ndarray | None = None,
     plot_ate: bool = False,
 ) -> dict:
 
@@ -427,6 +442,14 @@ def compute_filter_diagnostics(
     else:
         aligned_regr_positions = None
         aligned_regr_quaternions = None
+
+    if aa_regressed_trajectory is not None:
+        aa_regr = np.asarray(aa_regressed_trajectory, dtype=np.float64)
+        aligned_aa_regr_positions, _ = interpolate_poses(
+            aa_regr[:, 0], aa_regr[:, 1:4], normalize_quaternions(aa_regr[:, 4:8]), est_times_s
+        )
+    else:
+        aligned_aa_regr_positions = None
 
     if imu_trajectory is not None:
         imu_np = np.asarray(imu_trajectory, dtype=np.float64)
@@ -487,6 +510,7 @@ def compute_filter_diagnostics(
                 regressed_positions=aligned_regr_positions,
                 imu_positions=aligned_imu_positions,
                 ate_positions=ate_est_positions,
+                aa_regressed_trajectory=aligned_aa_regr_positions,
             )
         )
         saved_files["rotation_plot"] = str(
@@ -506,6 +530,7 @@ def compute_filter_diagnostics(
                 regressed_positions=aligned_regr_positions,
                 imu_positions=aligned_imu_positions,
                 ate_positions=ate_est_positions,
+                aa_regressed_trajectory=aligned_aa_regr_positions,
             )
         )
         
@@ -518,6 +543,7 @@ def compute_filter_diagnostics(
                     regressed_positions=aligned_regr_positions,
                     imu_positions=aligned_imu_positions,
                     ate_positions=ate_est_positions,
+                    aa_regressed_trajectory=aligned_aa_regr_positions,
                 )
             )
 
@@ -563,6 +589,8 @@ def print_filter_run_summary(
     print(f"{'Position RMSE [m]:':<{w_label}} {diagnostics['position_rmse_m']:.6f}")
     if diagnostics.get("ate_rmse_m") is not None:
         print(f"{'ATE RMSE (RPG) [m]:':<{w_label}} {diagnostics['ate_rmse_m']:.6f}")
+    if diagnostics.get("ate_transformer_m") is not None:
+        print(f"{'ATE Transformer [m]:':<{w_label}} {diagnostics['ate_transformer_m']:.6f}")
     print(f"{'Rotation RMSE [deg]:':<{w_label}} {diagnostics['rotation_rmse_deg']:.6f}")
     
     print(f"{' MAX Errors ':-^{w_total}}")

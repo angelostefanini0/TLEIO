@@ -1,4 +1,4 @@
-"""Deterministic coarse-to-fine tuning for `main_filter.py` hyperparameters."""
+"""Deterministic coarse-to-fine tuning for `main_filter.py` hyperparameters across a full dataset using Multiprocessing."""
 
 from __future__ import annotations
 
@@ -13,11 +13,11 @@ from dataclasses import asdict, replace
 from pathlib import Path
 import sys
 import tempfile
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 
 import matplotlib
-
 matplotlib.use("Agg")
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,7 +34,8 @@ from trajectory import Trajectory
 
 SEARCH_KEYS = (
     "sigma_na", "sigma_ng", "sigma_nba", "sigma_nbg",
-    "assumed_sigma_rel_t", "meas_cov_scale", "initial_attitude_sigma_deg",
+    "assumed_sigma_rel_x_t", "assumed_sigma_rel_y_t", "assumed_sigma_rel_z_t", 
+    "meas_cov_scale", "initial_attitude_sigma_deg",
     "initial_velocity_sigma_mps", "initial_position_sigma_m", "initial_z_sigma_m",
     "initial_bg_sigma_rps", "initial_ba_sigma_mps2",
 )
@@ -42,7 +43,8 @@ SEARCH_KEYS = (
 COARSE_LOG10_RANGES = {
     "sigma_na": (-3.0, -0.7), "sigma_ng": (-3.0, -0.7),
     "sigma_nba": (-5.5, -2.0), "sigma_nbg": (-6.5, -3.5),
-    "assumed_sigma_rel_t": (-2.3, -0.8), "meas_cov_scale": (-0.7, 0.6),
+    "assumed_sigma_rel_x_t": (-2.3, -0.8), "assumed_sigma_rel_y_t": (-2.3, -0.8), "assumed_sigma_rel_z_t": (-2.3, -0.8), 
+    "meas_cov_scale": (-0.7, 0.6),
     "initial_attitude_sigma_deg": (-1.0, 0.8), "initial_velocity_sigma_mps": (-1.2, 0.4),
     "initial_position_sigma_m": (-2.5, -0.3), "initial_z_sigma_m": (-2.5, -0.3),
     "initial_bg_sigma_rps": (-4.0, -1.5), "initial_ba_sigma_mps2": (-3.0, -0.3),
@@ -50,7 +52,8 @@ COARSE_LOG10_RANGES = {
 
 REFINE_LOG10_HALF_WIDTH = {
     "sigma_na": 0.5, "sigma_ng": 0.5, "sigma_nba": 0.5, "sigma_nbg": 0.5,
-    "assumed_sigma_rel_t": 0.5, "meas_cov_scale": 0.35, "initial_attitude_sigma_deg": 0.5,
+    "assumed_sigma_rel_x_t": 0.5, "assumed_sigma_rel_y_t": 0.5, "assumed_sigma_rel_z_t": 0.5, 
+    "meas_cov_scale": 0.35, "initial_attitude_sigma_deg": 0.5,
     "initial_velocity_sigma_mps": 0.5, "initial_position_sigma_m": 0.5, "initial_z_sigma_m": 0.5,
     "initial_bg_sigma_rps": 0.5, "initial_ba_sigma_mps2": 0.5,
 }
@@ -72,7 +75,7 @@ def score_run(results: dict, config: RunnerConfig, optimize_for_pos_rmse: bool =
             estimate_table=results["trajectory"],
         )
     except Exception as exc:
-        print(f"  -> Errore nel calcolo dell'ATE: {exc}")
+        # Silenced exception print to avoid console clutter during multiprocessing
         ate_rmse = 9999.0
 
     if optimize_for_pos_rmse:
@@ -148,7 +151,6 @@ def compute_ate_from_results(
         write_seconds_pose_table(gt_path, eval_gt_path)
         np.savetxt(eval_est_path, np.asarray(estimate_table, dtype=np.float64), fmt="%.9f")
 
-        # Silence the RPG toolbox's verbose console output during random search.
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             traj = Trajectory(str(eval_dir), est_type="traj_est")
             if not traj.data_loaded:
@@ -174,40 +176,66 @@ def sample_refined_params(rng: random.Random, center: dict[str, float]) -> dict[
     return refined
 
 
-def evaluate_candidate(
+def evaluate_candidate_on_dataset(
     base_config: RunnerConfig,
     candidate: dict[str, float],
+    sequences: list[str],
     optimize_for_pos_rmse: bool = False,
 ) -> dict | None:
-    config = replace(
-        base_config,
-        **candidate,
-        interactive_plot=False,
-        plot_transformer=False,
-        plot_projections=False,
-        save_trajectory_file=False,
-        save_diagnostic_plots=False,
-    )
-    try:
-        results = run_filter(config)
-    except Exception as exc:
-        candidate_label = ", ".join(f"{key}={candidate[key]:.4g}" for key in SEARCH_KEYS[:4])
-        print(f"  trial failed: {type(exc).__name__}: {exc} [{candidate_label}, ...]")
+    """Testa un candidato su TUTTE le sequenze e ne calcola la media delle metriche."""
+    metrics_list = []
+    
+    for seq in sequences:
+        config = replace(
+            base_config,
+            sequence=seq,
+            **candidate,
+            interactive_plot=False,
+            plot_transformer=False,
+            plot_projections=False,
+            save_trajectory_file=False,
+            save_diagnostic_plots=False,
+        )
+        try:
+            results = run_filter(config)
+            metrics = score_run(results, config, optimize_for_pos_rmse=optimize_for_pos_rmse)
+            metrics_list.append(metrics)
+        except Exception:
+            # Se i parametri fanno divergere/fallire il filtro su UNA sequenza, scartiamo il set intero
+            return None
+
+    if not metrics_list:
         return None
 
-    metrics = score_run(results, config, optimize_for_pos_rmse=optimize_for_pos_rmse)
-    return {"params": candidate, "metrics": metrics}
+    # Calcola la media sulle sequenze per ottenere lo score globale
+    n = len(metrics_list)
+    avg_score = sum(m["score"] for m in metrics_list) / n
+    avg_ate = sum(m["ate_rmse"] for m in metrics_list) / n
+    avg_pos = sum(m["position_rmse_m"] for m in metrics_list) / n
+    avg_rot = sum(m["rotation_rmse_deg"] for m in metrics_list) / n
+    avg_rej = sum(m["num_updates_rejected"] for m in metrics_list) / n
+
+    return {
+        "params": candidate,
+        "metrics": {
+            "score": avg_score,
+            "ate_rmse": avg_ate,
+            "position_rmse_m": avg_pos,
+            "rotation_rmse_deg": avg_rot,
+            "num_updates_rejected": avg_rej,
+        }
+    }
 
 
 def print_trial(label: str, trial_index: int, evaluated: dict) -> None:
     metrics = evaluated["metrics"]
     print(
         f"[{label} {trial_index:03d}] "
-        f"score={metrics['score']:.6f} "
-        f"ate={metrics['ate_rmse']:.6f} "
+        f"AVG score={metrics['score']:.6f} | "
+        f"AVG ate={metrics['ate_rmse']:.6f} "
         f"pos={metrics['position_rmse_m']:.6f} "
         f"rot={metrics['rotation_rmse_deg']:.6f} "
-        f"rej={metrics['num_updates_rejected']}"
+        f"rej={metrics['num_updates_rejected']:.1f}"
     )
 
 
@@ -219,47 +247,67 @@ def maybe_update_best(best: dict | None, candidate: dict) -> tuple[dict | None, 
 
 def run_search(
     base_config: RunnerConfig,
+    sequences: list[str],
     coarse_trials: int,
     refine_trials: int,
     seed: int,
     optimize_for_pos_rmse: bool = False,
+    workers: int | None = None,
 ) -> dict:
     rng = random.Random(seed)
     completed: list[dict] = []
     best: dict | None = None
 
-    for idx in range(coarse_trials):
-        evaluated = evaluate_candidate(
-            base_config,
-            sample_coarse_params(rng),
-            optimize_for_pos_rmse=optimize_for_pos_rmse,
-        )
-        if evaluated is None:
-            continue
-        completed.append(evaluated)
-        print_trial("coarse", idx, evaluated)
-        best, improved = maybe_update_best(best, evaluated)
-        if improved:
-            print("  new best coarse candidate")
+    # 1. Genera tutti i candidati coarse in anticipo
+    coarse_candidates = [sample_coarse_params(rng) for _ in range(coarse_trials)]
+    
+    print(f"\n🚀 Avvio {coarse_trials} COARSE trials in parallelo (Workers: {workers or os.cpu_count()})...")
+    
+    # Esegue i task in parallelo distribuendoli sui core della CPU
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(evaluate_candidate_on_dataset, base_config, cand, sequences, optimize_for_pos_rmse): idx
+            for idx, cand in enumerate(coarse_candidates)
+        }
+        
+        # as_completed restituisce i risultati man mano che i processi finiscono
+        for future in as_completed(futures):
+            idx = futures[future]
+            evaluated = future.result()
+            if evaluated is None:
+                continue
+            completed.append(evaluated)
+            print_trial("coarse", idx, evaluated)
+            best, improved = maybe_update_best(best, evaluated)
+            if improved:
+                print("  *** new best coarse candidate for dataset ***")
 
     if best is None:
-        raise RuntimeError("No valid coarse trial completed.")
+        raise RuntimeError("No valid coarse trial completed across the dataset.")
 
+    # 2. Ripeti la logica in parallelo per i refine trials, centrati sul best coarse
     refine_center = best["params"]
-    for idx in range(refine_trials):
-        evaluated = evaluate_candidate(
-            base_config,
-            sample_refined_params(rng, refine_center),
-            optimize_for_pos_rmse=optimize_for_pos_rmse,
-        )
-        if evaluated is None:
-            continue
-        completed.append(evaluated)
-        print_trial("refine", idx, evaluated)
-        best, improved = maybe_update_best(best, evaluated)
-        if improved:
-            refine_center = best["params"]
-            print("  new best refined candidate")
+    refine_candidates = [sample_refined_params(rng, refine_center) for _ in range(refine_trials)]
+    
+    print(f"\n🚀 Avvio {refine_trials} REFINE trials in parallelo (Workers: {workers or os.cpu_count()})...")
+    
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(evaluate_candidate_on_dataset, base_config, cand, sequences, optimize_for_pos_rmse): idx
+            for idx, cand in enumerate(refine_candidates)
+        }
+        
+        for future in as_completed(futures):
+            idx = futures[future]
+            evaluated = future.result()
+            if evaluated is None:
+                continue
+            completed.append(evaluated)
+            print_trial("refine", idx, evaluated)
+            best, improved = maybe_update_best(best, evaluated)
+            if improved:
+                refine_center = best["params"]
+                print("  *** new best refined candidate for dataset ***")
 
     completed_sorted = sorted(completed, key=lambda item: item["metrics"]["score"])
     return {
@@ -269,7 +317,7 @@ def run_search(
         "seed": seed,
         "coarse_trials": coarse_trials,
         "refine_trials": refine_trials,
-        "objective": "position_rmse_m" if optimize_for_pos_rmse else "ate_rmse",
+        "objective": "avg_position_rmse_m" if optimize_for_pos_rmse else "avg_ate_rmse",
         "base_config": asdict(base_config),
     }
 
@@ -285,13 +333,13 @@ def to_jsonable(value):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Tune main_filter hyperparameters with deterministic random search.")
+    parser = argparse.ArgumentParser(description="Tune main_filter hyperparameters over an entire dataset.")
     parser.add_argument("--dataset", type=str, default=CONFIG.dataset)
-    parser.add_argument("--sequence", type=str, default=None, help="Sequence to tune. If omitted, tunes all sequences.")
+    parser.add_argument("--sequences", type=str, default=None, help="Comma-separated list of sequences to use for tuning. If omitted, uses all.")
     parser.add_argument("--gt", action="store_true", help="Use relative_motions.txt instead of regressed_relative_motions.txt.")
     parser.add_argument("--max-frames", type=int, default=None)
-    parser.add_argument("--coarse-trials", type=int, default=150)
-    parser.add_argument("--refine-trials", type=int, default=200)
+    parser.add_argument("--coarse-trials", type=int, default=450)
+    parser.add_argument("--refine-trials", type=int, default=600)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
         "--optimize-for-pos-rmse",
@@ -303,6 +351,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("outputs") / "tuning",
         help="Directory to save the best result JSONs.",
+    )
+    parser.add_argument(
+        "--workers", 
+        type=int, 
+        default=None, 
+        help="Numero di core della CPU da usare in parallelo. Se omesso, usa tutti i core disponibili."
     )
     return parser.parse_args()
 
@@ -325,66 +379,61 @@ def main() -> None:
         print(f"Error: Dataset path {processed_dir} not found.")
         return
 
-    if args.sequence:
-        sequences = [args.sequence]
+    if args.sequences:
+        sequences = [s.strip() for s in args.sequences.split(",") if s.strip()]
     else:
         sequences = [d.name for d in processed_dir.iterdir() if d.is_dir()]
 
     sequences.sort()
 
-    for seq in sequences:
-        print("\n" + "=" * 50)
-        print(f"Optimizing: {seq}")
-        print("=" * 50)
+    print("\n" + "=" * 60)
+    print(f"Optimizing Dataset: {args.dataset}")
+    print(f"Sequences used: {sequences}")
+    print("=" * 60)
 
-        sequence_dir = processed_dir / seq
-        if not sequence_dir.exists():
-            print(
-                f"Error while optimizing {seq}: sequence folder not found at {sequence_dir}. "
-                f"Check `--dataset` and `--sequence`."
-            )
-            continue
+    base_config = replace(
+        CONFIG,
+        dataset=args.dataset,
+        use_gt=args.gt,
+        max_frames=args.max_frames,
+        interactive_plot=False,
+        plot_transformer=False,
+        plot_projections=False,
+        **dataset_specific_overrides(args.dataset),
+    )
 
-        base_config = replace(
-            CONFIG,
-            dataset=args.dataset,
-            sequence=seq,
-            use_gt=args.gt,
-            max_frames=args.max_frames,
-            interactive_plot=False,
-            plot_transformer=False,
-            plot_projections=False,
-            **dataset_specific_overrides(args.dataset),
+    try:
+        summary = run_search(
+            base_config=base_config,
+            sequences=sequences,
+            coarse_trials=args.coarse_trials,
+            refine_trials=args.refine_trials,
+            seed=args.seed,
+            optimize_for_pos_rmse=args.optimize_for_pos_rmse,
+            workers=args.workers,
         )
+    except Exception as exc:
+        print(f"Fatal error during dataset optimization: {exc}")
+        return
 
-        try:
-            summary = run_search(
-                base_config=base_config,
-                coarse_trials=args.coarse_trials,
-                refine_trials=args.refine_trials,
-                seed=args.seed,
-                optimize_for_pos_rmse=args.optimize_for_pos_rmse,
-            )
-        except Exception as exc:
-            print(f"Errorwhile optimizing {seq}: {exc}")
-            continue
+    best = summary["best"]
+    assert best is not None
 
-        best = summary["best"]
-        assert best is not None
+    print("\n" + "=" * 60)
+    print("Best Result (Average over dataset)")
+    print("=" * 60)
+    print(
+        f"AVG score={best['metrics']['score']:.6f}\n"
+        f"AVG ate={best['metrics']['ate_rmse']:.6f}\n"
+        f"AVG pos={best['metrics']['position_rmse_m']:.6f}\n"
+        f"AVG rot={best['metrics']['rotation_rmse_deg']:.6f}\n"
+        f"AVG rej={best['metrics']['num_updates_rejected']:.1f}"
+    )
 
-        print("\nBest result")
-        print(
-            f"score={best['metrics']['score']:.6f} "
-            f"ate={best['metrics']['ate_rmse']:.6f} "
-            f"pos={best['metrics']['position_rmse_m']:.6f} "
-            f"rot={best['metrics']['rotation_rmse_deg']:.6f} "
-            f"rej={best['metrics']['num_updates_rejected']}"
-        )
-
-        seq_output_file = args.output_dir / seq / "best_filter_params.json"
-        seq_output_file.parent.mkdir(parents=True, exist_ok=True)
-        seq_output_file.write_text(json.dumps(to_jsonable(summary), indent=2), encoding="utf-8")
-        print(f"Saved summary to {seq_output_file}")
+    dataset_output_file = args.output_dir / args.dataset / "best_filter_params.json"
+    dataset_output_file.parent.mkdir(parents=True, exist_ok=True)
+    dataset_output_file.write_text(json.dumps(to_jsonable(summary), indent=2), encoding="utf-8")
+    print(f"\nSaved global dataset summary to {dataset_output_file}")
 
 
 if __name__ == "__main__":

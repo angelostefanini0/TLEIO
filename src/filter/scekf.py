@@ -71,7 +71,9 @@ class ImuMSCKF:
         self.sigma_nba = getattr(args, "sigma_nba", 1e-4)
         self.sigma_nbg = getattr(args, "sigma_nbg", 1e-5)
         # Transformer measurement assumptions
-        self.sigma_rel_t = getattr(args, "sigma_rel_t", 0.10)
+        self.sigma_rel_x_t = getattr(args, "sigma_rel_x_t", 0.10)
+        self.sigma_rel_y_t = getattr(args, "sigma_rel_y_t", 0.10)
+        self.sigma_rel_z_t = getattr(args, "sigma_rel_z_t", 0.10)
         self.sigma_rel_r = getattr(args, "sigma_rel_r", 0.10)
         self.meas_cov_scale = getattr(args, "meas_cov_scale", 1.0)
         # Initialization of P
@@ -93,7 +95,9 @@ class ImuMSCKF:
             ba=np.zeros(3)
         )
         self.default_measurement_covariance = make_default_joint_covariance(
-            self.sigma_rel_t
+            self.sigma_rel_x_t,
+            self.sigma_rel_y_t,
+            self.sigma_rel_z_t
         )
         self.t = 0.0
         self.adaptive_cov = AdaptiveCovariance(M1=2, M2=1, gamma=1e-5)

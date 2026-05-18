@@ -58,7 +58,8 @@ class RunnerConfig:
     plot_imu: bool = False
     interactive_plot: bool = False 
     plot_projections: bool = False
-    plot_ate: bool = False  # Set via CLI argument to plot ATE aligned trajectory
+    plot_ate: bool = False 
+    plot_aa_transformer: bool = False # Set via CLI argument to plot ATE aligned trajectory
     save_trajectory_file: bool = True
     save_diagnostic_plots: bool = True
 
@@ -75,7 +76,9 @@ class RunnerConfig:
     sigma_nbg: float = 2.1514640261497524e-05
 
     # EKF assumed measurement covariance
-    assumed_sigma_rel_t: float = 0.02194332115673975
+    assumed_sigma_rel_x_t: float = 0.02194332115673975
+    assumed_sigma_rel_y_t: float = 0.02194332115673975
+    assumed_sigma_rel_z_t: float = 0.02194332115673975
     assumed_sigma_rel_r_deg: float = 2.0
     meas_cov_scale: float = 1.2649054158337365
 
@@ -355,7 +358,9 @@ def _make_filter_args(config: RunnerConfig) -> SimpleNamespace:
         sigma_ng=float(config.sigma_ng),
         sigma_nba=float(config.sigma_nba),
         sigma_nbg=float(config.sigma_nbg),
-        sigma_rel_t=float(config.assumed_sigma_rel_t),
+        sigma_rel_x_t=float(config.assumed_sigma_rel_x_t),
+        sigma_rel_y_t=float(config.assumed_sigma_rel_y_t),
+        sigma_rel_z_t=float(config.assumed_sigma_rel_z_t),
         sigma_rel_r=float(np.deg2rad(config.assumed_sigma_rel_r_deg)),
         meas_cov_scale=float(config.meas_cov_scale),
         initial_attitude_sigma_rad=float(np.deg2rad(config.initial_attitude_sigma_deg)),
@@ -442,12 +447,14 @@ def _compute_transformer_trajectory(
             reg_dp = reg_dp[: max(0, max_frames - 1)]
                 
         # Ensure the lengths match
-        if len(reg_dp) == len(anchor_timestamps_us) - 1:
+        limit = min(len(reg_dp), len(anchor_timestamps_us) - 1)
+        
+        if limit > 0:
             regr_positions = [anchor_positions[0].astype(np.float64)]
             regr_quaternions = [anchor_quaternions[0].astype(np.float64)]
             
             # Integrate the poses 
-            for i in range(len(reg_dp)):
+            for i in range(limit):
                 R_curr = Rotation.from_quat(regr_quaternions[-1])
                 
                 # Translate into the global frame
@@ -457,16 +464,59 @@ def _compute_transformer_trajectory(
                 regr_quaternions.append(anchor_quaternions[i + 1])
                     
             return _build_ground_truth_trajectory(
-                anchor_timestamps_us,
+                anchor_timestamps_us[:limit + 1],
                 np.array(regr_positions),
-                np.array(regr_quaternions), 
+                np.array(regr_quaternions),
             )
-            
     except Exception as e:
         print(f"Warning: Failed to generate the regressed trajectory for the plot: {e}")
         
     return None
 
+def _compute_transformer_ate_and_alignment(
+    ground_truth_trajectory: np.ndarray,
+    regressed_trajectory: np.ndarray,
+) -> tuple[float, np.ndarray]:
+    """Compute the Transformer ATE and return the Umeyama aligned trajectory using UZH RPG."""
+    import tempfile
+    import contextlib
+    import io
+    from trajectory import Trajectory
+
+    with tempfile.TemporaryDirectory(prefix="rpg_align_transformer_") as temp_dir:
+        eval_dir = Path(temp_dir)
+        eval_gt_path = eval_dir / "stamped_groundtruth.txt"
+        eval_est_path = eval_dir / "stamped_traj_estimate.txt"
+
+        # Copy and format Ground Truth timestamps to seconds
+        gt_table = ground_truth_trajectory.copy()
+        gt_table[:, 0] *= _infer_time_scale_to_seconds(gt_table[:, 0])
+        np.savetxt(eval_gt_path, gt_table, fmt="%.9f")
+
+        # Copy and format Transformer estimated timestamps to seconds
+        est_table = regressed_trajectory.copy()
+        est_table[:, 0] *= _infer_time_scale_to_seconds(est_table[:, 0])
+        np.savetxt(eval_est_path, est_table, fmt="%.9f")
+
+        # Run UZH RPG Trajectory evaluation silently
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            traj = Trajectory(str(eval_dir), est_type="traj_est")
+            if not traj.data_loaded:
+                raise RuntimeError("Failed to load files into UZH RPG toolbox for alignment.")
+            traj.compute_absolute_error()
+
+        # Extract the ATE RMSE
+        ate_rmse = float(traj.abs_errors["abs_e_trans_stats"]["rmse"])
+        
+        # Extract the Umeyama aligned positions (N x 3)
+        aligned_positions = traj.p_es_aligned
+        
+        # Reconstruct the trajectory array with aligned positions
+        aligned_trajectory = regressed_trajectory.copy()
+        min_len = min(len(aligned_trajectory), len(aligned_positions))
+        aligned_trajectory[:min_len, 1:4] = aligned_positions[:min_len]
+
+        return ate_rmse, aligned_trajectory
 
 def run_filter(config: RunnerConfig) -> dict:
     """Run the relative-motion EKF on one processed sequence."""
@@ -534,7 +584,11 @@ def run_filter(config: RunnerConfig) -> dict:
         imu_trajectory_rows.append(_state_to_row(anchor_times_s[0], imu_ekf.state))
     # Pre-configure random noise generator and joint covariance matrices for measurements
     rng = np.random.default_rng(config.seed)
-    joint_covariance = make_default_joint_covariance(float(config.assumed_sigma_rel_t))
+    joint_covariance = make_default_joint_covariance(
+        float(config.assumed_sigma_rel_x_t),
+        float(config.assumed_sigma_rel_y_t),
+        float(config.assumed_sigma_rel_z_t)
+    )
     # Diagnostics setup
     trajectory_rows = [_state_to_row(anchor_times_s[0], ekf.state)]
     residual_norms: list[float] = []
@@ -611,7 +665,7 @@ def run_filter(config: RunnerConfig) -> dict:
 
     regressed_trajectory = None
     #Adds a plot for the transformer output before EKF
-    if config.plot_transformer:
+    if config.plot_transformer or config.plot_aa_transformer:
         regressed_trajectory = _compute_transformer_trajectory(
             sequence_path,
             anchor_timestamps_us,
@@ -619,6 +673,22 @@ def run_filter(config: RunnerConfig) -> dict:
             anchor_quaternions,
             config.max_frames
         )
+
+    ate_transformer = None
+    aa_regressed_trajectory = None
+    
+    # Compute Umeyama alignment if the flag is active
+    if regressed_trajectory is not None and config.plot_aa_transformer:
+        try:
+            ate_transformer, aa_regressed_trajectory = _compute_transformer_ate_and_alignment(
+                ground_truth_trajectory,
+                regressed_trajectory
+            )
+        except Exception as e:
+            print(f"Warning: RPG alignment for the Transformer failed: {e}")
+    if not config.plot_transformer:
+        regressed_trajectory = None
+
     imu_trajectory = np.asarray(imu_trajectory_rows, dtype=np.float64) if config.plot_imu else None
         
     # Diagnostics: compute error metrics
@@ -630,8 +700,11 @@ def run_filter(config: RunnerConfig) -> dict:
         output_dir=sequence_out_dir if config.save_diagnostic_plots else None,
         file_prefix=config.sequence,
         plot_projections=config.plot_projections,
+        aa_regressed_trajectory=aa_regressed_trajectory,
         plot_ate=config.plot_ate,
     )
+
+    diagnostics["ate_transformer_m"] = ate_transformer
 
     return {
         "dataset": config.dataset,
@@ -644,6 +717,8 @@ def run_filter(config: RunnerConfig) -> dict:
         "trajectory": trajectory_table,
         "ground_truth": ground_truth_trajectory,
         "regressed": regressed_trajectory,
+        "aa_regressed": aa_regressed_trajectory,   
+        "ate_transformer_m": ate_transformer,
         "imu_only": imu_trajectory,
         "saved_file": str(saved_path) if saved_path is not None else None,
         "diagnostics": diagnostics,
@@ -694,6 +769,11 @@ def parse_args():
         action="store_true",
         help="Plots ATE aligned trajectory"
     )
+    parser.add_argument(
+        "--plot_aa_transformer",
+        action="store_true",
+        help="Plots the network output shifted and aligned according to the ATE Umeyama transformation (yellow dashed)."
+    )
     return parser.parse_args()
 
 
@@ -729,6 +809,7 @@ def main() -> None:
         interactive_plot=args.interactive_plot,
         plot_projections=args.plot_projections,
         plot_ate=args.plot_ate,
+        plot_aa_transformer=args.plot_aa_transformer,
         **dataset_params,
         **json_params
     )
@@ -749,22 +830,16 @@ def main() -> None:
 
     #Plots (if requested)
     if active_config.interactive_plot:
-        ate_positions = results["diagnostics"].get("ate_positions")
-        if results["regressed"] is not None:
-            show_interactive_3d_plot(
-                estimated_trajectory=results["trajectory"],
-                ground_truth_trajectory=results["ground_truth"],
-                regressed_trajectory=results["regressed"],
-                imu_trajectory=results.get("imu_only"),
-                ate_positions=ate_positions,
-            )
-        else:
-            show_interactive_3d_plot(
-                estimated_trajectory=results["trajectory"],
-                ground_truth_trajectory=results["ground_truth"],
-                imu_trajectory=results.get("imu_only"),
-                ate_positions=ate_positions,
-            )
+        ate_pos = results["diagnostics"].get("ate_positions")
+        show_interactive_3d_plot(
+            estimated_trajectory=results["trajectory"],
+            ground_truth_trajectory=results["ground_truth"],
+            regressed_trajectory=results.get("regressed"),
+            aa_regressed_trajectory=results.get("aa_regressed"),
+            imu_trajectory=results.get("imu_only"),
+            ate_positions=ate_pos,
+        )
+    
 
 
 if __name__ == "__main__":
