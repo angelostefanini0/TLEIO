@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import argparse
+import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -219,6 +222,215 @@ def rotation_error_deg(q_ref: np.ndarray, q_est: np.ndarray) -> np.ndarray:
     return np.rad2deg(2.0 * np.arccos(dots))
 
 
+def umeyama_se3(src: np.ndarray, dst: np.ndarray):
+    if src.shape != dst.shape or src.ndim != 2 or src.shape[1] != 3:
+        raise ValueError("SE(3) alignment expects matching [N, 3] point arrays.")
+    if len(src) < 3:
+        raise ValueError("SE(3) alignment needs at least 3 poses.")
+
+    src_mean = src.mean(axis=0)
+    dst_mean = dst.mean(axis=0)
+    src_centered = src - src_mean
+    dst_centered = dst - dst_mean
+
+    cov = (dst_centered.T @ src_centered) / len(src)
+    U, _, Vt = np.linalg.svd(cov)
+    S = np.eye(3, dtype=np.float64)
+    if np.linalg.det(U @ Vt) < 0.0:
+        S[-1, -1] = -1.0
+
+    R_align = U @ S @ Vt
+    t_align = dst_mean - R_align @ src_mean
+    return R_align, t_align
+
+
+def umeyama_sim3(src: np.ndarray, dst: np.ndarray):
+    if src.shape != dst.shape or src.ndim != 2 or src.shape[1] != 3:
+        raise ValueError("Sim(3) alignment expects matching [N, 3] point arrays.")
+    if len(src) < 3:
+        raise ValueError("Sim(3) alignment needs at least 3 poses.")
+
+    src_mean = src.mean(axis=0)
+    dst_mean = dst.mean(axis=0)
+    src_centered = src - src_mean
+    dst_centered = dst - dst_mean
+
+    cov = (dst_centered.T @ src_centered) / len(src)
+    U, singular_values, Vt = np.linalg.svd(cov)
+    S = np.eye(3, dtype=np.float64)
+    if np.linalg.det(U @ Vt) < 0.0:
+        S[-1, -1] = -1.0
+
+    src_var = np.mean(np.sum(src_centered ** 2, axis=1))
+    if src_var < 1e-12:
+        raise ValueError("Cannot estimate Sim(3) scale from near-constant positions.")
+
+    R_align = U @ S @ Vt
+    scale = float(np.sum(singular_values * np.diag(S)) / src_var)
+    t_align = dst_mean - scale * (R_align @ src_mean)
+    return scale, R_align, t_align
+
+
+def apply_rotation_to_quats(R_align: np.ndarray, quats: np.ndarray) -> np.ndarray:
+    return normalize_quat(
+        np.stack(
+            [rotmat_to_quat(R_align @ quat_to_rotmat(q)) for q in quats],
+            axis=0,
+        )
+    )
+
+
+def rmse(values: np.ndarray) -> float:
+    return float(np.sqrt(np.mean(values ** 2)))
+
+
+def compute_network_only_metrics(
+    gt_ts: np.ndarray,
+    gt_pos: np.ndarray,
+    gt_quat: np.ndarray,
+    est_ts: np.ndarray,
+    est_pos: np.ndarray,
+    est_quat: np.ndarray,
+    alignment_mode: str = "se3",
+    use_gt_rotations: bool = False,
+):
+    overlap = (est_ts >= gt_ts[0]) & (est_ts <= gt_ts[-1])
+    if not np.any(overlap):
+        raise ValueError("No temporal overlap between GT and estimated trajectory.")
+
+    est_ts = est_ts[overlap]
+    est_pos = est_pos[overlap]
+    est_quat = est_quat[overlap]
+    ref_pos, ref_quat = interpolate_gt_pose(gt_ts, gt_pos, gt_quat, est_ts)
+    ref_quat = normalize_quat(ref_quat)
+
+    raw_pos_err = np.linalg.norm(est_pos - ref_pos, axis=1)
+    raw_rot_err = (
+        np.zeros(len(ref_quat), dtype=np.float64)
+        if use_gt_rotations
+        else rotation_error_deg(ref_quat, est_quat)
+    )
+
+    if alignment_mode == "sim3":
+        scale, R_align, t_align = umeyama_sim3(est_pos, ref_pos)
+        aligned_key = "ate_sim3_aligned"
+    elif alignment_mode == "se3":
+        R_align, t_align = umeyama_se3(est_pos, ref_pos)
+        scale = 1.0
+        aligned_key = "ate_se3_aligned"
+    else:
+        raise ValueError(f"Unsupported alignment mode: {alignment_mode}")
+
+    est_pos_aligned = scale * (R_align @ est_pos.T).T + t_align
+
+    ate_pos_err = np.linalg.norm(est_pos_aligned - ref_pos, axis=1)
+    ate_rot_err = (
+        np.zeros(len(ref_quat), dtype=np.float64)
+        if use_gt_rotations
+        else rotation_error_deg(ref_quat, apply_rotation_to_quats(R_align, est_quat))
+    )
+
+    metrics = {
+        "num_poses": int(len(est_ts)),
+        "raw": {
+            "position_rmse_m": rmse(raw_pos_err),
+            "rotation_rmse_deg": rmse(raw_rot_err),
+        },
+        aligned_key: {
+            "position_rmse_m": rmse(ate_pos_err),
+            "rotation_rmse_deg": rmse(ate_rot_err),
+        },
+        "alignment": {
+            "mode": alignment_mode,
+            "scale": scale,
+            "rotation_matrix": R_align.tolist(),
+            "translation": t_align.tolist(),
+        },
+    }
+    plot_data = {
+        "ref_pos": ref_pos,
+        "est_pos": est_pos,
+        "est_pos_aligned": est_pos_aligned,
+    }
+    return metrics, plot_data
+
+
+def print_network_only_metrics(metrics: dict) -> None:
+    aligned_key = "ate_sim3_aligned" if "ate_sim3_aligned" in metrics else "ate_se3_aligned"
+    aligned_label = "ATE / Sim3 aligned" if aligned_key == "ate_sim3_aligned" else "ATE / SE3 aligned"
+
+    print("NETWORK-ONLY RESULTS")
+    print()
+    print("RAW:")
+    print(f"Position RMSE: {metrics['raw']['position_rmse_m']:.6e} m")
+    print(f"Rotation RMSE: {metrics['raw']['rotation_rmse_deg']:.6e} deg")
+    print()
+    print(f"{aligned_label}:")
+    print(f"Position RMSE: {metrics[aligned_key]['position_rmse_m']:.6e} m")
+    print(f"Rotation RMSE: {metrics[aligned_key]['rotation_rmse_deg']:.6e} deg")
+
+
+def save_network_only_plots(plot_dir: Path, plot_data: dict, alignment_mode: str) -> None:
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    ref_pos = plot_data["ref_pos"]
+    est_pos = plot_data["est_pos"]
+    est_pos_aligned = plot_data["est_pos_aligned"]
+    label = alignment_mode.upper()
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.plot(ref_pos[:, 0], ref_pos[:, 1], label="GT")
+    ax.plot(est_pos[:, 0], est_pos[:, 1], label="Transformer")
+    ax.set_xlabel("x [m]")
+    ax.set_ylabel("y [m]")
+    ax.grid(True)
+    ax.legend()
+    ax.set_title("Transformer trajectory, unaligned")
+    fig.savefig(plot_dir / "transformer_unaligned_xy.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.plot(ref_pos[:, 0], ref_pos[:, 1], label="GT")
+    ax.plot(est_pos_aligned[:, 0], est_pos_aligned[:, 1], label=f"Transformer {label}-aligned")
+    ax.set_xlabel("x [m]")
+    ax.set_ylabel("y [m]")
+    ax.grid(True)
+    ax.legend()
+    ax.set_title(f"Transformer trajectory, ATE {label} aligned")
+    fig.savefig(plot_dir / f"transformer_ate_{alignment_mode}_xy.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    fig = plt.figure(figsize=(10, 8))
+    ax3d = fig.add_subplot(111, projection="3d")
+    ax3d.plot(ref_pos[:, 0], ref_pos[:, 1], ref_pos[:, 2], label="GT")
+    ax3d.plot(est_pos[:, 0], est_pos[:, 1], est_pos[:, 2], label="Transformer")
+    ax3d.set_xlabel("x [m]")
+    ax3d.set_ylabel("y [m]")
+    ax3d.set_zlabel("z [m]")
+    ax3d.set_title("Transformer trajectory, unaligned")
+    set_axes_equal_3d(ax3d, np.vstack([ref_pos, est_pos]))
+    ax3d.legend()
+    fig.savefig(plot_dir / "transformer_unaligned_xyz_3d.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    fig = plt.figure(figsize=(10, 8))
+    ax3d = fig.add_subplot(111, projection="3d")
+    ax3d.plot(ref_pos[:, 0], ref_pos[:, 1], ref_pos[:, 2], label="GT")
+    ax3d.plot(
+        est_pos_aligned[:, 0],
+        est_pos_aligned[:, 1],
+        est_pos_aligned[:, 2],
+        label=f"Transformer {label}-aligned",
+    )
+    ax3d.set_xlabel("x [m]")
+    ax3d.set_ylabel("y [m]")
+    ax3d.set_zlabel("z [m]")
+    ax3d.set_title(f"Transformer trajectory, ATE {label} aligned")
+    set_axes_equal_3d(ax3d, np.vstack([ref_pos, est_pos_aligned]))
+    ax3d.legend()
+    fig.savefig(plot_dir / f"transformer_ate_{alignment_mode}_xyz_3d.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def set_axes_equal_3d(ax, points: np.ndarray) -> None:
     mins = points.min(axis=0)
     maxs = points.max(axis=0)
@@ -249,6 +461,16 @@ def main():
                         choices=["none", "rotation", "translation", "both"],
                         help="How to combine --rel with --gt_rel before integration. "
                              "Default 'rotation' keeps predicted translation and uses GT rotation.")
+    parser.add_argument("--network_only_metrics", action="store_true",
+                        help="Print RAW and aligned ATE metrics for the reconstructed network-only trajectory.")
+    parser.add_argument("--network_alignment", type=str, default="se3", choices=["se3", "sim3"],
+                        help="Alignment used for --network_only_metrics.")
+    parser.add_argument("--network_use_gt_rotations", action="store_true",
+                        help="Use GT orientations at network timestamps for rotation metrics.")
+    parser.add_argument("--network_plot_dir", type=Path, default=None,
+                        help="Optional directory for transformer unaligned and ATE-aligned plots.")
+    parser.add_argument("--metrics_output", type=Path, default=None,
+                        help="Optional JSON path for --network_only_metrics results.")
     
     args = parser.parse_args()
 
@@ -314,6 +536,46 @@ def main():
     # GT reference at the same anchor timestamps
     ref_pos, ref_quat = interpolate_gt_pose(gt_ts, gt_pos, gt_quat, anchor_ts)
     ref_quat = normalize_quat(ref_quat)
+
+    if args.network_only_metrics:
+        metrics, plot_data = compute_network_only_metrics(
+            gt_ts=gt_ts,
+            gt_pos=gt_pos,
+            gt_quat=gt_quat,
+            est_ts=anchor_ts,
+            est_pos=recon_pos,
+            est_quat=recon_quat,
+            alignment_mode=args.network_alignment,
+            use_gt_rotations=args.network_use_gt_rotations,
+        )
+        metrics["estimated_trajectory_source"] = str(args.rel)
+        metrics["ground_truth_source"] = str(args.gt)
+        metrics["relative_format"] = describe_rel_format(rel.shape[1])
+        metrics["network_predicted_rotations"] = bool(rel.shape[1] == 8)
+        metrics["uses_gt_relative_rotations_for_reconstruction"] = bool(
+            args.gt_rel is not None and args.gt_rel_mode in {"rotation", "both"}
+        )
+        metrics["uses_gt_rotations_for_rotation_metrics"] = bool(args.network_use_gt_rotations)
+        if args.network_use_gt_rotations:
+            metrics["rotation_note"] = (
+                "Rotation metrics use GT orientations at network timestamps, "
+                "so RAW and aligned rotation RMSE are zero by construction."
+            )
+        elif rel.shape[1] == 5:
+            metrics["rotation_note"] = (
+                "Network output has translation-only relative motions; "
+                "estimated orientations come from identity relative rotations."
+            )
+        print_network_only_metrics(metrics)
+        if args.network_plot_dir is not None:
+            save_network_only_plots(args.network_plot_dir, plot_data, args.network_alignment)
+            print(f"Saved network-only plots to {args.network_plot_dir}")
+        if args.metrics_output is not None:
+            args.metrics_output.parent.mkdir(parents=True, exist_ok=True)
+            with open(args.metrics_output, "w") as fh:
+                json.dump(metrics, fh, indent=2)
+            print(f"Saved metrics to {args.metrics_output}")
+        return
 
     # CALCULATE ERROR STATS
     
@@ -429,6 +691,20 @@ def main():
     axes[1].grid(True)
     fig4.suptitle(f"Error vs {error_ref_label}")
 
+    fig5 = None
+    if gt_rel is not None:
+        fig5, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+        rel_labels = ["dx", "dy", "dz"]
+        for i, label in enumerate(rel_labels):
+            axes[i].plot(t_err, rel[:, 2 + i], label="Predicted")
+            axes[i].plot(t_err, gt_rel[:, 2 + i], label="Ground truth")
+            axes[i].set_ylabel(f"{label} [m]")
+            axes[i].set_title(label)
+            axes[i].grid(True)
+        axes[0].legend()
+        axes[-1].set_xlabel("time [s]")
+        fig5.suptitle("Relative Translation Components")
+
     plt.tight_layout()
 
     if args.save_dir is not None:
@@ -437,6 +713,8 @@ def main():
         fig2.savefig(args.save_dir / "relative_vs_gt_xy.png", dpi=150, bbox_inches="tight")
         fig3.savefig(args.save_dir / "relative_vs_gt_xyz_3d.png", dpi=150, bbox_inches="tight")
         fig4.savefig(args.save_dir / "relative_vs_gt_error.png", dpi=150, bbox_inches="tight")
+        if fig5 is not None:
+            fig5.savefig(args.save_dir / "relative_translation_components.png", dpi=150, bbox_inches="tight")
         print(f"Saved figures to {args.save_dir}")
     else:
         plt.show()
