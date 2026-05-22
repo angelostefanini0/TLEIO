@@ -65,13 +65,18 @@ def dataset_specific_overrides(dataset: str) -> dict:
     return {}
 
 
-def load_tuned_params(sequence: str) -> dict:
+def load_tuned_params(sequence: str, dataset: str = "") -> dict:
     json_path = ROOT / "outputs" / "tuning" / sequence / "best_filter_params.json"
+    
     if not json_path.exists():
+        print(f"  [!] File di tuning non trovato per {sequence}: {json_path}. Uso i default.")
         return {}
 
     with json_path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
+        
+    # Assumendo che la struttura del JSON sia rimasta la stessa della versione precedente.
+    # Se il tuo nuovo JSON ha i parametri salvati direttamente alla radice, cambia in `return data`
     return data.get("best", {}).get("params", {})
 
 
@@ -230,7 +235,7 @@ def main() -> None:
                     interactive_plot=False,
                     plot_imu=False,
                     **dataset_specific_overrides(args.dataset),
-                    **load_tuned_params(sequence),
+                    **load_tuned_params(sequence=sequence, dataset=args.dataset), # <--- MODIFICA QUI
                 )
 
             filter_results = run_filter(config)
