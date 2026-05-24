@@ -114,6 +114,10 @@ def parse_args():
     parser.add_argument("--attn_dropout", type=float, default=0.1)
     parser.add_argument("--ff_dropout", type=float, default=0.1)
     parser.add_argument("--time_only", type=str2bool, default=False)
+    parser.add_argument("--spatial_rope", type=str2bool, default=False,
+                        help="replace learned spatial pos_embed with 2D RoPE in spatial attention")
+    parser.add_argument("--rope_frequency", type=float, default=100.0,
+                        help="base frequency for 2D spatial RoPE")
 
     parsed = parser.parse_args()
     args = vars(parsed)
@@ -130,6 +134,8 @@ def parse_args():
         "attn_dropout": args["attn_dropout"],
         "ff_dropout": args["ff_dropout"],
         "time_only": args["time_only"],
+        "spatial_rope": args["spatial_rope"],
+        "rope_frequency": args["rope_frequency"],
     }
 
     args["model_params"] = model_params

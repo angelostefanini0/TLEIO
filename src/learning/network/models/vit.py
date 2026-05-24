@@ -32,19 +32,29 @@ class Mlp(nn.Module):
         return x
 
 class Attention(nn.Module):
-    def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0., with_qkv=True):
+    def __init__(
+            self,
+            dim,
+            num_heads=8,
+            qkv_bias=False,
+            qk_scale=None,
+            attn_drop=0.,
+            proj_drop=0.,
+            with_qkv=True,
+            rope=None):
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.scale = qk_scale or head_dim ** -0.5
         self.with_qkv = with_qkv
+        self.rope = rope
         if self.with_qkv:
            self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
            self.proj = nn.Linear(dim, dim)
            self.proj_drop = nn.Dropout(proj_drop)
         self.attn_drop = nn.Dropout(attn_drop)
 
-    def forward(self, x):
+    def forward(self, x, pos=None):
         B, N, C = x.shape
         if self.with_qkv:
            qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
@@ -52,6 +62,10 @@ class Attention(nn.Module):
         else:
            qkv = x.reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
            q, k, v  = qkv, qkv, qkv
+
+        if self.rope is not None and pos is not None:
+            q = self.rope(q, pos)
+            k = self.rope(k, pos)
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
@@ -63,17 +77,77 @@ class Attention(nn.Module):
            x = self.proj_drop(x)
         return x
 
+
+class RotaryPositionEmbedding2D(nn.Module):
+    def __init__(self, frequency=100.0):
+        super().__init__()
+        self.frequency = frequency
+        self.cache = {}
+
+    def _cos_sin(self, dim, max_position, device, dtype):
+        key = (dim, max_position, device, dtype)
+        if key not in self.cache:
+            freqs = torch.arange(0, dim, 2, device=device, dtype=torch.float32) / dim
+            inv_freq = 1.0 / (self.frequency ** freqs)
+            positions = torch.arange(max_position, device=device, dtype=torch.float32)
+            angles = torch.einsum("i,j->ij", positions, inv_freq).to(dtype)
+            angles = torch.cat((angles, angles), dim=-1)
+            self.cache[key] = (angles.cos(), angles.sin())
+        return self.cache[key]
+
+    @staticmethod
+    def _rotate_half(x):
+        x1, x2 = x.chunk(2, dim=-1)
+        return torch.cat((-x2, x1), dim=-1)
+
+    def _apply_1d(self, x, positions, cos, sin):
+        cos = F.embedding(positions, cos)[:, None, :, :]
+        sin = F.embedding(positions, sin)[:, None, :, :]
+        return (x * cos) + (self._rotate_half(x) * sin)
+
+    def forward(self, x, positions):
+        if x.size(-1) % 4 != 0:
+            raise ValueError("2D RoPE requires attention head dim divisible by 4.")
+        if positions.ndim != 3 or positions.shape[-1] != 2:
+            raise ValueError("2D RoPE positions must have shape [B, N, 2].")
+
+        feature_dim = x.size(-1) // 2
+        max_position = int(positions.max().item()) + 1
+        cos, sin = self._cos_sin(feature_dim, max_position, x.device, x.dtype)
+        y_features, x_features = x.chunk(2, dim=-1)
+        y_features = self._apply_1d(y_features, positions[..., 0], cos, sin)
+        x_features = self._apply_1d(x_features, positions[..., 1], cos, sin)
+        return torch.cat((y_features, x_features), dim=-1)
+
+
+def make_2d_positions(batch_size, H, W, device, repeat_per_patch=1, include_cls=True):
+    y = torch.arange(H, device=device)
+    x = torch.arange(W, device=device)
+    grid_y, grid_x = torch.meshgrid(y, x, indexing="ij")
+    pos = torch.stack((grid_y.reshape(-1), grid_x.reshape(-1)), dim=-1)
+    pos = pos + 1
+    if repeat_per_patch > 1:
+        pos = pos.repeat_interleave(repeat_per_patch, dim=0)
+    pos = pos.unsqueeze(0).expand(batch_size, -1, -1)
+    if include_cls:
+        cls_pos = torch.zeros(batch_size, 1, 2, device=device, dtype=pos.dtype)
+        pos = torch.cat((cls_pos, pos), dim=1)
+    return pos
+
+
 class Block(nn.Module):
 
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0.1, act_layer=nn.GELU, norm_layer=nn.LayerNorm, attention_type='divided_space_time'):
+                 drop_path=0.1, act_layer=nn.GELU, norm_layer=nn.LayerNorm,
+                 attention_type='divided_space_time', rope=None):
         super().__init__()
         self.attention_type = attention_type
         assert(attention_type in ['divided_space_time', 'space_only','joint_space_time'])
 
         self.norm1 = norm_layer(dim)
         self.attn = Attention(
-           dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
+           dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
+           attn_drop=attn_drop, proj_drop=drop, rope=rope)
 
         ## Temporal Attention Parameters
         if self.attention_type == 'divided_space_time':
@@ -88,13 +162,25 @@ class Block(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
+    def _spatial_attention(self, x, pos=None):
+        if getattr(self.attn, "rope", None) is not None and pos is not None:
+            return self.attn(x, pos=pos)
+        return self.attn(x)
 
     def forward(self, x, B, T, W):
         num_spatial_tokens = (x.size(1) - 1) // T
         H = num_spatial_tokens // W
 
         if self.attention_type in ['space_only', 'joint_space_time']:
-            x = x + self.drop_path(self.attn(self.norm1(x)))
+            pos = None
+            if getattr(self.attn, "rope", None) is not None:
+                if self.attention_type == 'space_only':
+                    spatial_tokens = x.size(1) - 1
+                    H_space = spatial_tokens // W
+                    pos = make_2d_positions(x.size(0), H_space, W, x.device)
+                else:
+                    pos = make_2d_positions(B, H, W, x.device, repeat_per_patch=T)
+            x = x + self.drop_path(self._spatial_attention(self.norm1(x), pos=pos))
             x = x + self.drop_path(self.mlp(self.norm2(x)))
             return x
         elif self.attention_type == 'divided_space_time':
@@ -113,7 +199,10 @@ class Block(nn.Module):
             xs = xt
             xs = rearrange(xs, 'b (h w t) m -> (b t) (h w) m',b=B,h=H,w=W,t=T)
             xs = torch.cat((cls_token, xs), 1)
-            res_spatial = self.drop_path(self.attn(self.norm1(xs)))
+            pos = None
+            if getattr(self.attn, "rope", None) is not None:
+                pos = make_2d_positions(B * T, H, W, xs.device)
+            res_spatial = self.drop_path(self._spatial_attention(self.norm1(xs), pos=pos))
 
             ### Taking care of CLS token
             cls_token = res_spatial[:,0,:]
@@ -161,9 +250,12 @@ class VisionTransformer(nn.Module):
     """
     def __init__(self, img_size=(224, 224), patch_size=16, in_chans=5, num_classes=1000, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
-                 drop_path_rate=0.1, hybrid_backbone=None, norm_layer=nn.LayerNorm, num_frames=8, attention_type='divided_space_time', dropout=0.):
+                 drop_path_rate=0.1, hybrid_backbone=None, norm_layer=nn.LayerNorm,
+                 num_frames=8, attention_type='divided_space_time', dropout=0.,
+                 spatial_rope=False, rope_frequency=100.0):
         super().__init__()
         self.attention_type = attention_type
+        self.spatial_rope = spatial_rope
         self.depth = depth
         self.dropout = nn.Dropout(dropout)
         self.num_classes = num_classes
@@ -179,13 +271,15 @@ class VisionTransformer(nn.Module):
         if self.attention_type != 'space_only':
             self.time_embed = nn.Parameter(torch.zeros(1, num_frames, embed_dim))
             self.time_drop = nn.Dropout(p=drop_rate)
+        rope = RotaryPositionEmbedding2D(frequency=rope_frequency) if spatial_rope else None
 
         ## Attention Blocks
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, self.depth)]  # stochastic depth decay rule
         self.blocks = nn.ModuleList([
             Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
-                drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer, attention_type=self.attention_type)
+                drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
+                attention_type=self.attention_type, rope=rope)
             for i in range(self.depth)])
         self.norm = norm_layer(embed_dim)
 
@@ -233,21 +327,22 @@ class VisionTransformer(nn.Module):
         cls_tokens = self.cls_token.expand(x.size(0), -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
 
-        ## resizing the positional embeddings in case they don't match the input at inference
-        if x.size(1) != self.pos_embed.size(1):
-            pos_embed = self.pos_embed
-            cls_pos_embed = pos_embed[0,0,:].unsqueeze(0).unsqueeze(1)
-            other_pos_embed = pos_embed[0,1:,:].unsqueeze(0).transpose(1, 2)
-            P = int(other_pos_embed.size(2) ** 0.5)
-            H = x.size(1) // W
-            other_pos_embed = other_pos_embed.reshape(1, x.size(2), P, P)
-            new_pos_embed = F.interpolate(other_pos_embed, size=(H, W), mode='nearest')
-            new_pos_embed = new_pos_embed.flatten(2)
-            new_pos_embed = new_pos_embed.transpose(1, 2)
-            new_pos_embed = torch.cat((cls_pos_embed, new_pos_embed), 1)
-            x = x + new_pos_embed
-        else:
-            x = x + self.pos_embed
+        if not self.spatial_rope:
+            ## resizing the positional embeddings in case they don't match the input at inference
+            if x.size(1) != self.pos_embed.size(1):
+                pos_embed = self.pos_embed
+                cls_pos_embed = pos_embed[0,0,:].unsqueeze(0).unsqueeze(1)
+                other_pos_embed = pos_embed[0,1:,:].unsqueeze(0).transpose(1, 2)
+                P = int(other_pos_embed.size(2) ** 0.5)
+                H = x.size(1) // W
+                other_pos_embed = other_pos_embed.reshape(1, x.size(2), P, P)
+                new_pos_embed = F.interpolate(other_pos_embed, size=(H, W), mode='nearest')
+                new_pos_embed = new_pos_embed.flatten(2)
+                new_pos_embed = new_pos_embed.transpose(1, 2)
+                new_pos_embed = torch.cat((cls_pos_embed, new_pos_embed), 1)
+                x = x + new_pos_embed
+            else:
+                x = x + self.pos_embed
         x = self.pos_drop(x)
 
 
