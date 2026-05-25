@@ -7,6 +7,7 @@ import bisect
 
 from ..representation.event_denoising import background_activity_filter_raw
 from ..representation.voxel_grid import VoxelGrid
+from .precomputed_voxel_clip import normalize_nonzero_voxel_
 from .reader import EDSReader
 from .utils import (
     build_derotation_context,
@@ -87,7 +88,8 @@ class MultiEventVoxelClipDataset(Dataset):
                  denoise_min_supporters: int = 1,
                  denoise_same_polarity_only: bool = False,
                  derotate: bool = False,
-                 derotation_slices: int = 100):
+                 derotation_slices: int = 100,
+                 normalize_voxel_nonzero: bool = False):
         """Initialize the Event-to-Voxel clip dataset.
 
         Args:
@@ -154,6 +156,7 @@ class MultiEventVoxelClipDataset(Dataset):
         #Derotation
         self.derotate = derotate
         self.derotation_slices = derotation_slices
+        self.normalize_voxel_nonzero = normalize_voxel_nonzero
 
         #the duration of a voxel
         self.delta_t_us = delta_t_ms * 1000
@@ -440,6 +443,8 @@ class MultiEventVoxelClipDataset(Dataset):
                     seq_info=self.seq_infos[seq_idx],
                 )
 
+            if self.normalize_voxel_nonzero:
+                normalize_nonzero_voxel_(voxel)
             clip_voxels.append(voxel.float())
 
             # target for pairwise motion: one target per transition

@@ -134,6 +134,30 @@ def parse_args() -> argparse.Namespace:
         default=50.0, 
         help="Anchor step duration in ms"
     )
+    parser.add_argument(
+        "--rectify-events-to-virtual-camera",
+        action="store_true",
+        help=(
+            "Undistort/reproject EDS event coordinates to a virtual pinhole camera "
+            "before writing the processed events.h5."
+        ),
+    )
+    parser.add_argument(
+        "--virtual-intrinsics",
+        type=float,
+        nargs=4,
+        default=[320.0, 320.0, 320.0, 240.0],
+        metavar=("FX", "FY", "CX", "CY"),
+        help="Virtual event-camera intrinsics used with --rectify-events-to-virtual-camera.",
+    )
+    parser.add_argument(
+        "--virtual-resolution",
+        type=int,
+        nargs=2,
+        default=[640, 480],
+        metavar=("WIDTH", "HEIGHT"),
+        help="Virtual event-camera resolution used with --rectify-events-to-virtual-camera.",
+    )
 
     return parser.parse_args()
 
@@ -183,6 +207,85 @@ def load_timestamps(h5_path: Path, timestamps_key: str) -> np.ndarray:
     return np.asarray(t, dtype=np.int64)
 
 
+def load_event_arrays(h5_path: Path, timestamps_key: str) -> dict[str, np.ndarray]:
+    events = {}
+    with h5py.File(h5_path, "r") as f:
+        for key in ["p", "x", "y"]:
+            if f"events/{key}" in f:
+                events[key] = f[f"events/{key}"][...]
+            elif key in f:
+                events[key] = f[key][...]
+            else:
+                raise KeyError(f"Dataset '{key}' not found in root or in events/")
+
+        if timestamps_key not in f:
+            raise KeyError(f"Dataset '{timestamps_key}' not found.")
+        events["t"] = np.asarray(f[timestamps_key][...], dtype=np.int64)
+
+    return events
+
+
+def build_camera_matrix(intrinsics: list[float]) -> np.ndarray:
+    fx, fy, cx, cy = intrinsics
+    return np.array(
+        [
+            [fx, 0.0, cx],
+            [0.0, fy, cy],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+
+
+def rectify_events_to_virtual_camera(
+    events: dict[str, np.ndarray],
+    calibration_path: Path,
+    virtual_intrinsics: list[float],
+    virtual_resolution: list[int],
+) -> dict[str, np.ndarray]:
+    import cv2
+    import yaml
+
+    if not calibration_path.exists():
+        raise FileNotFoundError(f"Calibration file not found: {calibration_path}")
+
+    with open(calibration_path, "r") as fh:
+        calibration = yaml.safe_load(fh)
+
+    cam = calibration["cam1"]
+    K_source = build_camera_matrix(cam["intrinsics"])
+    distortion = np.asarray(cam.get("distortion_coeffs", []), dtype=np.float64)
+    K_virtual = build_camera_matrix(virtual_intrinsics)
+    width, height = virtual_resolution
+
+    points = np.stack([events["x"], events["y"]], axis=1).astype(np.float32)
+    points = points.reshape(-1, 1, 2)
+    rectified = cv2.undistortPoints(
+        points,
+        K_source,
+        distortion,
+        R=None,
+        P=K_virtual,
+    ).reshape(-1, 2)
+
+    x = rectified[:, 0]
+    y = rectified[:, 1]
+    keep = (x >= 0.0) & (x < width) & (y >= 0.0) & (y < height)
+    if not np.any(keep):
+        raise ValueError("No events remain after virtual-camera rectification.")
+
+    print(
+        "Rectified events to virtual camera: "
+        f"kept {int(np.count_nonzero(keep))}/{len(keep)} events"
+    )
+    return {
+        "p": events["p"][keep],
+        "t": events["t"][keep],
+        "x": x[keep].astype(np.float32),
+        "y": y[keep].astype(np.float32),
+    }
+
+
 def validate_sorted_non_decreasing(t: np.ndarray) -> None:
     if np.any(t[1:] < t[:-1]):
         raise ValueError("Timestamps must be sorted in non-decreasing order.")
@@ -225,7 +328,8 @@ def write_to_new_file(
     dataset_name: str,
     data: np.ndarray,
     overwrite: bool, 
-    t_us: np.ndarray
+    t_us: np.ndarray,
+    events_override: dict[str, np.ndarray] | None = None,
 ) -> None:
     
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -238,15 +342,19 @@ def write_to_new_file(
                 src_data = (t_us - t_us[0]).astype(t_us.dtype)
                 src_dtype = src_data.dtype
             else:
-                if f"events/{key}" in f_in:
-                    src = f_in[f"events/{key}"]
-                elif key in f_in:
-                    src = f_in[key]
+                if events_override is not None:
+                    src_data = events_override[key]
+                    src_dtype = src_data.dtype
                 else:
-                    raise KeyError(f"Dataset '{key}' not found in root or in events/")
+                    if f"events/{key}" in f_in:
+                        src = f_in[f"events/{key}"]
+                    elif key in f_in:
+                        src = f_in[key]
+                    else:
+                        raise KeyError(f"Dataset '{key}' not found in root or in events/")
 
-                src_data = src[...]
-                src_dtype = src.dtype
+                    src_data = src[...]
+                    src_dtype = src.dtype
 
             events_out.create_dataset(key, data=src_data, dtype=src_dtype)
 
@@ -286,6 +394,24 @@ def copy_calibration_if_present(source_h5: Path, dest_h5: Path) -> None:
     dest_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(calibration_path, dest_dir / calibration_path.name)
     print(f"Copied calibration: {calibration_path.name} -> {dest_dir}")
+
+
+def write_virtual_calibration(
+    dest_h5: Path,
+    virtual_intrinsics: list[float],
+    virtual_resolution: list[int],
+) -> None:
+    dest_dir = dest_h5.parent
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    calibration_path = dest_dir / "K.yaml"
+    intrinsics = ", ".join(f"{value:.10g}" for value in virtual_intrinsics)
+    resolution = ", ".join(str(value) for value in virtual_resolution)
+    calibration_path.write_text(
+        "cam1:\n"
+        f"  intrinsics: [{intrinsics}]\n"
+        f"  resolution: [{resolution}]\n"
+    )
+    print(f"Wrote virtual calibration: {calibration_path}")
 
 
 def offset_timestamps(s_file: Path,
@@ -423,7 +549,17 @@ def main() -> None:
 
     for seq, seq_name in zip(sequence_dirs, sequence_names): 
         event_path = seq / "events.h5"
-        t_us = load_timestamps(event_path, args.timestamps_key)
+        events_override = None
+        if args.rectify_events_to_virtual_camera:
+            events_override = rectify_events_to_virtual_camera(
+                load_event_arrays(event_path, args.timestamps_key),
+                seq / "K.yaml",
+                args.virtual_intrinsics,
+                args.virtual_resolution,
+            )
+            t_us = events_override["t"].astype(np.int64)
+        else:
+            t_us = load_timestamps(event_path, args.timestamps_key)
         print(f"Loaded timestamps from: {event_path}")
         
         ms_to_idx, t0 = build_ms_to_idx(t_us)
@@ -450,13 +586,21 @@ def main() -> None:
                 dataset_name=args.dataset_name,
                 data=ms_to_idx,
                 overwrite=args.overwrite,
-                t_us=t_us
+                t_us=t_us,
+                events_override=events_override,
             )
             print(f"Wrote dataset '{args.dataset_name}' into: {output_path}")
             
             if args.process_gt:
                 process_gt(event_path, output_path, args.process_gt, t0, args.delta_t_ms, args.anchor_t_ms)
-            copy_calibration_if_present(event_path, output_path)
+            if args.rectify_events_to_virtual_camera:
+                write_virtual_calibration(
+                    output_path,
+                    args.virtual_intrinsics,
+                    args.virtual_resolution,
+                )
+            else:
+                copy_calibration_if_present(event_path, output_path)
         
         # delete recursively the raw input files if specified
         if args.remove_raw:

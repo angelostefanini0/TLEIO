@@ -8,6 +8,21 @@ from torch.utils.data import Dataset
 
 #
 
+def normalize_nonzero_voxel_(voxel: torch.Tensor) -> torch.Tensor:
+    mask = voxel != 0
+    if not bool(mask.any()):
+        return voxel
+
+    values = voxel[mask]
+    mean = values.mean()
+    std = values.std(unbiased=False)
+    if torch.isfinite(std) and std.item() > 0:
+        voxel[mask] = (values - mean) / std
+    else:
+        voxel[mask] = values - mean
+    return voxel
+
+
 class PrecomputedVoxelClipDataset(Dataset):
     def __init__(
         self,
@@ -16,6 +31,7 @@ class PrecomputedVoxelClipDataset(Dataset):
         num_bins: int | None = None,
         voxel_filename: str = "derotated_voxels.npy",
         mmap_mode: str | None = "r",
+        normalize_voxel_nonzero: bool = False,
     ):
         assert clip_len >= 1
         assert root_path.is_dir()
@@ -25,6 +41,7 @@ class PrecomputedVoxelClipDataset(Dataset):
         self.num_bins = num_bins
         self.voxel_filename = voxel_filename
         self.mmap_mode = mmap_mode
+        self.normalize_voxel_nonzero = normalize_voxel_nonzero
         self.seq_infos = []
         self.cum_lengths = []
         self._voxels = []
@@ -139,7 +156,11 @@ class PrecomputedVoxelClipDataset(Dataset):
         seq_info = self.seq_infos[seq_idx]
         anchors = seq_info["anchors_us"][local_idx : local_idx + self.clip_len]
         clip_np = self._voxels[seq_idx][local_idx : local_idx + self.clip_len]
-        clip = torch.from_numpy(clip_np.astype(np.float32, copy=True)).permute(1, 0, 2, 3)
+        clip = torch.from_numpy(clip_np.astype(np.float32, copy=True))
+        if self.normalize_voxel_nonzero:
+            for t in range(clip.shape[0]):
+                normalize_nonzero_voxel_(clip[t])
+        clip = clip.permute(1, 0, 2, 3)
 
         clip_targets = []
         rel_transf = seq_info["rel_transf"]

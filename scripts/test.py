@@ -22,6 +22,24 @@ from learning.dataloader.events_to_voxel.precomputed_voxel_clip import Precomput
 "python scripts/test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
 
 
+class RepresentationScaleDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset, scale: float):
+        self.dataset = dataset
+        self.scale = float(scale)
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, index):
+        sample = self.dataset[index]
+        if self.scale == 1.0:
+            return sample
+
+        sample = dict(sample)
+        sample["representation"] = sample["representation"] * self.scale
+        return sample
+
+
 def load_inference_args(checkpoint_file: Path):
     args_file = checkpoint_file.parent / "args.txt"
 
@@ -49,6 +67,7 @@ def load_inference_args(checkpoint_file: Path):
     loaded.setdefault("voxel_filename", "derotated_voxels.npy")
     loaded.setdefault("derotation_slices", 100)
     loaded.setdefault("covariance", False)
+    loaded.setdefault("normalize_voxel_nonzero", False)
     return loaded
 
 
@@ -102,6 +121,7 @@ def build_inference_dataset(sequence_dir: Path, args_dict):
             clip_len=args_dict["clip_len"],
             num_bins=None,
             voxel_filename=voxel_filename,
+            normalize_voxel_nonzero=args_dict.get("normalize_voxel_nonzero", False),
         )
         apply_precomputed_voxel_args(args_dict, dataset)
     else:
@@ -123,6 +143,7 @@ def build_inference_dataset(sequence_dir: Path, args_dict):
             denoise_same_polarity_only=args_dict["denoise_same_polarity_only"],
             derotate=args_dict["derotate"],
             derotation_slices=args_dict["derotation_slices"],
+            normalize_voxel_nonzero=args_dict.get("normalize_voxel_nonzero", False),
         )
 
     if requested_sequence is None:
@@ -141,6 +162,50 @@ def build_inference_dataset(sequence_dir: Path, args_dict):
         raise ValueError(f"Sequence not found in dataset: {requested_sequence}")
 
     return torch.utils.data.Subset(dataset, selected_indices)
+
+
+def iter_precomputed_voxel_files(root_path: Path, voxel_filename: str):
+    if (root_path / voxel_filename).exists():
+        yield root_path / voxel_filename
+        return
+
+    for seq_path in sorted(p for p in root_path.iterdir() if p.is_dir()):
+        voxel_file = seq_path / voxel_filename
+        if voxel_file.exists():
+            yield voxel_file
+
+
+def compute_precomputed_mean_abs(root_path: Path, voxel_filename: str, chunk_size: int):
+    total_abs = 0.0
+    total_count = 0
+    voxel_files = list(iter_precomputed_voxel_files(root_path, voxel_filename))
+
+    if not voxel_files:
+        raise FileNotFoundError(
+            f"No '{voxel_filename}' files found under {root_path}"
+        )
+
+    for voxel_file in voxel_files:
+        voxels = np.load(voxel_file, mmap_mode="r")
+        for start in range(0, voxels.shape[0], chunk_size):
+            chunk = np.asarray(voxels[start:start + chunk_size], dtype=np.float32)
+            total_abs += np.abs(chunk).sum(dtype=np.float64)
+            total_count += chunk.size
+
+    if total_count == 0:
+        raise ValueError(f"No voxel values found under {root_path}")
+
+    return total_abs / total_count
+
+
+def compute_auto_voxel_scale(reference_dir: Path, target_dir: Path, voxel_filename: str, chunk_size: int):
+    reference_mean_abs = compute_precomputed_mean_abs(reference_dir, voxel_filename, chunk_size)
+    target_mean_abs = compute_precomputed_mean_abs(target_dir, voxel_filename, chunk_size)
+
+    if target_mean_abs <= 0:
+        raise ValueError(f"Target voxel mean abs is zero for {target_dir}")
+
+    return reference_mean_abs / target_mean_abs, reference_mean_abs, target_mean_abs
 
 
 def load_target_stats(checkpoint, device):
@@ -363,6 +428,28 @@ def main():
     infer_args = load_inference_args(checkpoint_file)
     infer_args["device"] = str(device)
     dataset = build_inference_dataset(sequence_dir, infer_args)
+
+    effective_voxel_scale = args_cli.voxel_scale
+    if args_cli.voxel_scale_reference_dir is not None:
+        if not infer_args["precomputed_voxels"]:
+            raise ValueError("--voxel_scale_reference_dir requires precomputed voxel inference.")
+        auto_scale, ref_mean_abs, target_mean_abs = compute_auto_voxel_scale(
+            reference_dir=Path(args_cli.voxel_scale_reference_dir),
+            target_dir=Path(args_cli.voxel_scale_target_dir) if args_cli.voxel_scale_target_dir else sequence_dir,
+            voxel_filename=infer_args["voxel_filename"],
+            chunk_size=args_cli.voxel_scale_chunk_size,
+        )
+        effective_voxel_scale *= auto_scale
+        print(
+            "Auto voxel scale: "
+            f"reference_mean_abs={ref_mean_abs:.8g} | "
+            f"target_mean_abs={target_mean_abs:.8g} | "
+            f"auto_scale={auto_scale:.8g}"
+        )
+
+    if effective_voxel_scale != 1.0:
+        dataset = RepresentationScaleDataset(dataset, effective_voxel_scale)
+    print(f"voxel_scale: {effective_voxel_scale:.8g}")
 
     loader = DataLoader(
         dataset,
