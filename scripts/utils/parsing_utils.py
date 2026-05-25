@@ -100,9 +100,8 @@ def iter_tartan_sequences(input_path: Path) -> list[tuple[str, Path]]:
 def get_missing_gt_files(
     seq_dir: Path,
     files_to_copy: list[str],
-    generate_imu_csv: bool,
 ) -> list[str]:
-    """List GT or IMU files required for processing that are missing in a sequence."""
+    """List GT files required for processing that are missing in a sequence."""
     missing = []
 
     for filename in files_to_copy:
@@ -111,10 +110,5 @@ def get_missing_gt_files(
 
     if files_to_copy and not (seq_dir / "imu" / "cam_time.txt").exists():
         missing.append("imu/cam_time.txt")
-
-    if generate_imu_csv:
-        for rel_path in ["imu/acc.txt", "imu/gyro.txt", "imu/imu_time.txt"]:
-            if not (seq_dir / rel_path).exists():
-                missing.append(rel_path)
 
     return missing

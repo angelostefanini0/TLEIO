@@ -10,7 +10,6 @@ dataset_name: ms_to_idx
 overwrite: false
 process_gt:
   - pose_lcam_front.txt
-generate_imu_csv: true
 delta_t_ms: 50.0
 anchor_t_ms: 50.0
 event_chunk_size: 2000000
