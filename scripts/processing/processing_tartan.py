@@ -11,12 +11,13 @@ import h5py
 import numpy as np
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
+REPO_ROOT = SCRIPT_DIR.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.gt_training import *
-from scripts.parsing_utils import *
+from scripts.utils.gt_training import *
+from scripts.utils.parsing_utils import *
+from scripts.utils.config import default_config_path, parse_args_with_config
 
 """This script processes event-based datasets stored in HDF5 files and augments it with a temporal lookup table called `ms_to_idx`.
 
@@ -30,20 +31,16 @@ For each processed Tartan sequence, the script writes:
 - `events_meta.h5` with corrected `events/t` and the computed `ms_to_idx`
 - `events.h5` either as a symlink to the original raw event file or as a
   streamed byte-for-byte copy when `--materialize-events-file` is enabled
-- the processed GT / IMU text files used downstream
+- the processed GT text files used downstream
 
 Command to run:
-python scripts/processing_tartan.py data/tartan \
+python scripts/processing/processing_tartan.py data/tartan \
 --save-path data/tartan/processed_train \
 --overwrite \
 --timestamps-key events/t \
 --process_gt pose_lcam_front.txt \
---generate_imu_csv true
 --delta_t_ms 50 \
 --anchor_t_ms 50
-
-
-python scripts/processing.py data/eds/raw --save-path data/eds/processed_train --save_path_validation data/eds/processed_validation --validation-seq 3 --save_path_testing data/eds/processed_testing --test-seq 0,6 --overwrite --timestamps-key t --process_gt imu.csv stamped_groundtruth.txt --delta_t_ms 50 --anchor_hz 20
 
 """
 
@@ -79,6 +76,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "file",
         type=Path,
+        nargs="?",
         help="Path to the folder with the raw dataset",
     )
     parser.add_argument(
@@ -155,12 +153,6 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--generate_imu_csv", 
-        type=lambda x: str(x).lower() in {"1", "true", "yes", "y"},
-        default=True, 
-        help="Synthetize a csv file from the available imu data"
-    )
-    parser.add_argument(
         "--delta_t_ms", 
         type=float, default=50.0, 
         help="Voxel duration in ms"
@@ -200,7 +192,11 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
-    return parser.parse_args()
+    return parse_args_with_config(
+        parser,
+        default_config_path("processing_tartan"),
+        required=("file",),
+    )
 
 
 def resolve_h5_dataset(
@@ -539,8 +535,7 @@ def process_gt(
     t0: int, 
     t_end_us: int,
     delta_t_ms: float, 
-    anchor_t_ms: float, 
-    generate_imu_csv: bool
+    anchor_t_ms: float,
 ) -> None:
     
     source_dir = source_h5.parent
@@ -566,32 +561,6 @@ def process_gt(
         print(f"Processing: {filename} -> {dest_dir}")
         
         offset_timestamps(stamped_gt, dest_dir, d_file, t0, t_end_us, delta_t_ms, anchor_t_ms)
-    
-    #WRITE THE CSV FILE NEEDED FOR FILTER OPERATION
-    if generate_imu_csv:
-        
-        #COMBINE ACC, GYRO, AND TIMESTAMPS INTO SINGLE DATAFRAME  
-        imu_acc_file = source_dir / "imu" / "acc.txt"
-        imu_gyro_file = source_dir / "imu" / "gyro.txt"
-        imu_time_file = source_dir / "imu" / "imu_time.txt"
-        
-        imu_acc_data = np.loadtxt(imu_acc_file, delimiter=None)
-        imu_gyro_data = np.loadtxt(imu_gyro_file, delimiter=None)
-        imu_time_data = np.round(np.loadtxt(imu_time_file) * 1e6).astype(np.int64)
-        imu_time_rel = imu_time_data - t0
-        keep_mask = (imu_time_rel >= 0) & (imu_time_rel <= t_end_us)
-        imu_data_full = np.column_stack(
-            (
-                imu_time_rel[keep_mask],
-                imu_gyro_data[keep_mask],
-                imu_acc_data[keep_mask],
-            )
-        )
-
-        #SAVE THE IMU.CSV FILE FOR FILTER OPRATION
-        fmt = ["%d"] + ["%.10f"] * (imu_data_full.shape[1] - 1)
-        d_file_imu = dest_dir / "imu.csv"
-        np.savetxt(d_file_imu, imu_data_full, delimiter=",", fmt=fmt)
 
 
 def sanity_check_processed_sequence(seq_dir: Path, chunk_size: int) -> bool:
@@ -720,16 +689,15 @@ def main() -> None:
 
     #MAIN PROCESSING LOOP 
     for seq, seq_name in zip(sequence_dirs, sequence_names): 
-        #SOME TARTAN SEQUENCES DO NOT HAVE IMU/GT DATA, SO THESE GET SKIPPED
+        #SOME TARTAN SEQUENCES DO NOT HAVE GT DATA, SO THESE GET SKIPPED
         if args.process_gt:
             missing_gt_files = get_missing_gt_files(
                 seq_dir=seq,
                 files_to_copy=args.process_gt,
-                generate_imu_csv=args.generate_imu_csv,
             )
             if missing_gt_files:
                 print(
-                    f"Skipping {seq_name}: missing GT/IMU files: "
+                    f"Skipping {seq_name}: missing GT files: "
                     f"{', '.join(missing_gt_files)}"
                 )
                 continue
@@ -794,8 +762,7 @@ def main() -> None:
                             summary.t0_us, 
                             summary.t_end_us,
                             args.delta_t_ms, 
-                            args.anchor_t_ms, 
-                            args.generate_imu_csv,
+                            args.anchor_t_ms,
                 )
 
                 sanity_check_processed_sequence(

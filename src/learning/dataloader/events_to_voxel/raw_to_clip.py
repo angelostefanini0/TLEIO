@@ -8,11 +8,11 @@ import bisect
 from ..representation.event_denoising import background_activity_filter_raw
 from ..representation.voxel_grid import VoxelGrid
 from .precomputed_voxel_clip import normalize_nonzero_voxel_
+from src.spatial_math import normalize_quaternions
 from .reader import EDSReader
 from .utils import (
     build_derotation_context,
     load_event_camera_matrix,
-    normalize_quaternions,
 )
 
 """

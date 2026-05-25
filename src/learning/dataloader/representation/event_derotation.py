@@ -5,21 +5,8 @@ from __future__ import annotations
 import numpy as np
 import torch
 
+from src.spatial_math import quat_xyzw_to_rotmat
 from .trilinear_interpolation import trilinear_voxel_interpolation
-
-
-def quat_xyzw_to_rotmat(q: np.ndarray) -> np.ndarray:
-    """Convert one quaternion in ``xyzw`` order to a ``3 x 3`` rotation matrix."""
-    qx, qy, qz, qw = q
-    xx, yy, zz = qx * qx, qy * qy, qz * qz
-    xy, xz, yz = qx * qy, qx * qz, qy * qz
-    wx, wy, wz = qw * qx, qw * qy, qw * qz
-
-    return np.array([
-        [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz),       2.0 * (xz + wy)],
-        [2.0 * (xy + wz),       1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
-        [2.0 * (xz - wy),       2.0 * (yz + wx),       1.0 - 2.0 * (xx + yy)],
-    ], dtype=np.float64)
 
 
 def homography_from_bin_to_ref(

@@ -1,0 +1,16 @@
+root_dir: data/eds/processed_validation
+output_dir: data/eds/processed_2_val
+delta_t_ms: 50
+num_bins: 5
+downsampling_factor: 0.7
+patch_size: 16
+denoising: true
+denoise_dt_us: 2000
+denoise_radius: 1
+denoise_min_supporters: 2
+denoise_same_polarity_only: false
+derotate: false
+derotation_slices: 100
+voxel_filename: derotated_voxels.npy
+dtype: float32
+overwrite: false

@@ -7,14 +7,12 @@ from pathlib import Path
 import numpy as np
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
-SRC_DIR = REPO_ROOT / "src"
-for path in (REPO_ROOT, SRC_DIR):
-    path_str = str(path)
-    if path_str not in sys.path:
-        sys.path.insert(0, path_str)
+REPO_ROOT = SCRIPT_DIR.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
+from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
+from scripts.utils.config import default_config_path, parse_args_with_config
 
 
 def str2bool(v):
@@ -31,8 +29,8 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Precompute one derotated voxel per anchor."
     )
-    parser.add_argument("--root_dir", type=str, required=True)
-    parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument("--root_dir", type=str, default=None)
+    parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--delta_t_ms", type=int, default=50)
     parser.add_argument("--num_bins", type=int, default=5)
     parser.add_argument("--downsampling_factor", type=float, default=1.0)
@@ -47,7 +45,11 @@ def parse_args():
     parser.add_argument("--voxel_filename", type=str, default="derotated_voxels.npy")
     parser.add_argument("--dtype", type=str, default="float32", choices=["float32", "float16"])
     parser.add_argument("--overwrite", action="store_true")
-    return parser.parse_args()
+    return parse_args_with_config(
+        parser,
+        default_config_path("precompute_derotated_voxels"),
+        required=("root_dir", "output_dir"),
+    )
 
 
 def write_sequence_voxels(dataset, seq_idx, output_dir, args):

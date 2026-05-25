@@ -5,6 +5,13 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.utils.config import default_config_path, parse_args_with_config
+
 
 SEQUENCES = [
     "00_peanuts_dark",
@@ -136,6 +143,7 @@ def main() -> None:
     parser.add_argument(
         "root",
         type=Path,
+        nargs="?",
         help="Root directory where sequences will be stored.",
     )
     parser.add_argument(
@@ -158,7 +166,11 @@ def main() -> None:
         action="store_true",
         help="Remove extracted images to save space.",
     )
-    args = parser.parse_args()
+    args = parse_args_with_config(
+        parser,
+        default_config_path("download_eds"),
+        required=("root", "seq"),
+    )
 
     selected = parse_sequence_arg(args.seq, SEQUENCES)
 

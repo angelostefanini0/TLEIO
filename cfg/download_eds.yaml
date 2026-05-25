@@ -1,0 +1,4 @@
+root: data/eds
+seq: "0,1,2,3,4,5"
+keep_archives: false
+remove_images: false

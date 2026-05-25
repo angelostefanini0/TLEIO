@@ -1,0 +1,13 @@
+root: data/tartanair
+env:
+  - office
+difficulty:
+  - easy
+  - hard
+skip_event: false
+skip_air: false
+keep_zip: false
+air_file_list: download_training_zipfiles.txt
+air_archive_name: flow_mask.zip
+keep_air_images: false
+merge_root: []

@@ -15,10 +15,11 @@ REPO_ROOT = SCRIPT_DIR.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from learning.network.train import *
-from learning.network.build_model import *
-from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
-from learning.dataloader.events_to_voxel.precomputed_voxel_clip import PrecomputedVoxelClipDataset
+from src.learning.network.train import *
+from src.learning.network.build_model import *
+from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
+from src.learning.dataloader.events_to_voxel.precomputed_voxel_clip import PrecomputedVoxelClipDataset
+from scripts.utils.config import default_config_path, parse_args_with_config
 import argparse
 
 
@@ -125,8 +126,10 @@ def parse_args():
     parser.add_argument("--rope_frequency", type=float, default=100.0,
                         help="base frequency for 2D spatial RoPE")
 
-    parsed = parser.parse_args()
+    parsed = parse_args_with_config(parser, default_config_path("train"))
     args = vars(parsed)
+    if args.get("config") is not None:
+        args["config"] = str(args["config"])
 
     outputs_per_motion = 6 if args.get("covariance", False) else 3
     model_params = {
