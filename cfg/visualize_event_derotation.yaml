@@ -1,0 +1,18 @@
+sequence_dir: data/eds/processed/00_peanuts_dark
+duration_ms: 50.0
+anchor_index:
+start_us:
+end_us:
+num_bins: 5
+derotation_slices:
+derotation_slice_ms: 0.5
+height: 480
+width: 640
+downsampling_factor: 1.0
+patch_size: 16
+max_events: 60000
+voxel_eps: 1.0e-6
+output:
+show: true
+view_elev: 24.0
+view_azim: -58.0

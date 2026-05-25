@@ -1,0 +1,2 @@
+# Ignore generated inspection artifacts such as saved trajectories and plots.
+outputs/

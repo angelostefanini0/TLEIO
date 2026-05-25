@@ -1,0 +1,17 @@
+file: data/tartanair
+timestamps_key: events/t
+save_path: data/tartanair/processed_train
+save_path_testing: data/tartanair/processed_testing
+save_path_validation: data/tartanair/processed_validation
+test_seq: ""
+validation_seq: ""
+start_seq: ""
+dataset_name: ms_to_idx
+overwrite: false
+process_gt:
+  - pose_lcam_front.txt
+delta_t_ms: 50.0
+anchor_t_ms: 50.0
+event_chunk_size: 2000000
+materialize_events_file: false
+remove_raw_after_materialize: false
