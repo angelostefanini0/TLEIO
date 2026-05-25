@@ -23,7 +23,7 @@ For example:
 
 ```bash
 python scripts/processing/precompute_derotated_voxels.py
-python scripts/test.py --sequence_dir data/eds/precomputed_testing/03_rocket_earth_dark
+python scripts/testing/test.py --sequence_dir data/eds/precomputed_testing/03_rocket_earth_dark
 python src/main_network.py --config cfg/train.yaml --b_size 8
 ```
 
@@ -280,12 +280,12 @@ Compare the printed timing line at the end of the epoch:
 - If throughput stops improving, that configuration is already near the sweet spot.
 
 ## 7. Testing the model: 
-Run the `scripts/test.py` script to test the model and save the motions into a file.
+Run the `scripts/testing/test.py` script to test the model and save the motions into a file.
 
 The script reads `args.txt` from the checkpoint directory, so the same training-time settings for downsampling and denoising are reused automatically during inference. You can also enable `--average_overlaps` to average multiple predictions that correspond to the same relative motion. Translation-only checkpoints now save `t0_us t1_us px py pz`.
 
 ```bash
-python scripts/test.py \
+python scripts/testing/test.py \
 --sequence_dir data/eds/processed_testing \
 --checkpoint_file checkpoints/checkpoint_best.pth \
 --output_file data/eds/path/to/save/outputs.txt \
@@ -293,12 +293,12 @@ python scripts/test.py \
 ```
 
 ## 7.1 Batch testing precomputed sequences:
-Use `scripts/batch_test.py` to run `scripts/test.py` on every valid sequence folder inside a precomputed root. A valid sequence folder must contain `derotated_voxels.npy` and `relative_motions.txt`.
+Use `scripts/testing/batch_test.py` to run `scripts/testing/test.py` on every valid sequence folder inside a precomputed root. A valid sequence folder must contain `derotated_voxels.npy` and `relative_motions.txt`.
 
 Example used for the Office precomputed dataset:
 
 ```bash
-python scripts/batch_test.py \
+python scripts/testing/batch_test.py \
 --batch_root data/tartanair/precomputed_office_integer \
 --checkpoint_file checkpoints/checkpoint_massive/checkpoint_best.pth \
 --output_dir data/tartanair/predicted_relative_motions/precomputed_office_integer \

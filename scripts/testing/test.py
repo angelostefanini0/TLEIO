@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
+REPO_ROOT = SCRIPT_DIR.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -16,7 +16,7 @@ from src.learning.network.build_model import build_model, normalize_checkpoint_s
 from src.learning.dataloader.events_to_voxel.precomputed_voxel_clip import PrecomputedVoxelClipDataset
 from scripts.utils.config import default_config_path, parse_args_with_config
 
-"python scripts/test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
+"python scripts/testing/test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
 
 
 def load_inference_args(checkpoint_file: Path):
