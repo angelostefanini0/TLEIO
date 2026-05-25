@@ -24,6 +24,7 @@ from src.learning.dataloader.representation.event_derotation import (
 )
 from src.learning.dataloader.representation.event_slicer import EventSlicer
 from src.spatial_math import normalize_quaternions
+from scripts.utils.config import default_config_path, parse_args_with_config
 
 try:
     import hdf5plugin  # noqa: F401  # Registers external HDF5 filters when installed.
@@ -51,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--sequence-dir",
         type=Path,
-        required=True,
+        default=None,
         help=(
             "Sequence directory containing events.h5, stamped_groundtruth.txt, and K.yaml. "
             "Processed sequences with ms_to_idx and raw EDS-style sequences are both supported."
@@ -145,7 +146,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--view-elev", type=float, default=24.0, help="3D view elevation.")
     parser.add_argument("--view-azim", type=float, default=-58.0, help="3D view azimuth.")
-    return parser.parse_args()
+    return parse_args_with_config(
+        parser,
+        default_config_path("visualize_event_derotation"),
+        required=("sequence_dir",),
+    )
 
 
 def load_table(path: Path, *, skiprows: int = 0) -> np.ndarray:

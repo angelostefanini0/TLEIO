@@ -17,6 +17,7 @@ from scripts.viz.eds_loader import EdsDataLoader
 from scripts.inspect_relative_motions import load_table, translation_rel_to_T
 from scripts.viz.matplotlib_utils import create_live_trajectory_viewer, update_live_trajectory_viewer
 from src.learning.dataloader.representation.event_denoising import background_activity_filter_events
+from scripts.utils.config import default_config_path, parse_args_with_config
 from src.spatial_math import (
     T_to_pose,
     interpolate_gt_pose,
@@ -38,8 +39,8 @@ def str2bool(v):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Play EDS events overlaid on RGB frames.")
-    parser.add_argument("--root", type=str, required=True, help="Dataset root parent directory.")
-    parser.add_argument("--sequence", type=str, required=True, help="Sequence folder name.")
+    parser.add_argument("--root", type=str, default=None, help="Dataset root parent directory.")
+    parser.add_argument("--sequence", type=str, default=None, help="Sequence folder name.")
     parser.add_argument("--rel-model", type=str, default=None, help="Path to the relative motions predicted by the model")
     parser.add_argument("--rel-gt", type=str, default=None, help="Path to the ground truth relative motions")
     parser.add_argument("--gt", type=str, default=None, help="Path to the ground truth")
@@ -84,7 +85,11 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Require supporting events to have the same polarity.",
     )
-    return parser.parse_args()
+    return parse_args_with_config(
+        parser,
+        default_config_path("test_trajectory_with_events"),
+        required=("root", "sequence"),
+    )
 
 
 def visualize_event(

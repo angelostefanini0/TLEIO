@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.utils.gt_training import *
 from scripts.utils.parsing_utils import *
+from scripts.utils.config import default_config_path, parse_args_with_config
 
 """This script processes event-based datasets stored in HDF5 files and augments it with a temporal lookup table called `ms_to_idx`.
 
@@ -79,6 +80,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "file",
         type=Path,
+        nargs="?",
         help="Path to the folder with the raw dataset",
     )
     parser.add_argument(
@@ -200,7 +202,11 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
-    return parser.parse_args()
+    return parse_args_with_config(
+        parser,
+        default_config_path("processing_tartan"),
+        required=("file",),
+    )
 
 
 def resolve_h5_dataset(

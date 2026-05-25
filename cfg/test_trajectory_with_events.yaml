@@ -1,0 +1,16 @@
+root: data/eds/raw
+sequence: 03_rocket_earth_dark
+rel_model:
+rel_gt:
+gt:
+height: 480
+width: 640
+start_img: 0
+num_frames: 20000
+fps: 12.5
+event_alpha: 0.4
+denoising: false
+denoise_dt_us: 1000
+denoise_radius: 1
+denoise_min_supporters: 1
+denoise_same_polarity_only: false

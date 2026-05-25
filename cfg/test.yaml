@@ -1,0 +1,6 @@
+sequence_dir: data/eds/testing
+checkpoint_file: checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth
+output_file: data/eds/predicted_relative_motions/predicted_relative_motions.txt
+raw_model_output_file:
+num_workers: 0
+average_overlaps: false

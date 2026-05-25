@@ -1,0 +1,18 @@
+root: data/tartanair
+env_event:
+  - office
+env_air:
+  - Office
+difficulty:
+  - easy
+  - hard
+skip_event: false
+skip_air: false
+keep_zip: false
+air_source: huggingface
+air_file_list: download_training_zipfiles.txt
+air_bucket:
+air_archive_name: flow_mask.zip
+air_workers: 8
+keep_air_images: false
+merge_root: []

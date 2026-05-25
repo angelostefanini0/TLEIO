@@ -18,6 +18,7 @@ from src.spatial_math import (
     rotvec_to_rotmat,
 )
 from scripts.utils.plotting import plot_relative_motion_inspection
+from scripts.utils.config import default_config_path, parse_args_with_config
 
 """
 python scripts/inspect_relative_motions.py \
@@ -68,9 +69,9 @@ def translation_rel_to_T(pred_row: np.ndarray, gt_row: np.ndarray | None = None)
 def main():
     # PARSE ARGUMENTS 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--gt", type=Path, required=True,
+    parser.add_argument("--gt", type=Path, default=None,
                         help="stamped_groundtruth.txt with columns: timestamp_us px py pz qx qy qz qw")
-    parser.add_argument("--rel", type=Path, required=True,
+    parser.add_argument("--rel", type=Path, default=None,
                         help="translation-only relative motions: [t0_us t1_us px py pz]")
     parser.add_argument("--save_dir", type=Path, default=None,
                         help="Optional directory to save figures instead of showing them")
@@ -78,7 +79,11 @@ def main():
     parser.add_argument("--gt_rel", type=Path, default=None,
                         help="Optional GT relative motions used for rotations and relative-motion error.")
     
-    args = parser.parse_args()
+    args = parse_args_with_config(
+        parser,
+        default_config_path("inspect_relative_motions"),
+        required=("gt", "rel"),
+    )
 
     # LOAD GT AND RELATIVE MOTIONS AND CHECK DIMENSIONS
     gt = load_table(args.gt)

@@ -13,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.utils.gt_training import *
+from scripts.utils.config import default_config_path, parse_args_with_config
 
 """This script processes event-based datasets stored in HDF5 files and augments it with a temporal lookup table called `ms_to_idx`.
 
@@ -51,6 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "file",
         type=Path,
+        nargs="?",
         help="Path to the folder with the raw dataset",
     )
     parser.add_argument(
@@ -135,7 +137,11 @@ def parse_args() -> argparse.Namespace:
         help="Anchor step duration in ms"
     )
 
-    return parser.parse_args()
+    return parse_args_with_config(
+        parser,
+        default_config_path("processing_eds"),
+        required=("file",),
+    )
 
 
 def parse_sequence_selection(value: str, available_names: list[str]) -> set[str]:

@@ -19,6 +19,7 @@ from src.learning.network.train import *
 from src.learning.network.build_model import *
 from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 from src.learning.dataloader.events_to_voxel.precomputed_voxel_clip import PrecomputedVoxelClipDataset
+from scripts.utils.config import default_config_path, parse_args_with_config
 import argparse
 
 
@@ -115,8 +116,10 @@ def parse_args():
     parser.add_argument("--ff_dropout", type=float, default=0.1)
     parser.add_argument("--time_only", type=str2bool, default=False)
 
-    parsed = parser.parse_args()
+    parsed = parse_args_with_config(parser, default_config_path("train"))
     args = vars(parsed)
+    if args.get("config") is not None:
+        args["config"] = str(args["config"])
 
     model_params = {
         "embed_dim": args["embed_dim"],

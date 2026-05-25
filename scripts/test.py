@@ -13,8 +13,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.learning.network.build_model import build_model, normalize_checkpoint_state_dict
-from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
 from src.learning.dataloader.events_to_voxel.precomputed_voxel_clip import PrecomputedVoxelClipDataset
+from scripts.utils.config import default_config_path, parse_args_with_config
 
 "python scripts/test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
 
@@ -42,9 +42,7 @@ def load_inference_args(checkpoint_file: Path):
     loaded["rank"] = 0
     loaded["local_rank"] = 0
     loaded["is_main_process"] = True
-    loaded.setdefault("precomputed_voxels", False)
     loaded.setdefault("voxel_filename", "derotated_voxels.npy")
-    loaded.setdefault("derotation_slices", 100)
     return loaded
 
 
@@ -70,39 +68,18 @@ def build_inference_dataset(sequence_dir: Path, args_dict):
 
     dataset_root = sequence_dir
     requested_sequence = None
-    if args_dict["precomputed_voxels"]:
-        voxel_filename = args_dict["voxel_filename"]
-        if (sequence_dir / voxel_filename).exists():
-            dataset_root = sequence_dir.parent
-            requested_sequence = sequence_dir
+    voxel_filename = args_dict["voxel_filename"]
+    if (sequence_dir / voxel_filename).exists():
+        dataset_root = sequence_dir.parent
+        requested_sequence = sequence_dir
 
-        dataset = PrecomputedVoxelClipDataset(
-            root_path=dataset_root,
-            clip_len=args_dict["clip_len"],
-            num_bins=None,
-            voxel_filename=voxel_filename,
-        )
-        apply_precomputed_voxel_args(args_dict, dataset)
-    else:
-        if (sequence_dir / "events.h5").exists():
-            dataset_root = sequence_dir.parent
-            requested_sequence = sequence_dir
-
-        dataset = MultiEventVoxelClipDataset(
-            root_path=dataset_root,
-            delta_t_ms=args_dict["delta_t_ms"],
-            num_bins=args_dict["num_bins"],
-            clip_len=args_dict["clip_len"],
-            downsampling_factor=args_dict["downsampling_factor"],
-            patch_size=args_dict["patch_size"],
-            denoising=args_dict["denoising"],
-            denoise_dt_us=args_dict["denoise_dt_us"],
-            denoise_radius=args_dict["denoise_radius"],
-            denoise_min_supporters=args_dict["denoise_min_supporters"],
-            denoise_same_polarity_only=args_dict["denoise_same_polarity_only"],
-            derotate=args_dict["derotate"],
-            derotation_slices=args_dict["derotation_slices"],
-        )
+    dataset = PrecomputedVoxelClipDataset(
+        root_path=dataset_root,
+        clip_len=args_dict["clip_len"],
+        num_bins=None,
+        voxel_filename=voxel_filename,
+    )
+    apply_precomputed_voxel_args(args_dict, dataset)
 
     if requested_sequence is None:
         return dataset
@@ -291,7 +268,11 @@ def main():
         action="store_true",
         help="Average predictions that correspond to the same displacement across overlapping clips.",
     )
-    args_cli = parser.parse_args()
+    args_cli = parse_args_with_config(
+        parser,
+        default_config_path("test"),
+        required=("sequence_dir", "checkpoint_file", "output_file"),
+    )
 
     sequence_dir = Path(args_cli.sequence_dir)
     checkpoint_file = Path(args_cli.checkpoint_file)

@@ -4,22 +4,33 @@ import sys
 import tempfile
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.utils.config import default_config_path, parse_known_args_with_config
+
 
 REQUIRED_SEQUENCE_FILES = ("derotated_voxels.npy", "relative_motions.txt")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_root", type=str, required=True)
-    parser.add_argument("--checkpoint_file", type=str, required=True)
-    parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument("--batch_root", type=str, default=None)
+    parser.add_argument("--checkpoint_file", type=str, default=None)
+    parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--average_overlaps", action="store_true")
     parser.add_argument(
         "--raw_output",
         action="store_true",
         help="Save one raw model-output file per sequence.",
     )
-    args, extra_args = parser.parse_known_args()
+    args, extra_args = parse_known_args_with_config(
+        parser,
+        default_config_path("batch_test"),
+        required=("batch_root", "checkpoint_file", "output_dir"),
+    )
 
     batch_root = Path(args.batch_root)
     checkpoint_file = Path(args.checkpoint_file)

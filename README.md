@@ -15,6 +15,20 @@ To properly activate the rpg_trajectory_evaluation toolbox, imported in this rep
 git submodule update --init --recursive
 ```
 
+## 1.1 Script Configs
+
+Launch defaults live in `cfg/*.yaml`. Supported scripts load their matching config automatically, and any CLI argument you pass overrides the YAML value.
+
+For example:
+
+```bash
+python scripts/processing/precompute_derotated_voxels.py
+python scripts/test.py --sequence_dir data/eds/precomputed_testing/03_rocket_earth_dark
+python src/main_network.py --config cfg/train.yaml --b_size 8
+```
+
+Edit the corresponding YAML file when you want a reusable launch setup without typing every argument each time.
+
 ## 2. Data Generation
 ### 2.1 EDS 
 

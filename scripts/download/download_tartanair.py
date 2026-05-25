@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import subprocess
+import sys
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path, PurePosixPath
@@ -39,6 +40,10 @@ from collections.abc import Iterable
 from tqdm import tqdm
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.utils.config import default_config_path, parse_args_with_config
 
 TARTANEVENT_ROOT_URL = (
     "https://download.ifi.uzh.ch/rpg/web/data/iros24_rampvo/datasets/TartanEvent"
@@ -745,19 +750,19 @@ def normalize_tartanair_layout(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, required=True, help="Common root folder")
+    parser.add_argument("--root", type=Path, default=None, help="Common root folder")
     parser.add_argument(
         "--env-event",
         type=str,
         nargs="+",
-        required=True,
+        default=None,
         help='TartanEvent env(s), e.g. "office" or "office carwelding"',
     )
     parser.add_argument(
         "--env-air",
         type=str,
         nargs="+",
-        required=True,
+        default=None,
         help='TartanAir env(s), e.g. "Office" or "Office CarWelding"',
     )
     parser.add_argument(
@@ -815,7 +820,11 @@ def main() -> int:
             "normalization. Useful when events and IMU were downloaded in separate runs."
         ),
     )
-    args = parser.parse_args()
+    args = parse_args_with_config(
+        parser,
+        default_config_path("download_tartanair"),
+        required=("root", "env_event", "env_air"),
+    )
 
     root = args.root.resolve()
     root.mkdir(parents=True, exist_ok=True)
