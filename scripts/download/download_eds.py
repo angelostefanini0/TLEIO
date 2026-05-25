@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 import argparse
-import os
 import sys
 import tarfile
 import urllib.request
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.utils.config import default_config_path, parse_args_with_config
 
 
 SEQUENCES = [
@@ -27,9 +33,14 @@ SEQUENCES = [
 ]
 
 BASE_URL = "https://download.ifi.uzh.ch/rpg/eds/dataset"
+CALIB_URL = (
+    "https://raw.githubusercontent.com/uzh-rpg/bundles-eds/refs/heads/master/"
+    "config/data/dual_setup/03_calib/"
+    "camchain-mediajaviJAVISdatasetshwdscalibratione2kalibr.yaml"
+)
 
 
-def parse_testing_arg(value: str, allowed_names: list[str]) -> set[str]:
+def parse_sequence_arg(value: str, allowed_names: list[str]) -> list[str]:
     """
     Accepts a comma-separated list of either:
       - indices: 0,3,5
@@ -37,13 +48,16 @@ def parse_testing_arg(value: str, allowed_names: list[str]) -> set[str]:
       - sequence names: 00_peanuts_dark,03_rocket_earth_dark
     """
     if not value.strip():
-        return set()
+        return []
 
-    out = set()
+    out = []
+    seen = set()
     items = [item.strip() for item in value.split(",") if item.strip()]
     for item in items:
         if item in allowed_names:
-            out.add(item)
+            if item not in seen:
+                out.append(item)
+                seen.add(item)
             continue
 
         # integer index like 3 or 03
@@ -51,15 +65,18 @@ def parse_testing_arg(value: str, allowed_names: list[str]) -> set[str]:
             idx = int(item)
         except ValueError:
             raise ValueError(
-                f"Invalid testing entry '{item}'. Use indices like '0,3,5' "
+                f"Invalid sequence entry '{item}'. Use indices like '0,3,5' "
                 f"or names like '00_peanuts_dark,03_rocket_earth_dark'."
             )
 
         if idx < 0 or idx >= len(SEQUENCES):
             raise ValueError(
-                f"Testing index {idx} out of range. Valid range is 0..{len(SEQUENCES)-1}."
+                f"Sequence index {idx} out of range. Valid range is 0..{len(SEQUENCES)-1}."
             )
-        out.add(SEQUENCES[idx])
+        seq = SEQUENCES[idx]
+        if seq not in seen:
+            out.append(seq)
+            seen.add(seq)
 
     return out
 
@@ -112,29 +129,31 @@ def maybe_strip_single_top_level_dir(seq_dir: Path) -> None:
     inner.rmdir()
 
 
+def ensure_calibration_file(seq_dir: Path) -> None:
+    calibration_path = seq_dir / "K.yaml"
+    if calibration_path.exists():
+        return
+
+    print(f"Downloading calibration to {calibration_path} ...")
+    download_file(CALIB_URL, calibration_path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download EDS dataset sequences.")
     parser.add_argument(
         "root",
         type=Path,
+        nargs="?",
         help="Root directory where sequences will be stored.",
     )
     parser.add_argument(
-        "num_sequences",
-        type=int,
-        help=f"How many sequences to download, from 1 to {len(SEQUENCES)}. "
-             f"The script downloads the first N sequences in canonical order.",
-    )
-    parser.add_argument(
-        "testing",
+        "--seq",
         type=str,
-        nargs="?",
         default="",
         help=(
-            "Optional comma-separated list of test sequences among the selected ones. "
-            "You can use indices like '0,3,5' or names like "
-            "'00_peanuts_dark,03_rocket_earth_dark'. "
-            "Leave it out for none."
+            "Comma-separated list of sequences to download. "
+            "You can use indices like '0,1,2' or names like "
+            "'00_peanuts_dark,01_peanuts_light'."
         ),
     )
     parser.add_argument(
@@ -142,42 +161,40 @@ def main() -> None:
         action="store_true",
         help="Keep downloaded .tgz files after extraction.",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--remove-images",
+        action="store_true",
+        help="Remove extracted images to save space.",
+    )
+    args = parse_args_with_config(
+        parser,
+        default_config_path("download_eds"),
+        required=("root", "seq"),
+    )
 
-    if args.num_sequences < 1 or args.num_sequences > len(SEQUENCES):
-        raise ValueError(f"num_sequences must be between 1 and {len(SEQUENCES)}.")
+    selected = parse_sequence_arg(args.seq, SEQUENCES)
 
-    selected = SEQUENCES[: args.num_sequences]
-    testing = parse_testing_arg(args.testing, SEQUENCES)
-
-    unknown = testing.difference(selected)
-    if unknown:
-        raise ValueError(
-            "Some testing sequences are not in the selected first N sequences: "
-            + ", ".join(sorted(unknown))
-        )
+    if not selected:
+        raise ValueError("Provide at least one sequence with --seq.")
 
     root = args.root.resolve()
     raw_root = root / "raw"
-    testing_root = root / "testing"
     archives_root = root / "_archives"
 
     raw_root.mkdir(parents=True, exist_ok=True)
-    testing_root.mkdir(parents=True, exist_ok=True)
     archives_root.mkdir(parents=True, exist_ok=True)
 
     print("Selected sequences:")
     for seq in selected:
-        split = "testing" if seq in testing else "train/root"
-        print(f"  - {seq} -> {split}")
+        print(f"  - {seq}")
 
     for seq in selected:
         url = f"{BASE_URL}/{seq}/{seq}.tgz"
         archive_path = archives_root / f"{seq}.tgz"
-        dest_parent = testing_root if seq in testing else raw_root
-        seq_dir = dest_parent / seq
+        seq_dir = raw_root / seq
 
         if seq_dir.exists() and any(seq_dir.iterdir()):
+            ensure_calibration_file(seq_dir)
             print(f"Skipping {seq}: already extracted at {seq_dir}")
             continue
 
@@ -189,6 +206,15 @@ def main() -> None:
         print(f"Extracting to {seq_dir} ...")
         extract_tgz(archive_path, seq_dir)
         maybe_strip_single_top_level_dir(seq_dir)
+        ensure_calibration_file(seq_dir)
+
+        if args.remove_images:
+            images_dir = seq_dir / "images"
+            if images_dir.exists() and images_dir.is_dir():
+                for item in images_dir.iterdir():
+                    if item.is_file():
+                        item.unlink()
+                images_dir.rmdir()
 
         if not args.keep_archives:
             archive_path.unlink(missing_ok=True)

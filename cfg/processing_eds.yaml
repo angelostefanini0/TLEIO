@@ -1,0 +1,15 @@
+file: data/eds/raw
+timestamps_key: t
+save_path: data/eds/processed_train
+save_path_testing: data/eds/processed_testing
+save_path_validation: data/eds/processed_validation
+test_seq: "0,6"
+validation_seq: "3"
+dataset_name: ms_to_idx
+overwrite: false
+remove_raw: false
+process_gt:
+  - imu.csv
+  - stamped_groundtruth.txt
+delta_t_ms: 50.0
+anchor_t_ms: 50.0
