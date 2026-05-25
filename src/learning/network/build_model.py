@@ -75,7 +75,9 @@ def build_model(args, model_params):
                 attn_drop_rate=model_params["attn_dropout"],
                 drop_path_rate=model_params["ff_dropout"],
                 num_frames=args["clip_len"],
-                attention_type=model_params["attention_type"]
+                attention_type=model_params["attention_type"],
+                spatial_rope=model_params.get("spatial_rope", False),
+                rope_frequency=model_params.get("rope_frequency", 100.0),
             )
 
     if model_params["time_only"]:

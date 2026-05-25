@@ -25,11 +25,14 @@ python scripts/download/download_tartanair.py \
 from __future__ import annotations
 
 import argparse
+import html
+import re
 import shutil
 import sys
 import zipfile
 from pathlib import Path, PurePosixPath
 import urllib.request
+import urllib.parse
 import time
 from tqdm import tqdm
 
@@ -48,6 +51,15 @@ TARTANAIR_FILE_LIST_URL = (
     "download_training_zipfiles.txt"
 )
 TARTANAIR_HF_REPO_ID = "theairlabcmu/tartanair"
+TARTANEVENT_TEST_URL = (
+    "https://download.ifi.uzh.ch/rpg/web/data/iros24_rampvo/datasets/"
+    "TartanEvent_competition.zip"
+)
+TARTANAIR_TEST_AIR_URL = (
+    "https://drive.google.com/file/d/1N9BkpQuibIyIBkLxVPUuoB-eDOMFqY8D/view?usp=sharing"
+)
+TARTANAIR_TEST_AIR_ARCHIVE = "tartanair-test-mono-release.tar.gz"
+IMAGE_EXTENSIONS = {".png", ".jpg"}
 
 def download_with_retry(url: str, target: str) -> None:
     import os
@@ -331,6 +343,15 @@ def write_cam_time_from_event_timestamps(timestamps_file: Path, cam_time_file: P
             fh.write(f"{value * scale:.12f}\n")
 
 
+def archive_payload_stem(archive_name: str) -> str:
+    name = Path(archive_name).name
+    if name.endswith(".tar.gz"):
+        return name[:-7]
+    if name.endswith(".tgz"):
+        return name[:-4]
+    return Path(name).stem
+
+
 def prepare_training_layout(
     root: Path,
     env: str,
@@ -349,7 +370,8 @@ def prepare_training_layout(
             pose_left = traj_dir / "pose_left.txt"
             pose_lcam_front = traj_dir / "pose_lcam_front.txt"
             timestamps_file = traj_dir / "timestamps.txt"
-            check_timestamps_pose_line_count(timestamps_file, pose_left)
+            pose_source = pose_left if pose_left.exists() else pose_lcam_front
+            check_timestamps_pose_line_count(timestamps_file, pose_source)
             if pose_left.exists():
                 shutil.copy2(pose_left, pose_lcam_front)
 

@@ -20,11 +20,17 @@ plots/
 results/
 checkpoints/
 precomputed_office_integer/
+TLIO_net_output/
+tmp/
 data/*
 !data/.gitkeep
 
 # Large/local artifacts
 *.h5
+*.npy
+*.pth
+*.pt
+events.out.tfevents.*
 *.log
 *.zip
 downloads/

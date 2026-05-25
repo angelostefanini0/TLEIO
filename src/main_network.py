@@ -67,6 +67,8 @@ def parse_args():
                         help="read precomputed voxel .npy files instead of events.h5")
     parser.add_argument("--voxel_filename", type=str, default="derotated_voxels.npy",
                         help="precomputed voxel file name inside each sequence folder")
+    parser.add_argument("--normalize_voxel_nonzero", type=str2bool, default=False,
+                        help="normalize non-zero values inside each voxel grid at dataloader time")
                        
     # optimization
     parser.add_argument("--optimizer", type=str, default="AdamW",
@@ -84,6 +86,10 @@ def parse_args():
                         help="load weights from pre-trained ViT")
     parser.add_argument("--num_workers", type=int, default=0, 
                         help="Number of workers for dataloader")
+    parser.add_argument("--transition_epoch", type=int, default=1e6,
+                        help="epoch to switch from MSE to ML loss; MSE only if not set")
+    parser.add_argument("--covariance", type=str2bool, default=False,
+                        help="enable covariance outputs (6 outputs per relative motion)")
     parser.add_argument("--persistent_workers", type=str2bool, default=True,
                         help="Keep DataLoader workers alive across epochs when num_workers > 0")
     parser.add_argument("--prefetch_factor", type=int, default=2,
@@ -115,24 +121,31 @@ def parse_args():
     parser.add_argument("--attn_dropout", type=float, default=0.1)
     parser.add_argument("--ff_dropout", type=float, default=0.1)
     parser.add_argument("--time_only", type=str2bool, default=False)
+    parser.add_argument("--spatial_rope", type=str2bool, default=False,
+                        help="replace learned spatial pos_embed with 2D RoPE in spatial attention")
+    parser.add_argument("--rope_frequency", type=float, default=100.0,
+                        help="base frequency for 2D spatial RoPE")
 
     parsed = parse_args_with_config(parser, default_config_path("train"))
     args = vars(parsed)
     if args.get("config") is not None:
         args["config"] = str(args["config"])
 
+    outputs_per_motion = 6 if args.get("covariance", False) else 3
     model_params = {
         "embed_dim": args["embed_dim"],
         "patch_size": args["patch_size"],
         "attention_type": args["attention_type"],
         "num_frames": args["clip_len"],
-        "num_classes": 3 * (args["clip_len"] - 1),
+        "num_classes": outputs_per_motion * (args["clip_len"] - 1),
         "depth": args["depth"],
         "heads": args["heads"],
         "dim_head": args["dim_head"],
         "attn_dropout": args["attn_dropout"],
         "ff_dropout": args["ff_dropout"],
         "time_only": args["time_only"],
+        "spatial_rope": args["spatial_rope"],
+        "rope_frequency": args["rope_frequency"],
     }
 
     args["model_params"] = model_params
@@ -220,6 +233,7 @@ if __name__ == "__main__":
                 clip_len=args["clip_len"],
                 num_bins=None,
                 voxel_filename=args["voxel_filename"],
+                normalize_voxel_nonzero=args["normalize_voxel_nonzero"],
             )
             apply_precomputed_voxel_args(args, train_data)
             val_data = PrecomputedVoxelClipDataset(
@@ -227,6 +241,7 @@ if __name__ == "__main__":
                 clip_len=args["clip_len"],
                 num_bins=args["num_bins"],
                 voxel_filename=args["voxel_filename"],
+                normalize_voxel_nonzero=args["normalize_voxel_nonzero"],
             )
         else:
             train_data = MultiEventVoxelClipDataset(
@@ -243,6 +258,7 @@ if __name__ == "__main__":
                 denoise_same_polarity_only=args["denoise_same_polarity_only"],
                 derotate=args["derotate"],
                 derotation_slices=args["derotation_slices"],
+                normalize_voxel_nonzero=args["normalize_voxel_nonzero"],
             )
             val_data = MultiEventVoxelClipDataset(
                 root_path=Path(args["val_root_dir"]),
@@ -257,7 +273,8 @@ if __name__ == "__main__":
                 denoise_min_supporters=args["denoise_min_supporters"],
                 denoise_same_polarity_only=args["denoise_same_polarity_only"],
                 derotate=args["derotate"],
-                derotation_slices=args["derotation_slices"]
+                derotation_slices=args["derotation_slices"],
+                normalize_voxel_nonzero=args["normalize_voxel_nonzero"],
             )
 
         if args["is_main_process"]:
