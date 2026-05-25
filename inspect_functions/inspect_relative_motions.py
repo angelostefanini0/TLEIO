@@ -610,6 +610,24 @@ def main():
 
     pos_err = np.linalg.norm(recon_pos - ref_pos, axis=1)
     rot_err = rotation_error_deg(ref_quat, recon_quat)
+    ate_se3_metrics, _ = compute_network_only_metrics(
+        gt_ts=gt_ts,
+        gt_pos=gt_pos,
+        gt_quat=gt_quat,
+        est_ts=anchor_ts,
+        est_pos=recon_pos,
+        est_quat=recon_quat,
+        alignment_mode="se3",
+    )
+    ate_sim3_metrics, _ = compute_network_only_metrics(
+        gt_ts=gt_ts,
+        gt_pos=gt_pos,
+        gt_quat=gt_quat,
+        est_ts=anchor_ts,
+        est_pos=recon_pos,
+        est_quat=recon_quat,
+        alignment_mode="sim3",
+    )
 
     # LOG ERROR STATS 
     
@@ -636,6 +654,8 @@ def main():
     print(f"Reconstructed anchors:    {len(anchor_ts)}")
     print(f"Position RMSE [m]:        {np.sqrt(np.mean(pos_err ** 2)):.6e}")
     print(f"Rotation RMSE [deg]:      {np.sqrt(np.mean(rot_err ** 2)):.6e}")
+    print(f"ATE SE3 RMSE [m]:         {ate_se3_metrics['ate_se3_aligned']['position_rmse_m']:.6e}")
+    print(f"ATE Sim3 RMSE [m]:        {ate_sim3_metrics['ate_sim3_aligned']['position_rmse_m']:.6e}")
 
     t_gt = (gt_ts - gt_ts[0]) * 1e-6
     t_anchor = (anchor_ts - gt_ts[0]) * 1e-6
