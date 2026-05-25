@@ -5,6 +5,7 @@ import torch
 import torch.optim as optim
 import torch.distributed as dist
 from tqdm import tqdm
+import numpy as np
 
 
 torch.manual_seed(2026)
@@ -77,7 +78,11 @@ def autocast_context(args):
     )
 
 
-def val_epoch(model, val_loader, criterion, args):
+def get_outputs_per_motion(args):
+    return 6 if args.get("covariance", False) else 3
+
+
+def val_epoch(model, val_loader, criterion, args, epoch):
     device = get_model_device(model)
     epoch_loss = 0.0
     num_batches = 0
@@ -94,11 +99,16 @@ def val_epoch(model, val_loader, criterion, args):
 
         with autocast_context(args):
             # predict transformation
-            estimated_transf = model(x.float()) # model returns [B, (T-1)*3]
-            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 3) # safe reshaping
+            outputs_per_motion = get_outputs_per_motion(args)
+            estimated_transf = model(x.float())
+            estimated_transf = estimated_transf.view(
+                x.shape[0],
+                args["clip_len"] - 1,
+                outputs_per_motion,
+            )
 
-            # compute loss
-            loss = compute_loss(estimated_transf, y, criterion, args)
+            # compute loss on the first three translation dimensions
+            loss = compute_loss(estimated_transf, y, criterion, args, epoch)
 
         epoch_loss += loss.item()
         num_batches += 1
@@ -147,11 +157,16 @@ def train_epoch(model, train_loader, criterion, optimizer, epoch, tensorboard_wr
 
         with autocast_context(args):
             # predict transformation
+            outputs_per_motion = get_outputs_per_motion(args)
             estimated_transf = model(x.float())
-            estimated_transf = estimated_transf.view(x.shape[0], args["clip_len"] - 1, 3)
+            estimated_transf = estimated_transf.view(
+                x.shape[0],
+                args["clip_len"] - 1,
+                outputs_per_motion,
+            )
 
-            # compute loss
-            loss = compute_loss(estimated_transf, y, criterion, args)
+            # compute loss on the first three translation dimensions
+            loss = compute_loss(estimated_transf, y, criterion, args, epoch)
 
         # compute gradient and do optimizer step
         optimizer.zero_grad(set_to_none=True)
@@ -251,7 +266,7 @@ def train(model, train_loader, val_loader, criterion, optimizer, tensorboard_wri
         if val_loader:
             with torch.no_grad():
                 model.eval()
-                val_loss = val_epoch(model, val_loader, criterion, args)
+                val_loss = val_epoch(model, val_loader, criterion, args, epoch)
 
         if is_main_process():
             if val_loss is not None:
@@ -392,8 +407,19 @@ def get_optimizer(model, args):
     return optimizer
 
 
-def compute_loss(y_hat, y, criterion, args):
+def compute_loss(y_hat, y, criterion, args, epoch):
+    MIN_LOG_STD = np.log(1e-3)
     y = y.reshape(y.shape[0], args["clip_len"] - 1, 3).float()
-    y_hat = y_hat.reshape(y_hat.shape[0], args["clip_len"] - 1, 3)
-    return criterion(y_hat, y)
+    outputs_per_motion = get_outputs_per_motion(args)
+    y_hat = y_hat.reshape(y_hat.shape[0], args["clip_len"] - 1, outputs_per_motion)
+    pred = y_hat[..., :3]
+    
+    if not args.get("covariance", False) or epoch < args["transition_epoch"]:
+        loss = criterion(pred, y)
+    else:  # Use maximum likelihood loss with diagonal covariance
+        pred_logstd = y_hat[..., 3:]
+        pred_logstd = torch.maximum(pred_logstd, MIN_LOG_STD * torch.ones_like(pred_logstd))
+        loss = ((pred - y).pow(2)) / (2 * torch.exp(2 * pred_logstd)) + pred_logstd
+    
+    return loss.sum()  # Sum to scalar for loss.item()
     

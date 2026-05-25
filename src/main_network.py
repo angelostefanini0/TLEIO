@@ -85,6 +85,10 @@ def parse_args():
                         help="load weights from pre-trained ViT")
     parser.add_argument("--num_workers", type=int, default=0, 
                         help="Number of workers for dataloader")
+    parser.add_argument("--transition_epoch", type=int, default=1e6,
+                        help="epoch to switch from MSE to ML loss; MSE only if not set")
+    parser.add_argument("--covariance", type=str2bool, default=False,
+                        help="enable covariance outputs (6 outputs per relative motion)")
     parser.add_argument("--persistent_workers", type=str2bool, default=True,
                         help="Keep DataLoader workers alive across epochs when num_workers > 0")
     parser.add_argument("--prefetch_factor", type=int, default=2,
@@ -124,12 +128,13 @@ def parse_args():
     parsed = parser.parse_args()
     args = vars(parsed)
 
+    outputs_per_motion = 6 if args.get("covariance", False) else 3
     model_params = {
         "embed_dim": args["embed_dim"],
         "patch_size": args["patch_size"],
         "attention_type": args["attention_type"],
         "num_frames": args["clip_len"],
-        "num_classes": 3 * (args["clip_len"] - 1),
+        "num_classes": outputs_per_motion * (args["clip_len"] - 1),
         "depth": args["depth"],
         "heads": args["heads"],
         "dim_head": args["dim_head"],

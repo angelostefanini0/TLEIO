@@ -29,6 +29,21 @@ def load_table(path: Path) -> np.ndarray:
     return data
 
 
+def load_table_header(path: Path) -> str:
+    with open(path, "r") as f:
+        first = f.readline().strip()
+
+    if first.startswith("#"):
+        first = first[1:].strip()
+    if first and first[0].isalpha():
+        return first.lower()
+    return ""
+
+
+def header_looks_like_covariance(header: str) -> bool:
+    return any(token in header for token in ("sigma", "covariance", "cov_"))
+
+
 def normalize_quat(q: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(q, axis=1, keepdims=True)
     if np.any(n == 0):
@@ -114,11 +129,12 @@ def T_to_pose(T: np.ndarray):
     return pos, quat
 
 
-def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
+def parse_rel_row_to_T(row: np.ndarray, covariance: bool = False) -> np.ndarray:
     """
     Supported row formats:
     - Translation only: t0_us t1_us px py pz
     - Axis-vector: t0_us t1_us px py pz rx ry rz
+    - Translation + covariance: t0_us t1_us px py pz sigma_x sigma_y sigma_z
     """
 
     if row.shape[0] == 5:
@@ -127,6 +143,11 @@ def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
         return T
 
     if row.shape[0] == 8:
+        if covariance:
+            T = np.eye(4, dtype=np.float64)
+            T[:3, 3] = row[2:5]
+            return T
+
         T = np.eye(4, dtype=np.float64)
         T[:3, :3] = rotvec_to_rotmat(row[5:8])
         T[:3, 3] = row[2:5]
@@ -137,10 +158,12 @@ def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
     )
 
 
-def describe_rel_format(num_cols: int) -> str:
+def describe_rel_format(num_cols: int, covariance: bool = False) -> str:
     if num_cols == 5:
         return "translation only"
     if num_cols == 8:
+        if covariance:
+            return "translation + covariance"
         return "axis-vector + translation"
     return f"unknown ({num_cols} cols)"
 
@@ -461,6 +484,10 @@ def main():
                         choices=["none", "rotation", "translation", "both"],
                         help="How to combine --rel with --gt_rel before integration. "
                              "Default 'rotation' keeps predicted translation and uses GT rotation.")
+    parser.add_argument("--covariance", action="store_true",
+                        help="Interpret 8-column --rel as translation + sigma_x sigma_y sigma_z.")
+    parser.add_argument("--sigma_band_width", type=float, default=1.0,
+                        help="Number of standard deviations to show for confidence bands.")
     parser.add_argument("--network_only_metrics", action="store_true",
                         help="Print RAW and aligned ATE metrics for the reconstructed network-only trajectory.")
     parser.add_argument("--network_alignment", type=str, default="se3", choices=["se3", "sim3"],
@@ -476,6 +503,7 @@ def main():
 
     # LOAD GT AND RELATIVE MOTIONS AND CHECK DIMENSIONS
     gt = load_table(args.gt)
+    rel_header = load_table_header(args.rel)
     rel = load_table(args.rel)
     gt_rel = load_table(args.gt_rel) if args.gt_rel is not None else None
 
@@ -485,6 +513,16 @@ def main():
         raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 5 or 8")
     if gt_rel is not None and gt_rel.shape[1] != 8:
         raise ValueError(f"{args.gt_rel} has {gt_rel.shape[1]} columns, expected 8")
+
+    use_covariance = args.covariance or (rel.shape[1] == 8 and header_looks_like_covariance(rel_header))
+
+    if use_covariance:
+        if rel.shape[1] != 8:
+            raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 8 for covariance format.")
+        rel_cov = rel[:, 5:8].copy()
+        rel = rel[:, :5]
+    else:
+        rel_cov = np.zeros((len(rel), 3), dtype=np.float64)
 
     gt_ts = gt[:, 0].astype(np.int64)
     gt_pos = gt[:, 1:4]
@@ -505,7 +543,7 @@ def main():
         gt_rel_t0 = gt_rel[:, 0].astype(np.int64)
         gt_rel_t1 = gt_rel[:, 1].astype(np.int64)
         if len(gt_rel) != len(rel):
-            raise ValueError("--gt_rel must have the same number of rows as --rel.")
+            raise ValueError(f"--gt_rel must have the same number of rows as --rel. Got {len(gt_rel)} and {len(rel)}.")
         if not np.array_equal(rel_t0, gt_rel_t0) or not np.array_equal(rel_t1, gt_rel_t1):
             raise ValueError("--gt_rel timestamps do not match --rel timestamps.")
 
@@ -632,6 +670,8 @@ def main():
     # LOG ERROR STATS 
     
     rel_format = describe_rel_format(rel.shape[1])
+    if use_covariance:
+        rel_format = "translation + covariance"
     gt_rel_format = "none" if gt_rel is None else describe_rel_format(gt_rel.shape[1])
     error_ref_label = "GT relative motions" if gt_rel is not None else "source GT"
 
@@ -667,6 +707,17 @@ def main():
         axes[i].plot(t_gt, gt_pos[:, i], label="raw stamped GT")
         axes[i].plot(t_anchor, ref_pos[:, i], "--", label="GT at anchor times")
         axes[i].plot(t_anchor, recon_pos[:, i], label="trajectory from relative motions")
+        if use_covariance:
+            sigma_times = t_anchor[1:]
+            sigma = rel_cov
+            axes[i].fill_between(
+                sigma_times,
+                recon_pos[1:, i] - args.sigma_band_width * sigma[:, i],
+                recon_pos[1:, i] + args.sigma_band_width * sigma[:, i],
+                color="tab:gray",
+                alpha=0.4,
+                label=f"±{args.sigma_band_width}σ predicted" if i == 0 else None,
+            )
         axes[i].set_ylabel(f"p{labels[i]} [m]")
         axes[i].grid(True)
     axes[0].legend()

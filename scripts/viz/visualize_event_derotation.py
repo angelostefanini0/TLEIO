@@ -379,6 +379,64 @@ def make_plot(
     return fig
 
 
+def make_voxel_bin_plot(
+    raw_voxel: torch.Tensor,
+    derot_voxel: torch.Tensor,
+    duration_ms: float,
+    title: str,
+) -> plt.Figure:
+    raw_np = raw_voxel.detach().cpu().numpy()
+    derot_np = derot_voxel.detach().cpu().numpy()
+    if raw_np.shape != derot_np.shape:
+        raise ValueError(
+            f"Raw and de-rotated voxels must have the same shape, got {raw_np.shape} and {derot_np.shape}."
+        )
+
+    num_bins = raw_np.shape[0]
+    max_abs = float(max(np.max(np.abs(raw_np)), np.max(np.abs(derot_np))))
+    if max_abs == 0.0:
+        max_abs = 1.0
+
+    fig_width = max(12.0, 2.6 * num_bins)
+    fig, axes = plt.subplots(
+        2,
+        num_bins,
+        figsize=(fig_width, 6.0),
+        squeeze=False,
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+    )
+
+    bin_ms = duration_ms / num_bins
+    image = None
+    for bin_idx in range(num_bins):
+        t0 = bin_idx * bin_ms
+        t1 = (bin_idx + 1) * bin_ms
+        for row, (label, voxel_np) in enumerate(
+            (("Raw", raw_np), ("De-rotated", derot_np))
+        ):
+            ax = axes[row, bin_idx]
+            image = ax.imshow(
+                voxel_np[bin_idx],
+                cmap="seismic",
+                vmin=-max_abs,
+                vmax=max_abs,
+                origin="upper",
+                interpolation="nearest",
+            )
+            ax.set_title(f"bin {bin_idx}\n{t0:.1f}-{t1:.1f} ms")
+            if bin_idx == 0:
+                ax.set_ylabel(label)
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+    fig.suptitle(title)
+    if image is not None:
+        fig.colorbar(image, ax=axes.ravel().tolist(), shrink=0.82, label="voxel value")
+    return fig
+
+
 def h5_get_dataset(h5f: h5py.File, name: str) -> h5py.Dataset:
     candidates = [name, f"events/{name}"]
     for candidate in candidates:
@@ -597,16 +655,26 @@ def main() -> None:
         view_elev=args.view_elev,
         view_azim=args.view_azim,
     )
+    bin_fig = make_voxel_bin_plot(
+        raw_voxel=raw_voxel,
+        derot_voxel=derot_voxel,
+        duration_ms=duration_ms,
+        title=f"{title} | individual voxel bins",
+    )
 
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(args.output, dpi=180)
         print(f"Saved figure: {args.output}")
+        bin_output = args.output.with_name(f"{args.output.stem}_bins{args.output.suffix}")
+        bin_fig.savefig(bin_output, dpi=180)
+        print(f"Saved voxel-bin figure: {bin_output}")
 
     if args.show:
         plt.show()
     else:
         plt.close(fig)
+        plt.close(bin_fig)
 
 
 if __name__ == "__main__":

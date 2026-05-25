@@ -66,8 +66,26 @@ def load_inference_args(checkpoint_file: Path):
     loaded.setdefault("precomputed_voxels", False)
     loaded.setdefault("voxel_filename", "derotated_voxels.npy")
     loaded.setdefault("derotation_slices", 100)
+    loaded.setdefault("covariance", False)
     loaded.setdefault("normalize_voxel_nonzero", False)
     return loaded
+
+
+def get_outputs_per_motion(infer_args):
+    clip_pairs = infer_args["clip_len"] - 1
+    num_classes = infer_args["model_params"]["num_classes"]
+    if num_classes % clip_pairs != 0:
+        raise ValueError(
+            f"Model num_classes={num_classes} is not divisible by clip_len - 1={clip_pairs}."
+        )
+
+    outputs_per_motion = num_classes // clip_pairs
+    if outputs_per_motion not in {3, 6}:
+        raise ValueError(
+            f"Unsupported model output width: {outputs_per_motion} per relative motion. "
+            "Expected 3 or 6."
+        )
+    return outputs_per_motion
 
 
 def apply_precomputed_voxel_args(args_dict, dataset):
@@ -224,32 +242,46 @@ def average_overlapping_predictions(prediction_store):
     return rows_pred, timestamps
 
 
-def collect_last_step_predictions(loader, model, device, infer_args, target_mean, target_std):
+def collect_last_step_predictions(loader, model, device, infer_args, target_mean, target_std, save_covariance=False):
     preds = []
     rel_t0_list = []
     rel_t1_list = []
+    outputs_per_motion = get_outputs_per_motion(infer_args)
+
+    if save_covariance and outputs_per_motion != 6:
+        raise ValueError("--save_covariance requires a checkpoint with 6 outputs per relative motion.")
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(loader):
             x = batch["representation"].to(device).float()
             anchors = batch["anchors_us"].cpu().numpy()
             y_hat = model(x)
-            y_hat_tr = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 3)
+            y_hat_full = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, outputs_per_motion)
+            y_hat_tr = y_hat_full[..., :3]
+            y_hat_cov = y_hat_full[..., 3:] if outputs_per_motion == 6 else None
 
             if target_mean is not None and target_std is not None:
                 y_hat_tr = y_hat_tr * target_std + target_mean
 
             y_hat_tr = y_hat_tr.cpu().numpy()
+            if y_hat_cov is not None:
+                y_hat_cov = np.exp(y_hat_cov.cpu().numpy())
 
             for i in range(y_hat_tr.shape[0]):
                 anc_i = anchors[i]
 
                 if batch_idx == 0 and i == 0:
-                    preds.append(y_hat_tr[i, 0])
+                    row = y_hat_tr[i, 0]
+                    if save_covariance:
+                        row = np.concatenate([row, y_hat_cov[i, 0]], axis=-1)
+                    preds.append(row)
                     rel_t0_list.append(int(anc_i[0]))
                     rel_t1_list.append(int(anc_i[1]))
 
-                preds.append(y_hat_tr[i, -1])
+                row = y_hat_tr[i, -1]
+                if save_covariance:
+                    row = np.concatenate([row, y_hat_cov[i, -1]], axis=-1)
+                preds.append(row)
                 rel_t0_list.append(int(anc_i[-2]))
                 rel_t1_list.append(int(anc_i[-1]))
 
@@ -263,39 +295,55 @@ def collect_last_step_predictions(loader, model, device, infer_args, target_mean
     return rows_pred, timestamps
 
 
-def collect_averaged_predictions(loader, model, device, infer_args, target_mean, target_std):
+def collect_averaged_predictions(loader, model, device, infer_args, target_mean, target_std, save_covariance=False):
     prediction_store = {}
+    outputs_per_motion = get_outputs_per_motion(infer_args)
+
+    if save_covariance and outputs_per_motion != 6:
+        raise ValueError("--save_covariance requires a checkpoint with 6 outputs per relative motion.")
 
     with torch.no_grad():
         for batch in loader:
             x = batch["representation"].to(device).float()
             anchors = batch["anchors_us"].cpu().numpy()
             y_hat = model(x)
-            y_hat_tr = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 3)
+            y_hat_full = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, outputs_per_motion)
+            y_hat_tr = y_hat_full[..., :3]
+            y_hat_cov = y_hat_full[..., 3:] if outputs_per_motion == 6 else None
 
             if target_mean is not None and target_std is not None:
                 y_hat_tr = y_hat_tr * target_std + target_mean
 
             y_hat_tr = y_hat_tr.cpu().numpy()
+            if y_hat_cov is not None:
+                y_hat_cov = np.exp(y_hat_cov.cpu().numpy())
 
             for i in range(y_hat_tr.shape[0]):
                 anc_i = anchors[i]
                 for step_idx in range(y_hat_tr.shape[1]):
+                    value = y_hat_tr[i, step_idx]
+                    if save_covariance:
+                        value = np.concatenate([value, y_hat_cov[i, step_idx]], axis=-1)
                     key = (int(anc_i[step_idx]), int(anc_i[step_idx + 1]))
-                    prediction_store.setdefault(key, []).append(y_hat_tr[i, step_idx])
+                    prediction_store.setdefault(key, []).append(value)
 
     return average_overlapping_predictions(prediction_store)
 
 
 def collect_raw_model_outputs(loader, model, device, infer_args, target_mean, target_std):
     rows = []
+    outputs_per_motion = get_outputs_per_motion(infer_args)
 
     with torch.no_grad():
         for batch in loader:
             x = batch["representation"].to(device).float()
             anchors = batch["anchors_us"].cpu().numpy()
             y_hat = model(x)
-            y_hat_tr = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 3)
+            y_hat_tr = y_hat.view(
+                x.shape[0],
+                infer_args["clip_len"] - 1,
+                outputs_per_motion,
+            )[..., :3]
 
             if target_mean is not None and target_std is not None:
                 y_hat_tr = y_hat_tr * target_std + target_mean
@@ -360,34 +408,9 @@ def main():
         help="Average predictions that correspond to the same displacement across overlapping clips.",
     )
     parser.add_argument(
-        "--voxel_scale",
-        type=float,
-        default=1.0,
-        help="Multiply input voxel representations by this value at inference time.",
-    )
-    parser.add_argument(
-        "--voxel_scale_reference_dir",
-        type=str,
-        default=None,
-        help=(
-            "Optional precomputed training root. If set, compute "
-            "scale = mean_abs(reference voxels) / mean_abs(target voxels)."
-        ),
-    )
-    parser.add_argument(
-        "--voxel_scale_target_dir",
-        type=str,
-        default=None,
-        help=(
-            "Optional precomputed target root for automatic voxel scaling. "
-            "Defaults to --sequence_dir."
-        ),
-    )
-    parser.add_argument(
-        "--voxel_scale_chunk_size",
-        type=int,
-        default=64,
-        help="Number of precomputed voxel frames to read per chunk when computing mean abs.",
+        "--save_covariance",
+        action="store_true",
+        help="Save diagonal covariance sigma_x sigma_y sigma_z for each predicted relative motion.",
     )
     args_cli = parser.parse_args()
 
@@ -452,11 +475,11 @@ def main():
 
     if args_cli.average_overlaps:
         rows_pred, timestamps = collect_averaged_predictions(
-            loader, model, device, infer_args, target_mean, target_std
+            loader, model, device, infer_args, target_mean, target_std, args_cli.save_covariance
         )
     else:
         rows_pred, timestamps = collect_last_step_predictions(
-            loader, model, device, infer_args, target_mean, target_std
+            loader, model, device, infer_args, target_mean, target_std, args_cli.save_covariance
         )
     raw_model_outputs = collect_raw_model_outputs(
         loader, model, device, infer_args, target_mean, target_std
@@ -466,11 +489,18 @@ def main():
     output_file.parent.mkdir(parents=True, exist_ok=True)
     raw_output_file.parent.mkdir(parents=True, exist_ok=True)
     
+    if args_cli.save_covariance:
+        header = "t0_us t1_us px py pz sigma_x sigma_y sigma_z"
+        fmt = ["%d", "%d"] + ["%.10f"] * 6
+    else:
+        header = "t0_us t1_us px py pz"
+        fmt = ["%d", "%d"] + ["%.10f"] * 3
+
     np.savetxt(
         output_file,
         out,
-        fmt=["%d", "%d"] + ["%.10f"] * 3,
-        header="t0_us t1_us px py pz",
+        fmt=fmt,
+        header=header,
         comments="",
     )
     np.savetxt(
