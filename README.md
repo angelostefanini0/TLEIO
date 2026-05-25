@@ -78,12 +78,12 @@ If the first partial download of events lives in a different folder than the one
 
 ## 3. EDS Data pre-processing
 
-Run the `processing_eds.py` script to process the event stream and the ground truth data to get supervision for the network. The script generates a ms_to_idx mapping for efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency. 
+Run the `scripts/processing/processing_eds.py` script to process the event stream and the ground truth data to get supervision for the network. The script generates a ms_to_idx mapping for efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency.
 
 CURRENTLY WORKING FOR EDS ONLY, NEEDS MINOR FIXES TO WORK WITH THE TARTAN AIR DATASET AS WELL
 
 ```bash
-python scripts/processing_eds.py data/eds/raw \
+python scripts/processing/processing_eds.py data/eds/raw \
 --save-path data/eds/processed_train \
 --save_path_validation data/eds/processed_validation \
 --validation-seq 3 \
@@ -98,12 +98,12 @@ python scripts/processing_eds.py data/eds/raw \
 ```
 ## 4. Tartan Data pre-processing
 
-Run the `processing_tartan.py` script to process the event stream and the ground truth data to get supervision for the network. The script generates a ms_to_idx mapping for efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency. 
+Run the `scripts/processing/processing_tartan.py` script to process the event stream and the ground truth data to get supervision for the network. The script generates a ms_to_idx mapping for efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency.
 
 Pass the top-level Tartan root, for example `data/tartanair`, not a single environment folder. The script builds `stamped_groundtruth.txt` from `pose_lcam_front.txt` and `imu/cam_time.txt`, and can also synthesize an `imu.csv` from the Tartan IMU files.
 
 ```bash
-python scripts/processing_tartan.py data/tartanair \
+python scripts/processing/processing_tartan.py data/tartanair \
 --save-path data/tartanair/processed_train \
 --overwrite \
 --timestamps-key events/t \
@@ -118,14 +118,14 @@ When running on the server, add argument `--materialize-events-file`, so that th
 ## 4.1 Run second run of processing
 If you want to train on already voxelized and/or derotated events please run
 ```bash
-python scripts\precompute_derotated_voxels.py --root_dir data\eds\processed_validation --output_dir data\eds\processed_2_val --delta_t_ms 50 --num_bins 5 --downsampling_factor 0.7 --patch_size 16 --denoising true --denoise_dt_us 2000 --denoise_radius 1 --denoise_min_supporters 2 --denoise_same_polarity_only false --derotate false --derotation_slices 100 --overwrite
+python scripts/processing/precompute_derotated_voxels.py --root_dir data/eds/processed_validation --output_dir data/eds/processed_2_val --delta_t_ms 50 --num_bins 5 --downsampling_factor 0.7 --patch_size 16 --denoising true --denoise_dt_us 2000 --denoise_radius 1 --denoise_min_supporters 2 --denoise_same_polarity_only false --derotate false --derotation_slices 100 --overwrite
 ```
 
 ## 5. Visualization of event data: 
-Run the `scripts/viz/play_events_on_rgb.py` script to playback the input video with events overlayed onto RGB frames. `root` expects the absolute path to the dataset root, `sequence` expects the name of the sequence to inspect, and `height` / `width` are the image dimensions to display. To have the playback uncapped, set `fps` to `0`.
+Run the `scripts/viz/test_trajectory_with_events.py` script without trajectory arguments to playback the input video with events overlayed onto RGB frames. `root` expects the absolute path to the dataset root, `sequence` expects the name of the sequence to inspect, and `height` / `width` are the image dimensions to display. To have the playback uncapped, set `fps` to `0`.
 
 ```bash
-python scripts/viz/play_events_on_rgb.py \
+python scripts/viz/test_trajectory_with_events.py \
 --root /home/alessandro/Desktop/TLEIO/data/eds/raw \
 --sequence 01_peanuts_light \
 --height 480 \
@@ -138,7 +138,7 @@ python scripts/viz/play_events_on_rgb.py \
 The script also supports visualizing the shared background-activity denoiser used by the training pipeline:
 
 ```bash
-python scripts/viz/play_events_on_rgb.py \
+python scripts/viz/test_trajectory_with_events.py \
 --root /home/alessandro/Desktop/TLEIO/data/eds/raw \
 --sequence 01_peanuts_light \
 --height 480 \
@@ -306,7 +306,7 @@ To plot all Office sequences against ground truth:
 for seq_dir in data/tartanair/precomputed_office_integer/*; do
   seq=$(basename "$seq_dir")
 
-  python inspect_functions/inspect_relative_motions.py \
+  python scripts/inspect_relative_motions.py \
     --gt "data/tartanair/processed_train/$seq/stamped_groundtruth.txt" \
     --rel "data/tartanair/predicted_relative_motions/precomputed_office_integer/$seq.txt" \
     --gt_rel "$seq_dir/relative_motions.txt" \
@@ -318,14 +318,14 @@ done
 Run the `inspect_relative_motions.py` script to see how the model predicition compares to the GT. `gt` expects the stamped groundtruth, `rel` expects translation-only predictions `[t0_us t1_us px py pz]`, and `gt_rel` expects the groundtruth relative motions used for reference translations and trajectory rotations.
 
 ```bash
-python inspect_functions/inspect_relative_motions.py \
+python scripts/inspect_relative_motions.py \
 --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt \
 --rel path/to/predicted_relative_motions.txt \
 --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt
 ```
 
 ## 9. Live visualization and inspection of results: 
-Run the `scripts/viz/test_trajectory_with_events.py` script to playback the input video with events overlayed onto RGB frames, and get the corresponding trajectory plot live (gt against predicted from the model). It supports the same optional background-activity denoising controls as `play_events_on_rgb.py`.
+Run the `scripts/viz/test_trajectory_with_events.py` script with trajectory arguments to playback the input video with events overlayed onto RGB frames, and get the corresponding trajectory plot live (gt against predicted from the model). It supports the same optional background-activity denoising controls as the event-only mode.
 ```bash
 python scripts/viz/test_trajectory_with_events.py \
 --root /home/alessandro/Desktop/TLEIO/data/eds/raw \

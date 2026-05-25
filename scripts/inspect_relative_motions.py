@@ -17,15 +17,15 @@ from src.spatial_math import (
     rotation_error_deg,
     rotvec_to_rotmat,
 )
-from inspect_functions.utils.plotting import plot_relative_motion_inspection
+from scripts.utils.plotting import plot_relative_motion_inspection
 
 """
-python inspect_functions/inspect_relative_motions.py \
+python scripts/inspect_relative_motions.py \
   --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt \
   --rel path/to/predicted_relative_motions.txt \
   --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt
 """"""
-python inspect_functions/inspect_relative_motions.py --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt --rel path/to/predicted_relative_motions.txt  --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt
+python scripts/inspect_relative_motions.py --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt --rel path/to/predicted_relative_motions.txt  --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt
 """
 
 def load_table(path: Path) -> np.ndarray:

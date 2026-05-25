@@ -9,15 +9,12 @@ from torch.utils.data import DataLoader
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
-SRC_DIR = REPO_ROOT / "src"
-for path in (REPO_ROOT, SRC_DIR):
-    path_str = str(path)
-    if path_str not in sys.path:
-        sys.path.insert(0, path_str)
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-from learning.network.build_model import build_model, normalize_checkpoint_state_dict
-from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
-from learning.dataloader.events_to_voxel.precomputed_voxel_clip import PrecomputedVoxelClipDataset
+from src.learning.network.build_model import build_model, normalize_checkpoint_state_dict
+from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
+from src.learning.dataloader.events_to_voxel.precomputed_voxel_clip import PrecomputedVoxelClipDataset
 
 "python scripts/test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
 

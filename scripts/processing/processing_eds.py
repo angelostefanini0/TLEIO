@@ -8,11 +8,11 @@ import h5py
 import numpy as np
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
+REPO_ROOT = SCRIPT_DIR.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.gt_training import *
+from scripts.utils.gt_training import *
 
 """This script processes event-based datasets stored in HDF5 files and augments it with a temporal lookup table called `ms_to_idx`.
 
@@ -27,7 +27,7 @@ A new HDF5 file is created as output for each input sequence. This file contains
 - The computed `ms_to_idx` dataset stored at the root level
 Additionally, supplementary files such as `imu.csv` and `stamped_groundtruth.txt` are copied to the output directory if they exist.
 Command to run:
-python scripts/processing.py data/eds/raw \
+python scripts/processing/processing_eds.py data/eds/raw \
 --save-path data/eds/processed_train \
 --save_path_validation data/eds/processed_validation \
 --validation-seq 3 \
@@ -40,7 +40,7 @@ python scripts/processing.py data/eds/raw \
 --anchor_hz 20
 
 
-python scripts/processing.py data/eds/raw --save-path data/eds/processed_train --save_path_validation data/eds/processed_validation --validation-seq 3 --save_path_testing data/eds/processed_testing --test-seq 0,6 --overwrite --timestamps-key t --process_gt imu.csv stamped_groundtruth.txt --delta_t_ms 50 --anchor_hz 20
+python scripts/processing/processing_eds.py data/eds/raw --save-path data/eds/processed_train --save_path_validation data/eds/processed_validation --validation-seq 3 --save_path_testing data/eds/processed_testing --test-seq 0,6 --overwrite --timestamps-key t --process_gt imu.csv stamped_groundtruth.txt --delta_t_ms 50 --anchor_hz 20
 
 """
 

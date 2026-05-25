@@ -11,12 +11,12 @@ import h5py
 import numpy as np
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
+REPO_ROOT = SCRIPT_DIR.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.gt_training import *
-from scripts.parsing_utils import *
+from scripts.utils.gt_training import *
+from scripts.utils.parsing_utils import *
 
 """This script processes event-based datasets stored in HDF5 files and augments it with a temporal lookup table called `ms_to_idx`.
 
@@ -33,7 +33,7 @@ For each processed Tartan sequence, the script writes:
 - the processed GT / IMU text files used downstream
 
 Command to run:
-python scripts/processing_tartan.py data/tartan \
+python scripts/processing/processing_tartan.py data/tartan \
 --save-path data/tartan/processed_train \
 --overwrite \
 --timestamps-key events/t \
@@ -43,7 +43,7 @@ python scripts/processing_tartan.py data/tartan \
 --anchor_t_ms 50
 
 
-python scripts/processing.py data/eds/raw --save-path data/eds/processed_train --save_path_validation data/eds/processed_validation --validation-seq 3 --save_path_testing data/eds/processed_testing --test-seq 0,6 --overwrite --timestamps-key t --process_gt imu.csv stamped_groundtruth.txt --delta_t_ms 50 --anchor_hz 20
+python scripts/processing/processing_eds.py data/eds/raw --save-path data/eds/processed_train --save_path_validation data/eds/processed_validation --validation-seq 3 --save_path_testing data/eds/processed_testing --test-seq 0,6 --overwrite --timestamps-key t --process_gt imu.csv stamped_groundtruth.txt --delta_t_ms 50 --anchor_hz 20
 
 """
 

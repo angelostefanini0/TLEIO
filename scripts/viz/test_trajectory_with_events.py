@@ -1,5 +1,6 @@
 import argparse
 import sys
+import time
 from typing import Any
 from pathlib import Path
 
@@ -13,7 +14,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.viz.eds_loader import EdsDataLoader
-from inspect_functions.inspect_relative_motions import load_table, translation_rel_to_T
+from scripts.inspect_relative_motions import load_table, translation_rel_to_T
 from scripts.viz.matplotlib_utils import create_live_trajectory_viewer, update_live_trajectory_viewer
 from src.learning.dataloader.representation.event_denoising import background_activity_filter_events
 from src.spatial_math import (
@@ -39,9 +40,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Play EDS events overlaid on RGB frames.")
     parser.add_argument("--root", type=str, required=True, help="Dataset root parent directory.")
     parser.add_argument("--sequence", type=str, required=True, help="Sequence folder name.")
-    parser.add_argument("--rel-model", type=str, required=True, help="Path to the relative motions predicted by the model")
-    parser.add_argument("--rel-gt", type=str, required=True, help="Path to the ground truth relative motions")
-    parser.add_argument("--gt", type=str, required=True, help="Path to the ground truth")
+    parser.add_argument("--rel-model", type=str, default=None, help="Path to the relative motions predicted by the model")
+    parser.add_argument("--rel-gt", type=str, default=None, help="Path to the ground truth relative motions")
+    parser.add_argument("--gt", type=str, default=None, help="Path to the ground truth")
     parser.add_argument("--height", type=int, default=480, help="Image height.")
     parser.add_argument("--width", type=int, default=640, help="Image width.")
     parser.add_argument("--start-img", type=int, default=0, help="Starting RGB frame index.")
@@ -133,6 +134,65 @@ def overlay_events_on_image(
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
+def play_events_only(args: argparse.Namespace, loader: EdsDataLoader) -> None:
+    window_name = f"EDS Playback - {args.sequence}"
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+
+    frame_delay_ms = 1 if args.fps <= 0 else max(1, int(round(1000.0 / args.fps)))
+    end_img = min(args.start_img + args.num_frames, loader._len_image - 1)
+
+    try:
+        for imgi in range(args.start_img, end_img):
+            img, t0 = loader.load_image(imgi)
+            _, t1 = loader.load_image(imgi + 1)
+            i0 = loader.time_to_index(t0)
+            i1 = loader.time_to_index(t1)
+            ev = loader.load_event(i0, i1)
+            num_raw = len(ev)
+
+            if args.denoising:
+                ev, _ = background_activity_filter_events(
+                    events=ev,
+                    height=args.height,
+                    width=args.width,
+                    dt_us=args.denoise_dt_us,
+                    radius=args.denoise_radius,
+                    min_supporters=args.denoise_min_supporters,
+                    same_polarity_only=args.denoise_same_polarity_only,
+                )
+
+            frame = overlay_events_on_image(img, ev, loader.maps, args.event_alpha)
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            events_text = f"{len(ev)}/{num_raw}" if args.denoising else f"{num_raw}"
+            denoise_text = "denoise ON" if args.denoising else "denoise OFF"
+            cv2.putText(
+                frame_bgr,
+                f"frame {imgi} | t {t0:.6f} s | events {events_text} | {denoise_text}",
+                (12, 28),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 255, 0),
+                2,
+                cv2.LINE_AA,
+            )
+            cv2.imshow(window_name, frame_bgr)
+            print(
+                f"Frame {imgi} | timestamp: {t0:.6f} s | "
+                f"next: {t1:.6f} s | dt: {t1 - t0:.6f} s | events: {events_text}",
+                end="\r",
+                flush=True,
+            )
+
+            key = cv2.waitKey(frame_delay_ms) & 0xFF
+            if key in (27, ord("q")):
+                break
+            if args.fps <= 0:
+                time.sleep(0)
+    finally:
+        cv2.destroyAllWindows()
+        print()
+
+
 def build_reconstructed_trajectory(
     rel: np.ndarray,
     gt_rel: np.ndarray | None,
@@ -188,7 +248,6 @@ def quat_to_xy_camera_axes(quat_xyzw: np.ndarray) -> tuple[np.ndarray, np.ndarra
 
 def main() -> None:
     args = parse_args()
-    # SET UP VISUALIZATION OF FRAMES + EVENTS
     loader = EdsDataLoader(
         config={
             "root": args.root,
@@ -198,6 +257,17 @@ def main() -> None:
         }
     )
     loader.set_sequence(args.sequence)
+
+    trajectory_args = [args.rel_model, args.rel_gt, args.gt]
+    has_trajectory = all(value is not None for value in trajectory_args)
+    if any(value is not None for value in trajectory_args) and not has_trajectory:
+        raise ValueError("Provide --rel-model, --rel-gt, and --gt together for trajectory playback.")
+
+    if not has_trajectory:
+        play_events_only(args, loader)
+        return
+
+    # SET UP VISUALIZATION OF FRAMES + EVENTS
     min_event_ts = loader.min_event_ts
 
     viewer = create_live_trajectory_viewer(
@@ -206,9 +276,7 @@ def main() -> None:
     )
     frame_delay_s = 0.001 if args.fps <= 0 else 1.0 / args.fps
     end_img = min(args.start_img + args.num_frames, loader._len_image - 1)
-    
-    #FOR 9 
-    end_img = 1000
+
     # SET UP GROUND TRUTH AND PREDICTED TRAJECTORY PLOTTING
     gt = load_table(args.gt)
     rel = load_table(args.rel_model)

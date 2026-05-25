@@ -15,10 +15,10 @@ REPO_ROOT = SCRIPT_DIR.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from learning.network.train import *
-from learning.network.build_model import *
-from learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
-from learning.dataloader.events_to_voxel.precomputed_voxel_clip import PrecomputedVoxelClipDataset
+from src.learning.network.train import *
+from src.learning.network.build_model import *
+from src.learning.dataloader.events_to_voxel.raw_to_clip import MultiEventVoxelClipDataset
+from src.learning.dataloader.events_to_voxel.precomputed_voxel_clip import PrecomputedVoxelClipDataset
 import argparse
 
 
