@@ -26,6 +26,21 @@ def load_table(path: Path) -> np.ndarray:
     return data
 
 
+def load_table_header(path: Path) -> str:
+    with open(path, "r") as f:
+        first = f.readline().strip()
+
+    if first.startswith("#"):
+        first = first[1:].strip()
+    if first and first[0].isalpha():
+        return first.lower()
+    return ""
+
+
+def header_looks_like_covariance(header: str) -> bool:
+    return any(token in header for token in ("sigma", "covariance", "cov_"))
+
+
 def normalize_quat(q: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(q, axis=1, keepdims=True)
     if np.any(n == 0):
@@ -140,10 +155,12 @@ def parse_rel_row_to_T(row: np.ndarray, covariance: bool = False) -> np.ndarray:
     )
 
 
-def describe_rel_format(num_cols: int) -> str:
+def describe_rel_format(num_cols: int, covariance: bool = False) -> str:
     if num_cols == 5:
         return "translation only"
     if num_cols == 8:
+        if covariance:
+            return "translation + covariance"
         return "axis-vector + translation"
     return f"unknown ({num_cols} cols)"
 
@@ -264,6 +281,7 @@ def main():
 
     # LOAD GT AND RELATIVE MOTIONS AND CHECK DIMENSIONS
     gt = load_table(args.gt)
+    rel_header = load_table_header(args.rel)
     rel = load_table(args.rel)
     gt_rel = load_table(args.gt_rel) if args.gt_rel is not None else None
 
@@ -274,7 +292,9 @@ def main():
     if gt_rel is not None and gt_rel.shape[1] != 8:
         raise ValueError(f"{args.gt_rel} has {gt_rel.shape[1]} columns, expected 8")
 
-    if args.covariance:
+    use_covariance = args.covariance or (rel.shape[1] == 8 and header_looks_like_covariance(rel_header))
+
+    if use_covariance:
         if rel.shape[1] != 8:
             raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 8 for covariance format.")
         rel_cov = rel[:, 5:8].copy()
@@ -370,7 +390,7 @@ def main():
     # LOG ERROR STATS 
     
     rel_format = describe_rel_format(rel.shape[1])
-    if args.covariance:
+    if use_covariance:
         rel_format = "translation + covariance"
     gt_rel_format = "none" if gt_rel is None else describe_rel_format(gt_rel.shape[1])
     error_ref_label = "GT relative motions" if gt_rel is not None else "source GT"
@@ -405,7 +425,7 @@ def main():
         axes[i].plot(t_gt, gt_pos[:, i], label="raw stamped GT")
         axes[i].plot(t_anchor, ref_pos[:, i], "--", label="GT at anchor times")
         axes[i].plot(t_anchor, recon_pos[:, i], label="trajectory from relative motions")
-        if args.covariance:
+        if use_covariance:
             sigma_times = t_anchor[1:]
             sigma = rel_cov
             axes[i].fill_between(

@@ -48,7 +48,25 @@ def load_inference_args(checkpoint_file: Path):
     loaded.setdefault("precomputed_voxels", False)
     loaded.setdefault("voxel_filename", "derotated_voxels.npy")
     loaded.setdefault("derotation_slices", 100)
+    loaded.setdefault("covariance", False)
     return loaded
+
+
+def get_outputs_per_motion(infer_args):
+    clip_pairs = infer_args["clip_len"] - 1
+    num_classes = infer_args["model_params"]["num_classes"]
+    if num_classes % clip_pairs != 0:
+        raise ValueError(
+            f"Model num_classes={num_classes} is not divisible by clip_len - 1={clip_pairs}."
+        )
+
+    outputs_per_motion = num_classes // clip_pairs
+    if outputs_per_motion not in {3, 6}:
+        raise ValueError(
+            f"Unsupported model output width: {outputs_per_motion} per relative motion. "
+            "Expected 3 or 6."
+        )
+    return outputs_per_motion
 
 
 def apply_precomputed_voxel_args(args_dict, dataset):
@@ -163,21 +181,26 @@ def collect_last_step_predictions(loader, model, device, infer_args, target_mean
     preds = []
     rel_t0_list = []
     rel_t1_list = []
+    outputs_per_motion = get_outputs_per_motion(infer_args)
+
+    if save_covariance and outputs_per_motion != 6:
+        raise ValueError("--save_covariance requires a checkpoint with 6 outputs per relative motion.")
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(loader):
             x = batch["representation"].to(device).float()
             anchors = batch["anchors_us"].cpu().numpy()
             y_hat = model(x)
-            y_hat_full = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 6)
+            y_hat_full = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, outputs_per_motion)
             y_hat_tr = y_hat_full[..., :3]
-            y_hat_cov = y_hat_full[..., 3:]
+            y_hat_cov = y_hat_full[..., 3:] if outputs_per_motion == 6 else None
 
             if target_mean is not None and target_std is not None:
                 y_hat_tr = y_hat_tr * target_std + target_mean
 
             y_hat_tr = y_hat_tr.cpu().numpy()
-            y_hat_cov = np.exp(y_hat_cov.cpu().numpy())
+            if y_hat_cov is not None:
+                y_hat_cov = np.exp(y_hat_cov.cpu().numpy())
 
             for i in range(y_hat_tr.shape[0]):
                 anc_i = anchors[i]
@@ -209,21 +232,26 @@ def collect_last_step_predictions(loader, model, device, infer_args, target_mean
 
 def collect_averaged_predictions(loader, model, device, infer_args, target_mean, target_std, save_covariance=False):
     prediction_store = {}
+    outputs_per_motion = get_outputs_per_motion(infer_args)
+
+    if save_covariance and outputs_per_motion != 6:
+        raise ValueError("--save_covariance requires a checkpoint with 6 outputs per relative motion.")
 
     with torch.no_grad():
         for batch in loader:
             x = batch["representation"].to(device).float()
             anchors = batch["anchors_us"].cpu().numpy()
             y_hat = model(x)
-            y_hat_full = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 6)
+            y_hat_full = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, outputs_per_motion)
             y_hat_tr = y_hat_full[..., :3]
-            y_hat_cov = y_hat_full[..., 3:]
+            y_hat_cov = y_hat_full[..., 3:] if outputs_per_motion == 6 else None
 
             if target_mean is not None and target_std is not None:
                 y_hat_tr = y_hat_tr * target_std + target_mean
 
             y_hat_tr = y_hat_tr.cpu().numpy()
-            y_hat_cov = np.exp(y_hat_cov.cpu().numpy())
+            if y_hat_cov is not None:
+                y_hat_cov = np.exp(y_hat_cov.cpu().numpy())
 
             for i in range(y_hat_tr.shape[0]):
                 anc_i = anchors[i]
@@ -239,13 +267,18 @@ def collect_averaged_predictions(loader, model, device, infer_args, target_mean,
 
 def collect_raw_model_outputs(loader, model, device, infer_args, target_mean, target_std):
     rows = []
+    outputs_per_motion = get_outputs_per_motion(infer_args)
 
     with torch.no_grad():
         for batch in loader:
             x = batch["representation"].to(device).float()
             anchors = batch["anchors_us"].cpu().numpy()
             y_hat = model(x)
-            y_hat_tr = y_hat.view(x.shape[0], infer_args["clip_len"] - 1, 3)
+            y_hat_tr = y_hat.view(
+                x.shape[0],
+                infer_args["clip_len"] - 1,
+                outputs_per_motion,
+            )[..., :3]
 
             if target_mean is not None and target_std is not None:
                 y_hat_tr = y_hat_tr * target_std + target_mean
