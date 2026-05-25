@@ -334,38 +334,38 @@ def main():
     ref_quat = normalize_quat(ref_quat)
 
     # CALCULATE ERROR STATS
-    if gt_rel is not None:
-        rel_eval_trans = rel[:, 2:5].copy()
-        if rel.shape[1] == 8:
-            rel_eval_rot = rel[:, 5:8].copy()
-        else:
-            rel_eval_rot = np.zeros((len(rel), 3), dtype=np.float64)
-
-        if args.gt_rel_mode == "rotation":
-            rel_eval_rot = gt_rel[:, 5:8].copy()
-        elif args.gt_rel_mode == "translation":
-            rel_eval_trans = gt_rel[:, 2:5].copy()
-        elif args.gt_rel_mode == "both":
-            rel_eval_trans = gt_rel[:, 2:5].copy()
-            rel_eval_rot = gt_rel[:, 5:8].copy()
-
-        pos_err = np.linalg.norm(rel_eval_trans - gt_rel[:, 2:5], axis=1)
-        rel_quat = normalize_quat(
-            np.stack(
-                [rotmat_to_quat(rotvec_to_rotmat(rv)) for rv in rel_eval_rot],
-                axis=0,
-            )
-        )
-        gt_rel_quat = normalize_quat(
-            np.stack(
-                [rotmat_to_quat(rotvec_to_rotmat(rv)) for rv in gt_rel[:, 5:8]],
-                axis=0,
-            )
-        )
-        rot_err = rotation_error_deg(gt_rel_quat, rel_quat)
+    
+    rel_eval_trans = rel[:, 2:5].copy()
+    if rel.shape[1] == 8:
+        rel_eval_rot = rel[:, 5:8].copy()
     else:
-        pos_err = np.linalg.norm(recon_pos - ref_pos, axis=1)
-        rot_err = rotation_error_deg(ref_quat, recon_quat)
+        rel_eval_rot = np.zeros((len(rel), 3), dtype=np.float64)
+
+    if args.gt_rel_mode == "rotation":
+        rel_eval_rot = gt_rel[:, 5:8].copy()
+    elif args.gt_rel_mode == "translation":
+        rel_eval_trans = gt_rel[:, 2:5].copy()
+    elif args.gt_rel_mode == "both":
+        rel_eval_trans = gt_rel[:, 2:5].copy()
+        rel_eval_rot = gt_rel[:, 5:8].copy()
+
+    pos_err_rel = np.linalg.norm(rel_eval_trans - gt_rel[:, 2:5], axis=1)
+    rel_quat = normalize_quat(
+        np.stack(
+            [rotmat_to_quat(rotvec_to_rotmat(rv)) for rv in rel_eval_rot],
+            axis=0,
+        )
+    )
+    gt_rel_quat = normalize_quat(
+        np.stack(
+            [rotmat_to_quat(rotvec_to_rotmat(rv)) for rv in gt_rel[:, 5:8]],
+            axis=0,
+        )
+    )
+    rot_err_rel = rotation_error_deg(gt_rel_quat, rel_quat)
+
+    pos_err = np.linalg.norm(recon_pos - ref_pos, axis=1)
+    rot_err = rotation_error_deg(ref_quat, recon_quat)
 
     # LOG ERROR STATS 
     
@@ -376,6 +376,16 @@ def main():
     error_ref_label = "GT relative motions" if gt_rel is not None else "source GT"
 
     print(f"Relative motions vs {error_ref_label}")
+    print(f"GT poses:                 {len(gt_ts)}")
+    print(f"Relative motions:         {len(rel)}")
+    print(f"Relative format:          {rel_format}")
+    print(f"GT rel format:            {gt_rel_format}")
+    print(f"GT rel fusion mode:       {args.gt_rel_mode}")
+    print(f"Reconstructed anchors:    {len(anchor_ts)}")
+    print(f"Position RMSE [m]:        {np.sqrt(np.mean(pos_err_rel ** 2)):.6e}")
+    print(f"Rotation RMSE [deg]:      {np.sqrt(np.mean(rot_err_rel ** 2)):.6e}")
+
+    print(f"Absolute error")
     print(f"GT poses:                 {len(gt_ts)}")
     print(f"Relative motions:         {len(rel)}")
     print(f"Relative format:          {rel_format}")
@@ -441,10 +451,10 @@ def main():
     ax3d.legend()
 
     fig4, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
-    axes[0].plot(t_err, pos_err)
+    axes[0].plot(t_err, pos_err_rel)
     axes[0].set_ylabel("pos err [m]")
     axes[0].grid(True)
-    axes[1].plot(t_err, rot_err)
+    axes[1].plot(t_err, rot_err_rel)
     axes[1].set_ylabel("rot err [deg]")
     axes[1].set_xlabel("time [s]")
     axes[1].grid(True)

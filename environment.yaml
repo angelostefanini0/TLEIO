@@ -53,6 +53,9 @@ dependencies:
   - flake8
   - pre-commit
 
+  - curl
+  - unzip
+
   - pip:
       - lightning
       - hydra-core
