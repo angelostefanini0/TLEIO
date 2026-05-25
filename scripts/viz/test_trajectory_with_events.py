@@ -13,7 +13,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.viz.eds_loader import EdsDataLoader
-from inspect_functions.inspect_relative_motions import fuse_rel_transforms, load_table
+from inspect_functions.inspect_relative_motions import load_table, translation_rel_to_T
 from scripts.viz.matplotlib_utils import create_live_trajectory_viewer, update_live_trajectory_viewer
 from src.learning.dataloader.representation.event_denoising import background_activity_filter_events
 from src.spatial_math import (
@@ -138,7 +138,6 @@ def build_reconstructed_trajectory(
     gt_rel: np.ndarray | None,
     init_pos: np.ndarray,
     init_quat: np.ndarray,
-    gt_rel_mode: str,
 ):
     T_chain = pose_to_T(init_pos, init_quat)
     recon_pos = [init_pos]
@@ -146,7 +145,7 @@ def build_reconstructed_trajectory(
 
     for i in range(len(rel)):
         gt_rel_row = None if gt_rel is None else gt_rel[i]
-        T_rel = fuse_rel_transforms(rel[i], gt_rel_row, gt_rel_mode)
+        T_rel = translation_rel_to_T(rel[i], gt_rel_row)
         T_chain = T_chain @ T_rel
         p, q = T_to_pose(T_chain)
         recon_pos.append(p)
@@ -217,8 +216,8 @@ def main() -> None:
 
     if gt.shape[1] != 8:
         raise ValueError(f"{args.gt} has {gt.shape[1]} columns, expected 8.")
-    if rel.shape[1] not in {5, 8}:
-        raise ValueError(f"{args.rel_model} has {rel.shape[1]} columns, expected 5 or 8")
+    if rel.shape[1] != 5:
+        raise ValueError(f"{args.rel_model} has {rel.shape[1]} columns, expected 5")
     if gt_rel is not None and gt_rel.shape[1] != 8:
         raise ValueError(f"{args.gt_rel} has {gt_rel.shape[1]} columns, expected 8")
 
@@ -264,7 +263,7 @@ def main() -> None:
     gt_rel_partial = None if gt_rel is None else gt_rel[start_anchor_idx:]
 
     recon_pos_pred_partial, recon_quat_pred_partial = build_reconstructed_trajectory(
-        rel_partial, gt_rel_partial, init_pos[0], init_quat[0], "rotation"
+        rel_partial, gt_rel_partial, init_pos[0], init_quat[0]
     )
     recon_pos_gt_partial, recon_quat_gt_partial = interpolate_gt_pose(
         gt_ts, gt_pos, gt_quat, anchor_ts[start_anchor_idx:]

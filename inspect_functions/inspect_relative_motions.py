@@ -2,7 +2,6 @@ import argparse
 from pathlib import Path
 import sys
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -15,19 +14,18 @@ from src.spatial_math import (
     interpolate_gt_pose,
     normalize_quat,
     pose_to_T,
-    rotmat_to_quat,
     rotation_error_deg,
     rotvec_to_rotmat,
 )
+from inspect_functions.utils.plotting import plot_relative_motion_inspection
 
 """
 python inspect_functions/inspect_relative_motions.py \
   --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt \
   --rel path/to/predicted_relative_motions.txt \
-  --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt \
-  --gt_rel_mode rotation
+  --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt
 """"""
-python inspect_functions/inspect_relative_motions.py --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt --rel path/to/predicted_relative_motions.txt  --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt --gt_rel_mode rotation
+python inspect_functions/inspect_relative_motions.py --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt --rel path/to/predicted_relative_motions.txt  --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt
 """
 
 def load_table(path: Path) -> np.ndarray:
@@ -43,67 +41,28 @@ def load_table(path: Path) -> np.ndarray:
     return data
 
 
-def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
+def translation_rel_to_T(pred_row: np.ndarray, gt_row: np.ndarray | None = None) -> np.ndarray:
+    """Build a transform from a translation-only prediction row.
+
+    If a GT relative-motion row is provided, its rotation vector is used for
+    the rotation component while the predicted translation is kept.
     """
-    Supported row formats:
-    - Translation only: t0_us t1_us px py pz
-    - Axis-vector: t0_us t1_us px py pz rx ry rz
-    """
+    if pred_row.shape[0] != 5:
+        raise ValueError(
+            f"Predicted relative motion must have 5 columns [t0 t1 px py pz], "
+            f"got {pred_row.shape[0]}."
+        )
+    if gt_row is not None and gt_row.shape[0] != 8:
+        raise ValueError(
+            f"GT relative motion must have 8 columns [t0 t1 px py pz rx ry rz], "
+            f"got {gt_row.shape[0]}."
+        )
 
-    if row.shape[0] == 5:
-        T = np.eye(4, dtype=np.float64)
-        T[:3, 3] = row[2:5]
-        return T
-
-    if row.shape[0] == 8:
-        T = np.eye(4, dtype=np.float64)
-        T[:3, :3] = rotvec_to_rotmat(row[5:8])
-        T[:3, 3] = row[2:5]
-        return T
-
-    raise ValueError(
-        f"Unsupported relative motion row with {row.shape[0]} columns. Expected 5 or 8."
-    )
-
-
-def describe_rel_format(num_cols: int) -> str:
-    if num_cols == 5:
-        return "translation only"
-    if num_cols == 8:
-        return "axis-vector + translation"
-    return f"unknown ({num_cols} cols)"
-
-
-def fuse_rel_transforms(pred_row: np.ndarray, gt_row: np.ndarray | None, mode: str) -> np.ndarray:
-    T_rel = parse_rel_row_to_T(pred_row)
-    if gt_row is None or mode == "none":
-        return T_rel
-
-    T_gt = parse_rel_row_to_T(gt_row)
-
-    if mode == "rotation":
-        T_rel[:3, :3] = T_gt[:3, :3]
-    elif mode == "translation":
-        T_rel[:3, 3] = T_gt[:3, 3]
-    elif mode == "both":
-        T_rel = T_gt
-    else:
-        raise ValueError(f"Unsupported gt_rel_mode '{mode}'.")
-
+    T_rel = np.eye(4, dtype=np.float64)
+    if gt_row is not None:
+        T_rel[:3, :3] = rotvec_to_rotmat(gt_row[5:8])
+    T_rel[:3, 3] = pred_row[2:5]
     return T_rel
-
-
-def set_axes_equal_3d(ax, points: np.ndarray) -> None:
-    mins = points.min(axis=0)
-    maxs = points.max(axis=0)
-    centers = 0.5 * (mins + maxs)
-    radius = 0.5 * np.max(maxs - mins)
-    if radius < 1e-12:
-        radius = 1.0
-
-    ax.set_xlim(centers[0] - radius, centers[0] + radius)
-    ax.set_ylim(centers[1] - radius, centers[1] + radius)
-    ax.set_zlim(centers[2] - radius, centers[2] + radius)
 
 
 def main():
@@ -112,17 +71,12 @@ def main():
     parser.add_argument("--gt", type=Path, required=True,
                         help="stamped_groundtruth.txt with columns: timestamp_us px py pz qx qy qz qw")
     parser.add_argument("--rel", type=Path, required=True,
-                        help="relative_motions.txt with columns either: "
-                             "[t0_us t1_us px py pz] or [t0_us t1_us px py pz rx ry rz]")
+                        help="translation-only relative motions: [t0_us t1_us px py pz]")
     parser.add_argument("--save_dir", type=Path, default=None,
                         help="Optional directory to save figures instead of showing them")
     
     parser.add_argument("--gt_rel", type=Path, default=None,
-                        help="Optional GT relative motions used to inspect partial network results.")
-    parser.add_argument("--gt_rel_mode", type=str, default="rotation",
-                        choices=["none", "rotation", "translation", "both"],
-                        help="How to combine --rel with --gt_rel before integration. "
-                             "Default 'rotation' keeps predicted translation and uses GT rotation.")
+                        help="Optional GT relative motions used for rotations and relative-motion error.")
     
     args = parser.parse_args()
 
@@ -133,8 +87,8 @@ def main():
 
     if gt.shape[1] != 8:
         raise ValueError(f"{args.gt} has {gt.shape[1]} columns, expected 8.")
-    if rel.shape[1] not in {5, 8}:
-        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 5 or 8")
+    if rel.shape[1] != 5:
+        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 5")
     if gt_rel is not None and gt_rel.shape[1] != 8:
         raise ValueError(f"{args.gt_rel} has {gt_rel.shape[1]} columns, expected 8")
 
@@ -176,7 +130,7 @@ def main():
 
     for i in range(len(rel)):
         gt_rel_row = None if gt_rel is None else gt_rel[i]
-        T_rel = fuse_rel_transforms(rel[i], gt_rel_row, args.gt_rel_mode)
+        T_rel = translation_rel_to_T(rel[i], gt_rel_row)
         T_chain = T_chain @ T_rel
         p, q = T_to_pose(T_chain)
         recon_pos.append(p)
@@ -191,129 +145,44 @@ def main():
 
     # CALCULATE ERROR STATS
     
-    rel_eval_trans = rel[:, 2:5].copy()
-    if rel.shape[1] == 8:
-        rel_eval_rot = rel[:, 5:8].copy()
-    else:
-        rel_eval_rot = np.zeros((len(rel), 3), dtype=np.float64)
-
-    if args.gt_rel_mode == "rotation":
-        rel_eval_rot = gt_rel[:, 5:8].copy()
-    elif args.gt_rel_mode == "translation":
-        rel_eval_trans = gt_rel[:, 2:5].copy()
-    elif args.gt_rel_mode == "both":
-        rel_eval_trans = gt_rel[:, 2:5].copy()
-        rel_eval_rot = gt_rel[:, 5:8].copy()
-
-    pos_err_rel = np.linalg.norm(rel_eval_trans - gt_rel[:, 2:5], axis=1)
-    rel_quat = normalize_quat(
-        np.stack(
-            [rotmat_to_quat(rotvec_to_rotmat(rv)) for rv in rel_eval_rot],
-            axis=0,
-        )
-    )
-    gt_rel_quat = normalize_quat(
-        np.stack(
-            [rotmat_to_quat(rotvec_to_rotmat(rv)) for rv in gt_rel[:, 5:8]],
-            axis=0,
-        )
-    )
-    rot_err_rel = rotation_error_deg(gt_rel_quat, rel_quat)
+    if gt_rel is not None:
+        pos_err_rel = np.linalg.norm(rel[:, 2:5] - gt_rel[:, 2:5], axis=1)
 
     pos_err = np.linalg.norm(recon_pos - ref_pos, axis=1)
     rot_err = rotation_error_deg(ref_quat, recon_quat)
 
     # LOG ERROR STATS 
     
-    rel_format = describe_rel_format(rel.shape[1])
-    gt_rel_format = "none" if gt_rel is None else describe_rel_format(gt_rel.shape[1])
     error_ref_label = "GT relative motions" if gt_rel is not None else "source GT"
 
-    print(f"Relative motions vs {error_ref_label}")
-    print(f"GT poses:                 {len(gt_ts)}")
-    print(f"Relative motions:         {len(rel)}")
-    print(f"Relative format:          {rel_format}")
-    print(f"GT rel format:            {gt_rel_format}")
-    print(f"GT rel fusion mode:       {args.gt_rel_mode}")
-    print(f"Reconstructed anchors:    {len(anchor_ts)}")
-    print(f"Position RMSE [m]:        {np.sqrt(np.mean(pos_err_rel ** 2)):.6e}")
-    print(f"Rotation RMSE [deg]:      {np.sqrt(np.mean(rot_err_rel ** 2)):.6e}")
+    if gt_rel is not None:
+        print(f"Relative motions vs {error_ref_label}")
+        print(f"GT poses:                 {len(gt_ts)}")
+        print(f"Relative motions:         {len(rel)}")
+        print("Relative format:          translation only")
+        print("GT rel rotation:          used for trajectory integration")
+        print(f"Reconstructed anchors:    {len(anchor_ts)}")
+        print(f"Position RMSE [m]:        {np.sqrt(np.mean(pos_err_rel ** 2)):.6e}")
 
     print(f"Absolute error")
     print(f"GT poses:                 {len(gt_ts)}")
     print(f"Relative motions:         {len(rel)}")
-    print(f"Relative format:          {rel_format}")
-    print(f"GT rel format:            {gt_rel_format}")
-    print(f"GT rel fusion mode:       {args.gt_rel_mode}")
+    print("Relative format:          translation only")
     print(f"Reconstructed anchors:    {len(anchor_ts)}")
     print(f"Position RMSE [m]:        {np.sqrt(np.mean(pos_err ** 2)):.6e}")
     print(f"Rotation RMSE [deg]:      {np.sqrt(np.mean(rot_err ** 2)):.6e}")
 
-    t_gt = (gt_ts - gt_ts[0]) * 1e-6
-    t_anchor = (anchor_ts - gt_ts[0]) * 1e-6
-    t_err = (rel_t1 - gt_ts[0]) * 1e-6 if gt_rel is not None else t_anchor
-
-    fig1, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
-    labels = ["x", "y", "z"]
-    for i in range(3):
-        axes[i].plot(t_gt, gt_pos[:, i], label="raw stamped GT")
-        axes[i].plot(t_anchor, ref_pos[:, i], "--", label="GT at anchor times")
-        axes[i].plot(t_anchor, recon_pos[:, i], label="trajectory from relative motions")
-        axes[i].set_ylabel(f"p{labels[i]} [m]")
-        axes[i].grid(True)
-    axes[0].legend()
-    axes[-1].set_xlabel("time [s]")
-    fig1.suptitle("Trajectory from Relative Motions vs Source GT")
-
-    fig2, ax = plt.subplots(figsize=(8, 8))
-    ax.plot(gt_pos[:, 0], gt_pos[:, 1], label="raw stamped GT")
-    ax.plot(ref_pos[:, 0], ref_pos[:, 1], "--", label="GT at anchor times")
-    ax.plot(recon_pos[:, 0], recon_pos[:, 1], label="trajectory from relative motions")
-    ax.set_xlabel("x [m]")
-    ax.set_ylabel("y [m]")
-    ax.grid(True)
-    ax.legend()
-    ax.set_title("XY trajectory comparison")
-
-    fig3 = plt.figure(figsize=(10, 8))
-    ax3d = fig3.add_subplot(111, projection="3d")
-    ax3d.plot(gt_pos[:, 0], gt_pos[:, 1], gt_pos[:, 2], label="raw stamped GT")
-    ax3d.plot(ref_pos[:, 0], ref_pos[:, 1], ref_pos[:, 2], "--", label="GT at anchor times")
-    ax3d.plot(
-        recon_pos[:, 0],
-        recon_pos[:, 1],
-        recon_pos[:, 2],
-        label="trajectory from relative motions",
+    plot_relative_motion_inspection(
+        gt_ts=gt_ts,
+        gt_pos=gt_pos,
+        anchor_ts=anchor_ts,
+        ref_pos=ref_pos,
+        recon_pos=recon_pos,
+        rel_t1=rel_t1,
+        pos_err_rel=pos_err_rel if gt_rel is not None else None,
+        error_ref_label=error_ref_label,
+        save_dir=args.save_dir,
     )
-    ax3d.set_xlabel("x [m]")
-    ax3d.set_ylabel("y [m]")
-    ax3d.set_zlabel("z [m]")
-    ax3d.set_title("3D trajectory comparison")
-    all_points = np.vstack([gt_pos, ref_pos, recon_pos])
-    set_axes_equal_3d(ax3d, all_points)
-    ax3d.legend()
-
-    fig4, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
-    axes[0].plot(t_err, pos_err_rel)
-    axes[0].set_ylabel("pos err [m]")
-    axes[0].grid(True)
-    axes[1].plot(t_err, rot_err_rel)
-    axes[1].set_ylabel("rot err [deg]")
-    axes[1].set_xlabel("time [s]")
-    axes[1].grid(True)
-    fig4.suptitle(f"Error vs {error_ref_label}")
-
-    plt.tight_layout()
-
-    if args.save_dir is not None:
-        args.save_dir.mkdir(parents=True, exist_ok=True)
-        fig1.savefig(args.save_dir / "relative_vs_gt_xyz.png", dpi=150, bbox_inches="tight")
-        fig2.savefig(args.save_dir / "relative_vs_gt_xy.png", dpi=150, bbox_inches="tight")
-        fig3.savefig(args.save_dir / "relative_vs_gt_xyz_3d.png", dpi=150, bbox_inches="tight")
-        fig4.savefig(args.save_dir / "relative_vs_gt_error.png", dpi=150, bbox_inches="tight")
-        print(f"Saved figures to {args.save_dir}")
-    else:
-        plt.show()
 
 
 if __name__ == "__main__":

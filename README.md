@@ -310,20 +310,18 @@ for seq_dir in data/tartanair/precomputed_office_integer/*; do
     --gt "data/tartanair/processed_train/$seq/stamped_groundtruth.txt" \
     --rel "data/tartanair/predicted_relative_motions/precomputed_office_integer/$seq.txt" \
     --gt_rel "$seq_dir/relative_motions.txt" \
-    --gt_rel_mode rotation \
     --save_dir "plots/precomputed_office_integer/$seq"
 done
 ```
 
 ## 8. Inspection of model output: 
-Run the `inspect_relative_motions.py` script to see how the model predicition compares to the GT. `gt` expects the stamped groundtruth, `rel` accepts either translation-only predictions `[t0_us t1_us px py pz]` or full relative motions `[t0_us t1_us px py pz rx ry rz]`, `gt_rel` expects the groundtruth relative motions, and `gt_rel_mode` expects one of `[rotation, translation, both]`. With translation-only predictions, `rotation` is usually the most useful mode because it fuses predicted translation with GT rotation.
+Run the `inspect_relative_motions.py` script to see how the model predicition compares to the GT. `gt` expects the stamped groundtruth, `rel` expects translation-only predictions `[t0_us t1_us px py pz]`, and `gt_rel` expects the groundtruth relative motions used for reference translations and trajectory rotations.
 
 ```bash
 python inspect_functions/inspect_relative_motions.py \
 --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt \
 --rel path/to/predicted_relative_motions.txt \
---gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt \
---gt_rel_mode rotation
+--gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt
 ```
 
 ## 9. Live visualization and inspection of results: 
