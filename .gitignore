@@ -4,6 +4,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+azure/
+eval_outputs/
+evaluation/
+outputs/
+scripts/azure/
+
 # Environments
 .venv/
 env/
@@ -18,6 +24,7 @@ venv/
 # Generated experiment outputs
 plots/
 results/
+outputs/main_filter/
 checkpoints/
 precomputed_office_integer/
 TLIO_net_output/
@@ -54,3 +61,4 @@ sdist/
 var/
 wheels/
 *.egg-info/
+tartanairpy/*
