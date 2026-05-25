@@ -1,8 +1,25 @@
 import argparse
 from pathlib import Path
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.spatial_math import (
+    T_to_pose,
+    interpolate_gt_pose,
+    normalize_quat,
+    pose_to_T,
+    rotmat_to_quat,
+    rotation_error_deg,
+    rotvec_to_rotmat,
+)
+
 """
 python inspect_functions/inspect_relative_motions.py \
   --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt \
@@ -24,91 +41,6 @@ def load_table(path: Path) -> np.ndarray:
         data = data[None, :]
 
     return data
-
-
-def normalize_quat(q: np.ndarray) -> np.ndarray:
-    n = np.linalg.norm(q, axis=1, keepdims=True)
-    if np.any(n == 0):
-        raise ValueError("Found zero-norm quaternion.")
-    return q / n
-
-
-def quat_to_rotmat(q: np.ndarray) -> np.ndarray:
-    qx, qy, qz, qw = q
-    xx, yy, zz = qx * qx, qy * qy, qz * qz
-    xy, xz, yz = qx * qy, qx * qz, qy * qz
-    wx, wy, wz = qw * qx, qw * qy, qw * qz
-
-    return np.array([
-        [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz),       2.0 * (xz + wy)],
-        [2.0 * (xy + wz),       1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
-        [2.0 * (xz - wy),       2.0 * (yz + wx),       1.0 - 2.0 * (xx + yy)],
-    ], dtype=np.float64)
-
-
-def rotvec_to_rotmat(rotvec: np.ndarray) -> np.ndarray:
-    theta = np.linalg.norm(rotvec)
-    if theta < 1e-12:
-        return np.eye(3, dtype=np.float64)
-
-    axis = rotvec / theta
-    x, y, z = axis
-    K = np.array([
-        [0.0, -z, y],
-        [z, 0.0, -x],
-        [-y, x, 0.0],
-    ], dtype=np.float64)
-
-    return (
-        np.eye(3, dtype=np.float64)
-        + np.sin(theta) * K
-        + (1.0 - np.cos(theta)) * (K @ K)
-    )
-
-
-def rotmat_to_quat(R: np.ndarray) -> np.ndarray:
-    tr = np.trace(R)
-
-    if tr > 0.0:
-        S = np.sqrt(tr + 1.0) * 2.0
-        qw = 0.25 * S
-        qx = (R[2, 1] - R[1, 2]) / S
-        qy = (R[0, 2] - R[2, 0]) / S
-        qz = (R[1, 0] - R[0, 1]) / S
-    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
-        S = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2.0
-        qw = (R[2, 1] - R[1, 2]) / S
-        qx = 0.25 * S
-        qy = (R[0, 1] + R[1, 0]) / S
-        qz = (R[0, 2] + R[2, 0]) / S
-    elif R[1, 1] > R[2, 2]:
-        S = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2.0
-        qw = (R[0, 2] - R[2, 0]) / S
-        qx = (R[0, 1] + R[1, 0]) / S
-        qy = 0.25 * S
-        qz = (R[1, 2] + R[2, 1]) / S
-    else:
-        S = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2.0
-        qw = (R[1, 0] - R[0, 1]) / S
-        qx = (R[0, 2] + R[2, 0]) / S
-        qy = (R[1, 2] + R[2, 1]) / S
-        qz = 0.25 * S
-
-    q = np.array([qx, qy, qz, qw], dtype=np.float64)
-    return q / np.linalg.norm(q)
-
-
-def pose_to_T(pos: np.ndarray, quat: np.ndarray) -> np.ndarray:
-    T = np.eye(4, dtype=np.float64)
-    T[:3, :3] = quat_to_rotmat(quat)
-    T[:3, 3] = pos
-    return T
-
-
-def T_to_pose(T: np.ndarray):
-    pos = T[:3, 3].copy()
-    quat = rotmat_to_quat(T[:3, :3])
-    return pos, quat
 
 
 def parse_rel_row_to_T(row: np.ndarray) -> np.ndarray:
@@ -159,64 +91,6 @@ def fuse_rel_transforms(pred_row: np.ndarray, gt_row: np.ndarray | None, mode: s
         raise ValueError(f"Unsupported gt_rel_mode '{mode}'.")
 
     return T_rel
-
-
-def slerp(q0: np.ndarray, q1: np.ndarray, alpha: float) -> np.ndarray:
-    q0 = q0 / np.linalg.norm(q0)
-    q1 = q1 / np.linalg.norm(q1)
-
-    dot = np.dot(q0, q1)
-    if dot < 0.0:
-        q1 = -q1
-        dot = -dot
-
-    dot = np.clip(dot, -1.0, 1.0)
-
-    if dot > 0.9995:
-        q = (1.0 - alpha) * q0 + alpha * q1
-        return q / np.linalg.norm(q)
-
-    theta_0 = np.arccos(dot)
-    theta = alpha * theta_0
-
-    s0 = np.sin(theta_0 - theta) / np.sin(theta_0)
-    s1 = np.sin(theta) / np.sin(theta_0)
-    q = s0 * q0 + s1 * q1
-    return q / np.linalg.norm(q)
-
-
-def interpolate_gt_pose(
-    gt_ts: np.ndarray,
-    gt_pos: np.ndarray,
-    gt_quat: np.ndarray,
-    query_ts: np.ndarray,
-):
-    right = np.searchsorted(gt_ts, query_ts, side="left")
-    right = np.clip(right, 1, len(gt_ts) - 1)
-    left = right - 1
-
-    t0 = gt_ts[left].astype(np.float64)
-    t1 = gt_ts[right].astype(np.float64)
-    alpha = (query_ts.astype(np.float64) - t0) / (t1 - t0)
-    alpha = np.clip(alpha, 0.0, 1.0)
-
-    p0 = gt_pos[left]
-    p1 = gt_pos[right]
-    pos = (1.0 - alpha[:, None]) * p0 + alpha[:, None] * p1
-
-    q0 = gt_quat[left]
-    q1 = gt_quat[right]
-    quat = np.stack([slerp(a, b, w) for a, b, w in zip(q0, q1, alpha)], axis=0)
-
-    return pos, quat
-
-
-def rotation_error_deg(q_ref: np.ndarray, q_est: np.ndarray) -> np.ndarray:
-    q_ref = normalize_quat(q_ref)
-    q_est = normalize_quat(q_est)
-    dots = np.abs(np.sum(q_ref * q_est, axis=1))
-    dots = np.clip(dots, -1.0, 1.0)
-    return np.rad2deg(2.0 * np.arccos(dots))
 
 
 def set_axes_equal_3d(ax, points: np.ndarray) -> None:

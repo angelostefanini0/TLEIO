@@ -16,7 +16,6 @@ if str(REPO_ROOT) not in sys.path:
 from src.learning.dataloader.events_to_voxel.utils import (
     build_derotation_context,
     load_event_camera_matrix,
-    normalize_quaternions,
 )
 from src.learning.dataloader.representation.event_derotation import (
     derotate_events_in_slices,
@@ -24,6 +23,7 @@ from src.learning.dataloader.representation.event_derotation import (
     resolve_derotation_slices,
 )
 from src.learning.dataloader.representation.event_slicer import EventSlicer
+from src.spatial_math import normalize_quaternions
 
 try:
     import hdf5plugin  # noqa: F401  # Registers external HDF5 filters when installed.

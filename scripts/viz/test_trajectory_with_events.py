@@ -13,9 +13,16 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.viz.eds_loader import EdsDataLoader
-from inspect_functions.inspect_relative_motions import *
+from inspect_functions.inspect_relative_motions import fuse_rel_transforms, load_table
 from scripts.viz.matplotlib_utils import create_live_trajectory_viewer, update_live_trajectory_viewer
 from src.learning.dataloader.representation.event_denoising import background_activity_filter_events
+from src.spatial_math import (
+    T_to_pose,
+    interpolate_gt_pose,
+    normalize_quat,
+    pose_to_T,
+    quat_to_rotmat,
+)
 
 
 def str2bool(v):
