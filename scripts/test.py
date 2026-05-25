@@ -66,6 +66,7 @@ def load_inference_args(checkpoint_file: Path):
     loaded.setdefault("precomputed_voxels", False)
     loaded.setdefault("voxel_filename", "derotated_voxels.npy")
     loaded.setdefault("derotation_slices", 100)
+    loaded.setdefault("normalize_voxel_nonzero", False)
     return loaded
 
 
@@ -102,6 +103,7 @@ def build_inference_dataset(sequence_dir: Path, args_dict):
             clip_len=args_dict["clip_len"],
             num_bins=None,
             voxel_filename=voxel_filename,
+            normalize_voxel_nonzero=args_dict.get("normalize_voxel_nonzero", False),
         )
         apply_precomputed_voxel_args(args_dict, dataset)
     else:
@@ -123,6 +125,7 @@ def build_inference_dataset(sequence_dir: Path, args_dict):
             denoise_same_polarity_only=args_dict["denoise_same_polarity_only"],
             derotate=args_dict["derotate"],
             derotation_slices=args_dict["derotation_slices"],
+            normalize_voxel_nonzero=args_dict.get("normalize_voxel_nonzero", False),
         )
 
     if requested_sequence is None:
