@@ -39,3 +39,7 @@ dim_head: 64
 attn_dropout: 0.1
 ff_dropout: 0.1
 time_only: false
+spatial_rope: true
+rope_frequency: 100.0
+normalize_voxel_nonzero: true
+covariance: false
