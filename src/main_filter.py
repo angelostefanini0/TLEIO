@@ -211,8 +211,11 @@ def _build_anchor_times_from_relative_motions(relative_motion_table: np.ndarray)
     anchor_times_s = np.concatenate([edge_start_times_s[:1], edge_end_times_s], axis=0)
     # Extract the translation measurements (px, py, pz)
     relative_measurements = relative_motion_table[:, 2:5].astype(np.float64)
-    relative_sigmas = None
-
+    if relative_motion_table.shape[1] >= 8:
+        relative_sigmas = relative_motion_table[:, 5:8].astype(np.float64)
+    else:
+        relative_sigmas = None
+        
     return anchor_times_s, relative_measurements, relative_sigmas
 
 
@@ -534,7 +537,7 @@ def run_filter(config: RunnerConfig) -> dict:
     relative_anchor_times_s, relative_measurements, relative_sigmas = _build_anchor_times_from_relative_motions(
         relative_motion_table
     )
-    relative_sigmas=None
+    # relative_sigmas=None
 
     # Ensure that anchor_poses timeline perfectly matches the relative_motions timeline
     anchor_timestamps_us, _, relative_measurements, relative_sigmas = _validate_anchor_alignment(
