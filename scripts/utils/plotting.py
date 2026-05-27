@@ -12,6 +12,8 @@ def plot_relative_motion_inspection(
     recon_pos: np.ndarray,
     rel_t1: np.ndarray,
     pos_err_rel: np.ndarray | None,
+    rel_err_xyz: np.ndarray | None,
+    rel_sigma: np.ndarray | None,
     error_ref_label: str,
     save_dir: Path | None,
 ) -> None:
@@ -78,6 +80,34 @@ def plot_relative_motion_inspection(
     else:
         fig4 = None
 
+    if rel_sigma is not None:
+        fig5, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+        for i, label in enumerate(labels):
+            axes[i].plot(t_err, rel_sigma[:, i], label=f"sigma_{label}")
+            axes[i].set_ylabel(f"sigma_{label} [m]")
+            axes[i].grid(True)
+            axes[i].legend()
+        axes[-1].set_xlabel("time [s]")
+        fig5.suptitle("Predicted Translation Uncertainty")
+    else:
+        fig5 = None
+
+    if rel_err_xyz is not None and rel_sigma is not None:
+        fig6, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+        for i, label in enumerate(labels):
+            sigma_i = rel_sigma[:, i]
+            axes[i].plot(t_err, rel_err_xyz[:, i], label=f"error_{label}")
+            axes[i].fill_between(t_err, -sigma_i, sigma_i, alpha=0.25, label=f"+/- sigma_{label}")
+            axes[i].plot(t_err, sigma_i, color="tab:orange", linewidth=0.8)
+            axes[i].plot(t_err, -sigma_i, color="tab:orange", linewidth=0.8)
+            axes[i].set_ylabel(f"e{label} [m]")
+            axes[i].grid(True)
+            axes[i].legend()
+        axes[-1].set_xlabel("time [s]")
+        fig6.suptitle(f"Translation Error with Predicted Uncertainty vs {error_ref_label}")
+    else:
+        fig6 = None
+
     plt.tight_layout()
 
     if save_dir is not None:
@@ -87,6 +117,10 @@ def plot_relative_motion_inspection(
         fig3.savefig(save_dir / "relative_vs_gt_xyz_3d.png", dpi=150, bbox_inches="tight")
         if fig4 is not None:
             fig4.savefig(save_dir / "relative_vs_gt_error.png", dpi=150, bbox_inches="tight")
+        if fig5 is not None:
+            fig5.savefig(save_dir / "relative_uncertainty_sigma.png", dpi=150, bbox_inches="tight")
+        if fig6 is not None:
+            fig6.savefig(save_dir / "relative_error_with_uncertainty.png", dpi=150, bbox_inches="tight")
         print(f"Saved figures to {save_dir}")
     else:
         plt.show()

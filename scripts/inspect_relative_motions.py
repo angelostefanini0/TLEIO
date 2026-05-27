@@ -48,9 +48,10 @@ def translation_rel_to_T(pred_row: np.ndarray, gt_row: np.ndarray | None = None)
     If a GT relative-motion row is provided, its rotation vector is used for
     the rotation component while the predicted translation is kept.
     """
-    if pred_row.shape[0] != 5:
+    if pred_row.shape[0] not in {5, 8}:
         raise ValueError(
-            f"Predicted relative motion must have 5 columns [t0 t1 px py pz], "
+            f"Predicted relative motion must have 5 columns [t0 t1 px py pz] "
+            f"or 8 columns [t0 t1 px py pz sigma_x sigma_y sigma_z], "
             f"got {pred_row.shape[0]}."
         )
     if gt_row is not None and gt_row.shape[0] != 8:
@@ -72,7 +73,7 @@ def main():
     parser.add_argument("--gt", type=Path, default=None,
                         help="stamped_groundtruth.txt with columns: timestamp_us px py pz qx qy qz qw")
     parser.add_argument("--rel", type=Path, default=None,
-                        help="translation-only relative motions: [t0_us t1_us px py pz]")
+                        help="relative motions: [t0_us t1_us px py pz] with optional sigma_x sigma_y sigma_z")
     parser.add_argument("--save_dir", type=Path, default=None,
                         help="Optional directory to save figures instead of showing them")
     
@@ -92,8 +93,8 @@ def main():
 
     if gt.shape[1] != 8:
         raise ValueError(f"{args.gt} has {gt.shape[1]} columns, expected 8.")
-    if rel.shape[1] != 5:
-        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 5")
+    if rel.shape[1] not in {5, 8}:
+        raise ValueError(f"{args.rel} has {rel.shape[1]} columns, expected 5 or 8")
     if gt_rel is not None and gt_rel.shape[1] != 8:
         raise ValueError(f"{args.gt_rel} has {gt_rel.shape[1]} columns, expected 8")
 
@@ -106,6 +107,7 @@ def main():
 
     rel_t0 = rel[:, 0].astype(np.int64)
     rel_t1 = rel[:, 1].astype(np.int64)
+    rel_sigma = rel[:, 5:8] if rel.shape[1] == 8 else None
 
     # CHECK FOR CONSISTENCY ACROSS COMPARED MOTIONS
     if not np.all(rel_t1 > rel_t0):
@@ -152,6 +154,9 @@ def main():
     
     if gt_rel is not None:
         pos_err_rel = np.linalg.norm(rel[:, 2:5] - gt_rel[:, 2:5], axis=1)
+        rel_err_xyz = rel[:, 2:5] - gt_rel[:, 2:5]
+    else:
+        rel_err_xyz = None
 
     pos_err = np.linalg.norm(recon_pos - ref_pos, axis=1)
     rot_err = rotation_error_deg(ref_quat, recon_quat)
@@ -164,7 +169,7 @@ def main():
         print(f"Relative motions vs {error_ref_label}")
         print(f"GT poses:                 {len(gt_ts)}")
         print(f"Relative motions:         {len(rel)}")
-        print("Relative format:          translation only")
+        print("Relative format:          translation + sigma" if rel_sigma is not None else "Relative format:          translation only")
         print("GT rel rotation:          used for trajectory integration")
         print(f"Reconstructed anchors:    {len(anchor_ts)}")
         print(f"Position RMSE [m]:        {np.sqrt(np.mean(pos_err_rel ** 2)):.6e}")
@@ -172,7 +177,7 @@ def main():
     print(f"Absolute error")
     print(f"GT poses:                 {len(gt_ts)}")
     print(f"Relative motions:         {len(rel)}")
-    print("Relative format:          translation only")
+    print("Relative format:          translation + sigma" if rel_sigma is not None else "Relative format:          translation only")
     print(f"Reconstructed anchors:    {len(anchor_ts)}")
     print(f"Position RMSE [m]:        {np.sqrt(np.mean(pos_err ** 2)):.6e}")
     print(f"Rotation RMSE [deg]:      {np.sqrt(np.mean(rot_err ** 2)):.6e}")
@@ -185,6 +190,8 @@ def main():
         recon_pos=recon_pos,
         rel_t1=rel_t1,
         pos_err_rel=pos_err_rel if gt_rel is not None else None,
+        rel_err_xyz=rel_err_xyz,
+        rel_sigma=rel_sigma,
         error_ref_label=error_ref_label,
         save_dir=args.save_dir,
     )
