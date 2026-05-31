@@ -78,23 +78,66 @@ def perform_linear_alignment(accumulated_p_net: np.ndarray,
     return scale_factor, delta_v0
 
 
-def derotate_events(events_dict: dict, bg_ekf: np.ndarray, dt_s: float) -> dict:
+def derotate_events(events_dict: dict, bg_ekf: np.ndarray, latest_gyro: np.ndarray, 
+                    K: np.ndarray, dist_coeffs: np.ndarray, R_cam_imu: np.ndarray, 
+                    t_start_us: float) -> dict:
     """
-    Applies motion compensation (derotation) to raw event streams 
-    using the EKF's online estimated gyro biases.
+    Applies mathematically rigorous and vectorized motion compensation 
+    to raw events using exact camera geometry and EKF gyro bias.
     """
-    x = events_dict['x']
-    y = events_dict['y']
-    t = events_dict['t'] 
+    x = events_dict['x'].astype(np.float32)
+    y = events_dict['y'].astype(np.float32)
+    t_us = events_dict['t'] # Original microsecond timestamps
     p = events_dict['p']
     
-    # TODO: Exact pixel-level compensation requires camera intrinsic matrix (K).
-    # This acts as the architectural hook for online warp processing.
+    if len(x) == 0:
+        return events_dict
+
+    # 1. Transform Angular Velocity
+    # Correct IMU gyro with EKF bias, then rotate into Camera frame
+    omega_imu = latest_gyro - bg_ekf
+    omega_cam = R_cam_imu @ omega_imu  # Shape: (3,)
+    
+    # 2. Undistort points (Applies K_inv and distortion model)
+    # Output is normalized rays on the Z=1 plane: (N, 2) -> [X/Z, Y/Z]
+    pts = np.stack((x, y), axis=-1).reshape(-1, 1, 2)
+    normalized_rays_2d = cv2.undistortPoints(pts, K, dist_coeffs).reshape(-1, 2)
+    
+    # Convert to 3D homogeneous rays: [X, Y, 1]
+    rays_3d = np.pad(normalized_rays_2d, ((0, 0), (0, 1)), constant_values=1.0) # Shape: (N, 3)
+    
+    # 3. Vectorized Rotation
+    # Calculate elapsed time (in seconds) for each event relative to the window start
+    dt_sec = (t_us - t_start_us).astype(np.float32) * 1e-6
+    
+    # Create the rotation vector for each event: theta = omega * dt
+    # Shape: (N, 3)
+    theta_array = dt_sec[:, np.newaxis] * omega_cam[np.newaxis, :]
+    
+    # Generate all rotation matrices efficiently and apply to rays
+    rot_objs = Rotation.from_rotvec(theta_array)
+    rays_derotated = rot_objs.apply(rays_3d) # Shape: (N, 3)
+    
+    # 4. Reproject to the perfect (undistorted) pixel plane using K
+    rays_pixel = (K @ rays_derotated.T).T # Shape: (N, 3)
+    
+    x_new = rays_pixel[:, 0] / rays_pixel[:, 2]
+    y_new = rays_pixel[:, 1] / rays_pixel[:, 2]
+    
+    # Filter out events that fall outside the image bounds after derotation
+    h, w = 480, 640
+    valid_mask = (x_new >= 0) & (x_new < w) & (y_new >= 0) & (y_new < h)
+    
+    # Normalize the time to [0, 1] for the VoxelGrid
+    t_normalized = (t_us - t_us[0]).astype(np.float32)
+    if t_normalized[-1] > 0:
+        t_normalized = t_normalized / t_normalized[-1]
+
     derotated_events = {
-        'x': x,
-        'y': y,
-        'p': p,
-        't': t
+        'x': x_new[valid_mask],
+        'y': y_new[valid_mask],
+        'p': p[valid_mask],
+        't': t_normalized[valid_mask]
     }
     
     return derotated_events
@@ -104,13 +147,53 @@ def main():
     parser = argparse.ArgumentParser(description="Online EVO Pipeline with Linear Alignment")
     parser.add_argument("--data_dir", type=str, required=True, help="Path to sequence directory")
     parser.add_argument("--checkpoint", type=str, required=True, help="Path to network checkpoint (.pth)")
+    parser.add_argument("--dataset", type=str, default="eds", choices=["eds", "tartanair"], help="Dataset name to set camera intrinsics")
     parser.add_argument("--calibration_window", type=int, default=15, help="Number of clips for visual-inertial initialization")
-    parser.add_argument("--clip_len", type=int, default=5, help="Number of voxels per clip for the network")
+    parser.add_argument("--clip_len", type=int, default=3, help="Number of frames per window for the network")
     parser.add_argument("--num_bins", type=int, default=5, help="Number of bins in VoxelGrid")
     args = parser.parse_args()
 
     seq_path = Path(args.data_dir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # ==========================================
+    # 0. SETUP CAMERA INTRINSICS & EXTRINSICS
+    # ==========================================
+    if args.dataset == "eds":
+        fx, fy = 560.8520948927032, 560.6295819972383
+        cx, cy = 313.00733235019237, 217.32858679842997
+        K = np.array([
+            [fx,  0, cx],
+            [ 0, fy, cy],
+            [ 0,  0,  1]
+        ], dtype=np.float64)
+        
+        dist_coeffs = np.array([-0.09776467241921379, 0.2143738428636279, 
+                                -0.004710710105172864, -0.004215916089401789], dtype=np.float64)
+        
+        # Extrinsic Rotation from IMU to Camera
+        R_cam_imu = np.array([
+            [0.99989644, -0.00203358, -0.01424667],
+            [0.00170302,  0.99972994, -0.02317612],
+            [0.01428995,  0.02314946,  0.99962988]
+        ], dtype=np.float64)
+        
+    elif args.dataset == "tartanair":
+        fx, fy = 320, 320
+        cx, cy = 320, 240
+        K = np.array([
+            [fx,  0, cx],
+            [ 0, fy, cy],
+            [ 0,  0,  1]
+        ], dtype=np.float64)
+        dist_coeffs = np.zeros(4, dtype=np.float64)
+        R_cam_imu = np.eye(3, dtype=np.float64)
+    else:
+        K = np.eye(3, dtype=np.float64)
+        dist_coeffs = np.zeros(4, dtype=np.float64)
+        R_cam_imu = np.eye(3, dtype=np.float64)
+
+    print(f"[Init] Dataset set to '{args.dataset}'.")
 
     # ==========================================
     # 1. INITIALIZE TRANSFORMER NETWORK
@@ -153,18 +236,21 @@ def main():
             prev_t = t
         return measurements
 
-    def extract_and_derotate_events(t_start_us, t_end_us, bg_ekf):
+    def extract_and_derotate_events(t_start_us, t_end_us, bg_ekf, latest_gyro):
         event_data = event_reader.get_events(int(t_start_us), int(t_end_us))
         if event_data is None:
             return torch.zeros((args.num_bins, 480, 640), dtype=torch.float32)
             
-        t_normalized = event_data['t'].astype(np.float32)
-        t_normalized -= t_normalized[0]
-        if t_normalized[-1] > 0:
-            t_normalized /= t_normalized[-1]
-        event_data['t'] = t_normalized
+        derotated_events = derotate_events(
+            event_data, 
+            bg_ekf,
+            latest_gyro,
+            K,
+            dist_coeffs,
+            R_cam_imu,
+            t_start_us=float(t_start_us)
+        )
         
-        derotated_events = derotate_events(event_data, bg_ekf, dt_s=(t_end_us - t_start_us) * 1e-6)
         voxel = voxel_grid.convert_events(derotated_events)
         return voxel.float()
 
@@ -178,7 +264,7 @@ def main():
     timestamps_us, positions, quaternions = _load_anchor_poses(seq_path)
     anchor_times_s = timestamps_us.astype(np.float64) * 1e-6
     
-    # Initialize from Ground Truth exactly as in main_filter.py
+    # Initialize from Ground Truth
     p0 = positions[0].astype(np.float64)
     R0 = Rotation.from_quat(quaternions[0]).as_matrix()
     dt0 = max(anchor_times_s[1] - anchor_times_s[0], 1e-9)
@@ -203,16 +289,25 @@ def main():
         t_start_s = anchor_times_s[idx - 1]
         t_end_s = anchor_times_s[idx]
         
-        # Propagate IMU (integrates a_meas, gravity, and v0)
+        # Propagate IMU
         imu_chunk = get_imu_chunk(t_start_s, t_end_s)
         ekf_calib.propagate(imu_chunk)
+        
+        # Get latest gyro reading for derotation
+        latest_gyro = imu_chunk[-1].gyro if len(imu_chunk) > 0 else np.zeros(3)
         
         # Process visual voxels
         voxels = []
         for j in range(args.clip_len):
             voxel_idx = idx - args.clip_len + 1 + j
             if voxel_idx < 1: voxel_idx = 1
-            voxel = extract_and_derotate_events(timestamps_us[voxel_idx - 1], timestamps_us[voxel_idx], ekf_calib.state.bg)
+            
+            voxel = extract_and_derotate_events(
+                timestamps_us[voxel_idx - 1], 
+                timestamps_us[voxel_idx], 
+                ekf_calib.state.bg,
+                latest_gyro
+            )
             voxels.append(voxel)
             
         clip = torch.stack(voxels, dim=1).unsqueeze(0).to(device)
@@ -228,11 +323,10 @@ def main():
         
         # Save records for alignment optimization
         accumulated_p_net.append(current_net_p.copy())
-        # Store the metric displacement: p_ekf(t) - p0
         accumulated_p_ekf.append(ekf_calib.state.p - p0) 
         elapsed_times.append(t_end_s - anchor_times_s[0])
 
-    # Execute linear batch alignment to find scale and v0 refinement
+    # Execute linear batch alignment
     scale_factor, delta_v0 = perform_linear_alignment(
         np.array(accumulated_p_net), 
         np.array(accumulated_p_ekf), 
@@ -269,12 +363,20 @@ def main():
         ekf_main.propagate(imu_chunk)
         ekf_main.augment_clone()
         
+        latest_gyro = imu_chunk[-1].gyro if len(imu_chunk) > 0 else np.zeros(3)
+
         # 2. Live Event Processing and Network Inference
         voxels = []
         for j in range(args.clip_len):
             idx = anchor_idx - args.clip_len + 1 + j
             if idx < 1: idx = 1
-            voxel = extract_and_derotate_events(timestamps_us[idx - 1], timestamps_us[idx], ekf_main.state.bg)
+            
+            voxel = extract_and_derotate_events(
+                timestamps_us[idx - 1], 
+                timestamps_us[idx], 
+                ekf_main.state.bg,
+                latest_gyro
+            )
             voxels.append(voxel)
             
         clip = torch.stack(voxels, dim=1).unsqueeze(0).to(device)
