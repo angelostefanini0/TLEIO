@@ -267,11 +267,11 @@ def save_3d_trajectory_plot(
         
     ax.scatter(*gt_positions[0], color="black", marker="o", s=60, label="Start", zorder=5)
     ax.scatter(*gt_positions[-1], color="red", marker="x", s=60, label="End", zorder=5)
-    ax.set_title("3D Trajectory Comparison")
-    ax.set_xlabel("X [m]")
-    ax.set_ylabel("Y [m]")
-    ax.set_zlabel("Z [m]")
-    ax.legend()
+    ax.set_title("3D Trajectory Comparison", fontsize=18, pad=20)
+    ax.set_xlabel("X [m]", fontsize=16, labelpad=15)
+    ax.set_ylabel("Y [m]", fontsize=16, labelpad=15)
+    ax.set_zlabel("Z [m]", fontsize=16, labelpad=15)
+    ax.legend(fontsize=18, prop={'size': 18})
 
     max_range = np.array([
         gt_positions[:, 0].max() - gt_positions[:, 0].min(),
