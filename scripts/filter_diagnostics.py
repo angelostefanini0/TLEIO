@@ -9,6 +9,14 @@ import sys
 import tempfile
 from pathlib import Path
 
+import matplotlib.pyplot as plt
+
+plt.rcParams.update({
+    'font.family': 'Arial',
+    'axes.titlesize': 18,
+    'legend.fontsize': 18
+})
+
 import numpy as np
 from scipy.spatial.transform import Rotation
 
@@ -119,7 +127,6 @@ def save_trajectory_comparison_plot(
     ate_positions: np.ndarray | None = None,
     aa_regressed_trajectory: np.ndarray | None = None,
 ) -> Path:
-    import matplotlib.pyplot as plt
 
     path.parent.mkdir(parents=True, exist_ok=True)
     t_rel = gt_times_s - gt_times_s[0]
@@ -131,7 +138,7 @@ def save_trajectory_comparison_plot(
         axis = axes[row, col]
         axis.plot(t_rel, gt_positions[:, axis_idx], label=f"GT {label}", color="tab:blue")
         if regressed_positions is not None:
-            axis.plot(t_rel, regressed_positions[:, axis_idx], label=f"Regressed {label}", color="tab:orange", linestyle="--")
+            axis.plot(t_rel, regressed_positions[:, axis_idx], label=f"Regressed {label}", color="red")
         if imu_positions is not None:
             axis.plot(t_rel, imu_positions[:, axis_idx], label=f"IMU {label}", color="tab:purple", linestyle=":")
         axis.plot(t_rel, estimated_positions[:, axis_idx], label=f"EKF {label}", color="tab:green")
@@ -182,7 +189,6 @@ def save_rotation_comparison_plot(
     estimated_quaternions_xyzw: np.ndarray,
     imu_quaternions_xyzw: np.ndarray | None = None,
 ) -> Path:
-    import matplotlib.pyplot as plt
 
     path.parent.mkdir(parents=True, exist_ok=True)
     t_rel = times_s - times_s[0]
@@ -238,7 +244,6 @@ def save_3d_trajectory_plot(
     ate_positions: np.ndarray | None = None,
     aa_regressed_trajectory: np.ndarray | None = None,
 ) -> Path:
-    import matplotlib.pyplot as plt
 
     path.parent.mkdir(parents=True, exist_ok=True)
     fig = plt.figure(figsize=(10, 10))
@@ -247,7 +252,7 @@ def save_3d_trajectory_plot(
     ax.plot(gt_positions[:, 0], gt_positions[:, 1], gt_positions[:, 2], label="Ground Truth", color="tab:blue", linewidth=2)
     
     if regressed_positions is not None:
-        ax.plot(regressed_positions[:, 0], regressed_positions[:, 1], regressed_positions[:, 2], label="Regressed", color="tab:orange", linestyle="--", linewidth=2)
+        ax.plot(regressed_positions[:, 0], regressed_positions[:, 1], regressed_positions[:, 2], label="Regressed", color="red", linewidth=2)
 
     if imu_positions is not None:
         ax.plot(imu_positions[:, 0], imu_positions[:, 1], imu_positions[:, 2], label="IMU Only", color="tab:purple", linestyle=":", linewidth=2)
@@ -295,7 +300,6 @@ def save_projections_plot(
     ate_positions: np.ndarray | None = None,
     aa_regressed_trajectory: np.ndarray | None = None,
 ) -> Path:
-    import matplotlib.pyplot as plt
 
     path.parent.mkdir(parents=True, exist_ok=True)
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
@@ -310,7 +314,7 @@ def save_projections_plot(
         ax.plot(gt_positions[:, idx1], gt_positions[:, idx2], label="Ground Truth", color="tab:blue")
         
         if regressed_positions is not None:
-            ax.plot(regressed_positions[:, idx1], regressed_positions[:, idx2], label="Regressed", color="tab:orange", linestyle="--")
+            ax.plot(regressed_positions[:, idx1], regressed_positions[:, idx2], label="Regressed", color="red")
 
         if imu_positions is not None:
             ax.plot(imu_positions[:, idx1], imu_positions[:, idx2], label="IMU Only", color="tab:purple", linestyle=":", alpha=0.7)
@@ -347,7 +351,6 @@ def show_interactive_3d_plot(
     ate_positions: np.ndarray | None = None,
     aa_regressed_trajectory=None,
 ) -> None:
-    import matplotlib.pyplot as plt
 
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection="3d")
@@ -359,7 +362,7 @@ def show_interactive_3d_plot(
     
     if regressed_trajectory is not None:
         reg_pos = regressed_trajectory[:, 1:4]
-        ax.plot(reg_pos[:, 0], reg_pos[:, 1], reg_pos[:, 2], label="Regressed", color="tab:orange", linestyle="--", linewidth=2)
+        ax.plot(reg_pos[:, 0], reg_pos[:, 1], reg_pos[:, 2], label="Regressed", color="red", linewidth=2)
 
     if imu_trajectory is not None:
         imu_pos = imu_trajectory[:, 1:4]
