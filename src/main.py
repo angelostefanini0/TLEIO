@@ -1,411 +1,741 @@
-"""Online Event-Visual Odometry pipeline integrating Transformer and EKF.
+from __future__ import annotations
 
-1. Initializes the ViT model and the MSCKF.
-2. Runs a calibration window to estimate the translation scale factor by 
-   aligning network outputs with IMU pre-integration.
-3. Runs the main filtering loop, derotating events using EKF's gyro bias 
-   estimates before passing them to the network.
-"""
-
-import os
 import argparse
+import json
+import sys
+from collections import defaultdict, deque
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from types import SimpleNamespace
+
+import h5py
+import hdf5plugin  # noqa: F401
 import numpy as np
 import torch
-from pathlib import Path
-from scipy.spatial.transform import Rotation
+import yaml
+from scipy.interpolate import CubicSpline
+from scipy.spatial.transform import Rotation, RotationSpline, Slerp
 
-# EKF Imports
-from filter.scekf import ImuMSCKF
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+SCRIPTS = ROOT / "scripts"
+for path in (ROOT, SRC, SCRIPTS):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
+
 from filter.imu_buffer import ImuMeasurement
-from filter.measurement_triplet import make_default_joint_covariance
-from main_filter import RunnerConfig, _apply_initial_offsets, _load_anchor_poses, _load_sequence_imu
-
-# Network Imports
-from learning.network.build_model import build_model
-from learning.dataloader.events_to_voxel.reader import EDSReader
-from learning.dataloader.representation.voxel_grid import VoxelGrid
-
-
-def perform_linear_alignment(accumulated_p_net: np.ndarray, 
-                             accumulated_p_ekf: np.ndarray, 
-                             timestamps_s: np.ndarray) -> tuple[float, np.ndarray]:
-    """
-    Solves the visual-inertial linear system: s * p_net - delta_v0 * t = delta_p_ekf
-    
-    Args:
-        accumulated_p_net: (N, 3) array of accumulated network translations.
-        accumulated_p_ekf: (N, 3) array of EKF metric displacements (p - p0) 
-                           propagated with initial v0 guess and gravity.
-        timestamps_s: (N,) array of elapsed time (t) since initialization.
-        
-    Returns:
-        scale_factor (float): The recovered metric scale factor.
-        delta_v0 (np.ndarray): 3D velocity correction vector to refine v0.
-    """
-    N = len(timestamps_s)
-    
-    # Linear system formulation: A * x = b
-    # x = [scale_factor, delta_v0_x, delta_v0_y, delta_v0_z]^T
-    A = np.zeros((3 * N, 4))
-    b = np.zeros((3 * N, 1))
-    
-    for i in range(N):
-        t = timestamps_s[i]
-        p_net = accumulated_p_net[i]
-        delta_p_ekf = accumulated_p_ekf[i]
-        
-        # X-axis row
-        A[3*i, 0] = p_net[0]
-        A[3*i, 1] = -t
-        b[3*i, 0] = delta_p_ekf[0]
-        
-        # Y-axis row
-        A[3*i+1, 0] = p_net[1]
-        A[3*i+1, 2] = -t
-        b[3*i+1, 0] = delta_p_ekf[1]
-        
-        # Z-axis row
-        A[3*i+2, 0] = p_net[2]
-        A[3*i+2, 3] = -t
-        b[3*i+2, 0] = delta_p_ekf[2]
-        
-    # Solve via Ordinary Least Squares
-    x, residuals, rank, singular_values = np.linalg.lstsq(A, b, rcond=None)
-    
-    scale_factor = float(x[0, 0])
-    delta_v0 = x[1:4, 0]
-    
-    return scale_factor, delta_v0
+from filter.measurement_triplet import make_default_joint_covariance, predict_relative_pose
+from filter.scekf import ImuMSCKF
+from filter_diagnostics import compute_filter_diagnostics
+from scripts.testing.test import get_outputs_per_motion, load_inference_args, load_target_stats
+from scripts.utils.gt_training import (
+    compute_relative_motions,
+    get_anchor_grid,
+    interpolate_gt_to_anchors,
+    load_gt,
+)
+from src.learning.dataloader.events_to_voxel.precomputed_voxel_clip import (
+    normalize_nonzero_voxel_,
+)
+from src.learning.dataloader.events_to_voxel.raw_to_clip import (
+    MultiEventVoxelClipDataset,
+)
+from src.learning.dataloader.events_to_voxel.utils import (
+    build_camera_matrix,
+    build_derotation_context,
+    scale_camera_matrix,
+)
+from src.learning.dataloader.representation.event_denoising import (
+    background_activity_filter_raw,
+)
+from src.learning.dataloader.representation.voxel_grid import VoxelGrid
+from src.learning.network.build_model import build_model, normalize_checkpoint_state_dict
 
 
-def derotate_events(events_dict: dict, bg_ekf: np.ndarray, latest_gyro: np.ndarray, 
-                    K: np.ndarray, dist_coeffs: np.ndarray, R_cam_imu: np.ndarray, 
-                    t_start_us: float) -> dict:
-    """
-    Applies mathematically rigorous and vectorized motion compensation 
-    to raw events using exact camera geometry and EKF gyro bias.
-    """
-    x = events_dict['x'].astype(np.float32)
-    y = events_dict['y'].astype(np.float32)
-    t_us = events_dict['t'] # Original microsecond timestamps
-    p = events_dict['p']
-    
-    if len(x) == 0:
-        return events_dict
+@dataclass
+class OnlineConfig:
+    raw_sequence_dir: Path
+    checkpoint_file: Path
+    output_dir: Path
+    delta_t_ms: int = 50
+    anchor_t_ms: int = 50
+    event_time_divisor: int = 1000
+    imu_rate_hz: float = 200.0
+    gravity_world_mps2: tuple[float, float, float] = (0.0, 0.0, 9.80665)
+    use_network_covariance: bool = False
+    scale_mode: str = "none"
+    scale_init: float = 1.0
+    scale_alpha: float = 0.01
+    scale_min: float = 0.3
+    scale_max: float = 2.0
+    max_anchors: int | None = None
+    plot_projections: bool = True
 
-    # 1. Transform Angular Velocity
-    # Correct IMU gyro with EKF bias, then rotate into Camera frame
-    omega_imu = latest_gyro - bg_ekf
-    omega_cam = R_cam_imu @ omega_imu  # Shape: (3,)
-    
-    # 2. Undistort points (Applies K_inv and distortion model)
-    # Output is normalized rays on the Z=1 plane: (N, 2) -> [X/Z, Y/Z]
-    pts = np.stack((x, y), axis=-1).reshape(-1, 1, 2)
-    normalized_rays_2d = cv2.undistortPoints(pts, K, dist_coeffs).reshape(-1, 2)
-    
-    # Convert to 3D homogeneous rays: [X, Y, 1]
-    rays_3d = np.pad(normalized_rays_2d, ((0, 0), (0, 1)), constant_values=1.0) # Shape: (N, 3)
-    
-    # 3. Vectorized Rotation
-    # Calculate elapsed time (in seconds) for each event relative to the window start
-    dt_sec = (t_us - t_start_us).astype(np.float32) * 1e-6
-    
-    # Create the rotation vector for each event: theta = omega * dt
-    # Shape: (N, 3)
-    theta_array = dt_sec[:, np.newaxis] * omega_cam[np.newaxis, :]
-    
-    # Generate all rotation matrices efficiently and apply to rays
-    rot_objs = Rotation.from_rotvec(theta_array)
-    rays_derotated = rot_objs.apply(rays_3d) # Shape: (N, 3)
-    
-    # 4. Reproject to the perfect (undistorted) pixel plane using K
-    rays_pixel = (K @ rays_derotated.T).T # Shape: (N, 3)
-    
-    x_new = rays_pixel[:, 0] / rays_pixel[:, 2]
-    y_new = rays_pixel[:, 1] / rays_pixel[:, 2]
-    
-    # Filter out events that fall outside the image bounds after derotation
-    h, w = 480, 640
-    valid_mask = (x_new >= 0) & (x_new < w) & (y_new >= 0) & (y_new < h)
-    
-    # Normalize the time to [0, 1] for the VoxelGrid
-    t_normalized = (t_us - t_us[0]).astype(np.float32)
-    if t_normalized[-1] > 0:
-        t_normalized = t_normalized / t_normalized[-1]
-
-    derotated_events = {
-        'x': x_new[valid_mask],
-        'y': y_new[valid_mask],
-        'p': p[valid_mask],
-        't': t_normalized[valid_mask]
-    }
-    
-    return derotated_events
+    sigma_na: float = 0.011065875226523246
+    sigma_ng: float = 0.01251528557615725
+    sigma_nba: float = 6.536078678232154e-05
+    sigma_nbg: float = 2.1514640261497524e-05
+    assumed_sigma_rel_t: float = 0.02194332115673975
+    meas_cov_scale: float = 1.2649054158337365
+    initial_attitude_sigma_deg: float = 0.11534784349262132
+    initial_velocity_sigma_mps: float = 1.8658950002457901
+    initial_position_sigma_m: float = 0.04181564546764053
+    initial_z_sigma_m: float = 0.006867502596918262
+    initial_bg_sigma_rps: float = 0.00033573143221825514
+    initial_ba_sigma_mps2: float = 0.1779266257977154
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Online EVO Pipeline with Linear Alignment")
-    parser.add_argument("--data_dir", type=str, required=True, help="Path to sequence directory")
-    parser.add_argument("--checkpoint", type=str, required=True, help="Path to network checkpoint (.pth)")
-    parser.add_argument("--dataset", type=str, default="eds", choices=["eds", "tartanair"], help="Dataset name to set camera intrinsics")
-    parser.add_argument("--calibration_window", type=int, default=15, help="Number of clips for visual-inertial initialization")
-    parser.add_argument("--clip_len", type=int, default=3, help="Number of frames per window for the network")
-    parser.add_argument("--num_bins", type=int, default=5, help="Number of bins in VoxelGrid")
-    args = parser.parse_args()
+class RawTartanEventSlicer:
+    def __init__(self, events_file: Path, timestamps_key: str, time_divisor: int):
+        self.events_file = events_file
+        self.h5f = h5py.File(events_file, "r")
+        self.x_ds = self._dataset("x")
+        self.y_ds = self._dataset("y")
+        self.p_ds = self._dataset("p")
+        self.t_ds = self._dataset_by_path(timestamps_key)
+        raw_t = np.asarray(self.t_ds, dtype=np.int64)
+        t_us = raw_t // int(time_divisor)
+        np.maximum.accumulate(t_us, out=t_us)
+        self.t0_us = int(t_us[0])
+        self.t_us = t_us - self.t0_us
+        self.t_final_us = int(self.t_us[-1])
 
-    seq_path = Path(args.data_dir)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def _dataset_by_path(self, key: str):
+        if key in self.h5f:
+            return self.h5f[key]
+        if not key.startswith("events/") and f"events/{key}" in self.h5f:
+            return self.h5f[f"events/{key}"]
+        raise KeyError(f"{self.events_file}: missing dataset '{key}'")
 
-    # ==========================================
-    # 0. SETUP CAMERA INTRINSICS & EXTRINSICS
-    # ==========================================
-    if args.dataset == "eds":
-        fx, fy = 560.8520948927032, 560.6295819972383
-        cx, cy = 313.00733235019237, 217.32858679842997
-        K = np.array([
-            [fx,  0, cx],
-            [ 0, fy, cy],
-            [ 0,  0,  1]
-        ], dtype=np.float64)
-        
-        dist_coeffs = np.array([-0.09776467241921379, 0.2143738428636279, 
-                                -0.004710710105172864, -0.004215916089401789], dtype=np.float64)
-        
-        # Extrinsic Rotation from IMU to Camera
-        R_cam_imu = np.array([
-            [0.99989644, -0.00203358, -0.01424667],
-            [0.00170302,  0.99972994, -0.02317612],
-            [0.01428995,  0.02314946,  0.99962988]
-        ], dtype=np.float64)
-        
-    elif args.dataset == "tartanair":
-        fx, fy = 320, 320
-        cx, cy = 320, 240
-        K = np.array([
-            [fx,  0, cx],
-            [ 0, fy, cy],
-            [ 0,  0,  1]
-        ], dtype=np.float64)
-        dist_coeffs = np.zeros(4, dtype=np.float64)
-        R_cam_imu = np.eye(3, dtype=np.float64)
-    else:
-        K = np.eye(3, dtype=np.float64)
-        dist_coeffs = np.zeros(4, dtype=np.float64)
-        R_cam_imu = np.eye(3, dtype=np.float64)
+    def _dataset(self, key: str):
+        return self._dataset_by_path(f"events/{key}")
 
-    print(f"[Init] Dataset set to '{args.dataset}'.")
+    def get_events(self, t_start_us: int, t_end_us: int) -> dict[str, np.ndarray] | None:
+        if t_start_us < 0 or t_end_us <= t_start_us or t_start_us > self.t_final_us:
+            return None
+        start = int(np.searchsorted(self.t_us, t_start_us, side="left"))
+        end = int(np.searchsorted(self.t_us, t_end_us, side="left"))
+        if end <= start:
+            return {
+                "x": np.empty(0, dtype=np.float32),
+                "y": np.empty(0, dtype=np.float32),
+                "p": np.empty(0, dtype=np.uint8),
+                "t": np.empty(0, dtype=np.int64),
+            }
 
-    # ==========================================
-    # 1. INITIALIZE TRANSFORMER NETWORK
-    # ==========================================
-    net_args = {
-        "checkpoint_path": os.path.dirname(args.checkpoint),
-        "checkpoint": os.path.basename(args.checkpoint),
-        "num_bins": args.num_bins,
-        "clip_len": args.clip_len
-    }
-    
-    checkpoint_data = torch.load(args.checkpoint, map_location=device)
-    model_params = checkpoint_data.get("model_params", {
-        "embed_dim": 384, "patch_size": 16, "attention_type": "divided_space_time",
-        "depth": 6, "heads": 6, "dim_head": 64, "attn_dropout": 0.1, "ff_dropout": 0.1, "time_only": False
-    })
+        p = np.asarray(self.p_ds[start:end])
+        if p.size and np.min(p) < 0:
+            p = ((p.astype(np.int8) + 1) // 2).astype(np.uint8)
 
-    print("[Init] Building Vision Transformer...")
-    model, _ = build_model(net_args, model_params)
-    model.eval()
+        return {
+            "x": np.asarray(self.x_ds[start:end]),
+            "y": np.asarray(self.y_ds[start:end]),
+            "p": p,
+            "t": self.t_us[start:end].astype(np.int64, copy=False),
+        }
 
-    voxel_grid = VoxelGrid(args.num_bins, height=480, width=640, normalize=True)
-    event_reader = EDSReader(seq_path / "events.h5")
+    def close(self) -> None:
+        self.h5f.close()
 
-    # ==========================================
-    # 2. ONLINE STREAM LOADERS & HELPERS
-    # ==========================================
-    imu_table = _load_sequence_imu(seq_path)
 
-    def get_imu_chunk(t_start_s, t_end_s):
-        mask = (imu_table[:, 0] > t_start_s) & (imu_table[:, 0] <= t_end_s)
-        chunk = imu_table[mask]
-        measurements = []
-        prev_t = t_start_s
-        for row in chunk:
-            t = row[0]
-            measurements.append(ImuMeasurement(
-                timestamp=t, dt=t - prev_t, gyro=row[1:4], accel=row[4:7]
-            ))
-            prev_t = t
-        return measurements
+def load_raw_tartan_gt(raw_sequence_dir: Path, t0_us: int, t_end_us: int):
+    pose_path = raw_sequence_dir / "pose_lcam_front.txt"
+    time_path = raw_sequence_dir / "imu" / "cam_time.txt"
+    if not pose_path.exists():
+        raise FileNotFoundError(f"Missing pose file: {pose_path}")
+    if not time_path.exists():
+        raise FileNotFoundError(f"Missing camera time file: {time_path}")
 
-    def extract_and_derotate_events(t_start_us, t_end_us, bg_ekf, latest_gyro):
-        event_data = event_reader.get_events(int(t_start_us), int(t_end_us))
-        if event_data is None:
-            return torch.zeros((args.num_bins, 480, 640), dtype=torch.float32)
-            
-        derotated_events = derotate_events(
-            event_data, 
-            bg_ekf,
-            latest_gyro,
-            K,
-            dist_coeffs,
-            R_cam_imu,
-            t_start_us=float(t_start_us)
+    pose = np.loadtxt(pose_path, dtype=np.float64, ndmin=2)
+    cam_time_s = np.loadtxt(time_path, dtype=np.float64, ndmin=1)
+    if len(cam_time_s) != len(pose):
+        raise ValueError(f"{time_path} and {pose_path} have different row counts.")
+
+    stamped = np.column_stack([cam_time_s, pose])
+    gt_t_us = stamped[:, 0] * 1e6 - int(t0_us)
+    keep = (gt_t_us >= 0.0) & (gt_t_us <= int(t_end_us))
+    gt = stamped[keep].copy()
+    gt[:, 0] = np.rint(gt_t_us[keep]).astype(np.int64)
+    if len(gt) < 4:
+        raise ValueError("Not enough GT poses after cropping to event time range.")
+
+    ts, pos, quat = load_gt(gt)
+    return gt, ts, pos, quat
+
+
+def make_anchors(gt_ts_us, gt_pos, gt_quat, delta_t_ms: int, anchor_t_ms: int):
+    anchors_us = get_anchor_grid(
+        gt_timestamps_us=gt_ts_us,
+        delta_t_us=int(round(delta_t_ms * 1000.0)),
+        anchor_step_us=int(round(anchor_t_ms * 1000.0)),
+    )
+    anchor_pos, anchor_quat = interpolate_gt_to_anchors(gt_ts_us, gt_pos, gt_quat, anchors_us)
+    gt_rel = compute_relative_motions(anchors_us, anchor_pos, anchor_quat)
+    return anchors_us, anchor_pos, anchor_quat, gt_rel
+
+
+def generate_synthetic_imu(gt_ts_us, gt_pos, gt_quat, rate_hz: float, gravity_world):
+    gt_times_s = gt_ts_us.astype(np.float64) * 1e-6
+    dt_s = 1.0 / float(rate_hz)
+    count = int(np.floor((gt_times_s[-1] - gt_times_s[0]) / dt_s)) + 1
+    query_times_s = gt_times_s[0] + np.arange(count, dtype=np.float64) * dt_s
+    query_times_us = np.rint(query_times_s * 1e6).astype(np.int64)
+
+    accel_world = np.empty((len(query_times_s), 3), dtype=np.float64)
+    for axis in range(3):
+        spline = CubicSpline(gt_times_s, gt_pos[:, axis], bc_type="not-a-knot")
+        accel_world[:, axis] = spline(query_times_s, 2)
+
+    rotations_gt = Rotation.from_quat(gt_quat)
+    try:
+        rot_spline = RotationSpline(gt_times_s, rotations_gt)
+        rotations = rot_spline(query_times_s)
+        gyro_body = rot_spline(query_times_s, order=1)
+    except Exception:
+        slerp = Slerp(gt_times_s, rotations_gt)
+        rotations = slerp(query_times_s)
+        mats = rotations.as_matrix()
+        gyro_body = np.empty((len(query_times_s), 3), dtype=np.float64)
+        for idx in range(len(query_times_s)):
+            left = max(0, idx - 1)
+            right = min(len(query_times_s) - 1, idx + 1)
+            dt = max(query_times_s[right] - query_times_s[left], 1e-9)
+            gyro_body[idx] = Rotation.from_matrix(mats[left].T @ mats[right]).as_rotvec() / dt
+
+    specific_force_world = accel_world - np.asarray(gravity_world, dtype=np.float64)
+    accel_body = rotations.inv().apply(specific_force_world)
+    return np.column_stack([query_times_us, gyro_body, accel_body])
+
+
+def build_exact_imu_segment(raw_times_s, raw_gyro, raw_accel, start_time_s, end_time_s):
+    if end_time_s <= start_time_s:
+        return []
+    interior = (raw_times_s > start_time_s) & (raw_times_s < end_time_s)
+    segment_times = list(raw_times_s[interior])
+    segment_times.append(float(end_time_s))
+    gyro = np.column_stack([np.interp(segment_times, raw_times_s, raw_gyro[:, i]) for i in range(3)])
+    accel = np.column_stack([np.interp(segment_times, raw_times_s, raw_accel[:, i]) for i in range(3)])
+
+    measurements = []
+    prev = float(start_time_s)
+    for idx, timestamp_s in enumerate(segment_times):
+        measurements.append(
+            ImuMeasurement(
+                timestamp=float(timestamp_s),
+                dt=max(float(timestamp_s) - prev, 0.0),
+                accel=accel[idx].astype(np.float64),
+                gyro=gyro[idx].astype(np.float64),
+            )
         )
-        
-        voxel = voxel_grid.convert_events(derotated_events)
+        prev = float(timestamp_s)
+    return measurements
+
+
+def build_anchor_imu_segments(imu_table, anchors_us):
+    raw_times_s = imu_table[:, 0].astype(np.float64) * 1e-6
+    raw_gyro = imu_table[:, 1:4].astype(np.float64)
+    raw_accel = imu_table[:, 4:7].astype(np.float64)
+    anchor_times_s = anchors_us.astype(np.float64) * 1e-6
+    if anchor_times_s[0] < raw_times_s[0] or anchor_times_s[-1] > raw_times_s[-1]:
+        raise ValueError("Anchor timestamps fall outside generated IMU stream.")
+    return [
+        build_exact_imu_segment(raw_times_s, raw_gyro, raw_accel, anchor_times_s[i], anchor_times_s[i + 1])
+        for i in range(len(anchor_times_s) - 1)
+    ]
+
+
+class OnlineVoxelizer:
+    def __init__(self, raw_sequence_dir: Path, infer_args: dict, gt_ts_us, gt_quat):
+        self.delta_t_us = int(round(float(infer_args["delta_t_ms"]) * 1000.0))
+        self.num_bins = int(infer_args["num_bins"])
+        self.downsampling_factor = float(infer_args["downsampling_factor"])
+        self.patch_size = int(infer_args["model_params"]["patch_size"])
+        self.denoising = bool(infer_args.get("denoising", False))
+        self.denoise_dt_us = int(infer_args.get("denoise_dt_us", 1000))
+        self.denoise_radius = int(infer_args.get("denoise_radius", 1))
+        self.denoise_min_supporters = int(infer_args.get("denoise_min_supporters", 1))
+        self.denoise_same_polarity_only = bool(infer_args.get("denoise_same_polarity_only", False))
+        self.derotate = bool(infer_args.get("derotate", False))
+        self.derotation_slices = int(infer_args.get("derotation_slices", 100))
+        self.normalize_voxel_nonzero = bool(infer_args.get("normalize_voxel_nonzero", False))
+
+        k_path = raw_sequence_dir / "K.yaml"
+        if not k_path.exists():
+            raise FileNotFoundError(f"Missing calibration file: {k_path}")
+        with k_path.open("r") as fh:
+            calibration = yaml.safe_load(fh)
+        cam = calibration.get("cam1") or calibration.get("cam0")
+        if cam is None:
+            raise KeyError(f"{k_path}: missing cam1/cam0 calibration block.")
+        width, height = cam.get("resolution", [640, 480])
+        self.original_width = int(width)
+        self.original_height = int(height)
+        self.new_height, self.new_width = MultiEventVoxelClipDataset.get_downsampled_size(
+            self.original_height,
+            self.original_width,
+            self.downsampling_factor,
+            self.patch_size,
+        )
+        self.scale_x = self.new_width / self.original_width
+        self.scale_y = self.new_height / self.original_height
+        camera_matrix = scale_camera_matrix(
+            build_camera_matrix(cam["intrinsics"]),
+            self.scale_x,
+            self.scale_y,
+        )
+
+        self.seq_info = {
+            "gt_timestamps_us": gt_ts_us.astype(np.int64),
+            "gt_quat_xyzw": gt_quat.astype(np.float64),
+            "camera_matrix": camera_matrix,
+        }
+        self.voxel_grid = VoxelGrid(
+            self.num_bins,
+            self.new_height,
+            self.new_width,
+            derotate=self.derotate,
+            derotation_slices=self.derotation_slices,
+        )
+
+    def empty_voxel(self):
+        return torch.zeros((self.num_bins, self.new_height, self.new_width), dtype=torch.float32)
+
+    def build(self, events: dict[str, np.ndarray] | None, anchor_us: int):
+        if events is None or len(events["t"]) == 0:
+            voxel = self.empty_voxel()
+        else:
+            voxel = self.events_to_voxel_grid(events, anchor_us)
+        if self.normalize_voxel_nonzero:
+            normalize_nonzero_voxel_(voxel)
         return voxel.float()
 
-    # ==========================================
-    # 3. KINEMATIC PROPAGATION & LINEAR ALIGNMENT
-    # ==========================================
-    print(f"[Calibration] Aligning network scale using {args.calibration_window} clips...")
-    
-    config = RunnerConfig()
-    g_world = np.asarray(config.gravity_world_mps2, dtype=np.float64)
-    timestamps_us, positions, quaternions = _load_anchor_poses(seq_path)
-    anchor_times_s = timestamps_us.astype(np.float64) * 1e-6
-    
-    # Initialize from Ground Truth
-    p0 = positions[0].astype(np.float64)
-    R0 = Rotation.from_quat(quaternions[0]).as_matrix()
-    dt0 = max(anchor_times_s[1] - anchor_times_s[0], 1e-9)
-    v0_gt = (positions[1] - positions[0]) / dt0
-    R0, v0_gt, p0 = _apply_initial_offsets(R0, v0_gt.astype(np.float64), p0, config)
-    
-    # Run calibration EKF with full gravity and ground-truth velocity
-    ekf_calib = ImuMSCKF(config)
-    ekf_calib.g = g_world
-    ekf_calib.initialize_with_state(anchor_times_s[0], R0, v0_gt, p0, np.zeros(3), np.zeros(3))
-    
-    accumulated_p_net = []
-    accumulated_p_ekf = []
-    elapsed_times = []
-    
-    current_net_p = np.zeros(3)
-    current_R = R0.copy()
-    
-    for idx in range(1, args.calibration_window + 1):
-        if idx >= len(anchor_times_s): break
-            
-        t_start_s = anchor_times_s[idx - 1]
-        t_end_s = anchor_times_s[idx]
-        
-        # Propagate IMU
-        imu_chunk = get_imu_chunk(t_start_s, t_end_s)
-        ekf_calib.propagate(imu_chunk)
-        
-        # Get latest gyro reading for derotation
-        latest_gyro = imu_chunk[-1].gyro if len(imu_chunk) > 0 else np.zeros(3)
-        
-        # Process visual voxels
-        voxels = []
-        for j in range(args.clip_len):
-            voxel_idx = idx - args.clip_len + 1 + j
-            if voxel_idx < 1: voxel_idx = 1
-            
-            voxel = extract_and_derotate_events(
-                timestamps_us[voxel_idx - 1], 
-                timestamps_us[voxel_idx], 
-                ekf_calib.state.bg,
-                latest_gyro
+    def events_to_voxel_grid(self, events: dict[str, np.ndarray], anchor_us: int):
+        x, y, p, t = events["x"], events["y"], events["p"], events["t"]
+        if self.denoising:
+            x, y, p, t, _ = background_activity_filter_raw(
+                x=x,
+                y=y,
+                p=p,
+                t_us=t,
+                height=self.original_height,
+                width=self.original_width,
+                dt_us=self.denoise_dt_us,
+                radius=self.denoise_radius,
+                min_supporters=self.denoise_min_supporters,
+                same_polarity_only=self.denoise_same_polarity_only,
             )
-            voxels.append(voxel)
-            
-        clip = torch.stack(voxels, dim=1).unsqueeze(0).to(device)
-        
-        with torch.no_grad():
-            output = model(clip).view(1, args.clip_len - 1, 7)
-            rel_t_body = output[0, -1, :3].cpu().numpy() 
-            rel_R_body = Rotation.from_quat(output[0, -1, 3:]).as_matrix()
-            
-        # Accumulate unscaled visual trajectory
-        current_net_p = current_net_p + current_R @ rel_t_body
-        current_R = current_R @ rel_R_body
-        
-        # Save records for alignment optimization
-        accumulated_p_net.append(current_net_p.copy())
-        accumulated_p_ekf.append(ekf_calib.state.p - p0) 
-        elapsed_times.append(t_end_s - anchor_times_s[0])
+            if len(t) == 0:
+                return self.empty_voxel()
 
-    # Execute linear batch alignment
-    scale_factor, delta_v0 = perform_linear_alignment(
-        np.array(accumulated_p_net), 
-        np.array(accumulated_p_ekf), 
-        np.array(elapsed_times)
-    )
-    
-    v0_refined = v0_gt + delta_v0
-    
-    print(f"[Calibration] Alignment Success!")
-    print(f"[Calibration] Calculated Scale Factor: {scale_factor:.4f}")
-    print(f"[Calibration] Ground Truth v0: {v0_gt}")
-    print(f"[Calibration] Refined Initial Velocity (v0): {v0_refined}")
+        ts_end_us = int(anchor_us)
+        ts_start_us = ts_end_us - self.delta_t_us
+        downsampled_x = x * self.scale_x
+        downsampled_y = y * self.scale_y
 
-    # ==========================================
-    # 4. RESET RUNTIME EKF & ONLINE PROCESSING LOOP
-    # ==========================================
-    print("[Online] Resetting EKF with optimized initial states and beginning tracking loop...")
-    
-    ekf_main = ImuMSCKF(config)
-    ekf_main.g = g_world
-    # Initialize the main loop EKF with the refined velocity
-    ekf_main.initialize_with_state(anchor_times_s[0], R0, v0_refined, p0, np.zeros(3), np.zeros(3))
-    ekf_main.augment_clone() 
-    
-    triplet_buffer = []
-
-    # Stream filtering over the entire trajectory sequence
-    for anchor_idx in range(1, len(anchor_times_s)):
-        t_start_s = anchor_times_s[anchor_idx - 1]
-        t_end_s = anchor_times_s[anchor_idx]
-        
-        # 1. Continuous IMU Integration
-        imu_chunk = get_imu_chunk(t_start_s, t_end_s)
-        ekf_main.propagate(imu_chunk)
-        ekf_main.augment_clone()
-        
-        latest_gyro = imu_chunk[-1].gyro if len(imu_chunk) > 0 else np.zeros(3)
-
-        # 2. Live Event Processing and Network Inference
-        voxels = []
-        for j in range(args.clip_len):
-            idx = anchor_idx - args.clip_len + 1 + j
-            if idx < 1: idx = 1
-            
-            voxel = extract_and_derotate_events(
-                timestamps_us[idx - 1], 
-                timestamps_us[idx], 
-                ekf_main.state.bg,
-                latest_gyro
-            )
-            voxels.append(voxel)
-            
-        clip = torch.stack(voxels, dim=1).unsqueeze(0).to(device)
-        
-        with torch.no_grad():
-            output = model(clip).view(1, args.clip_len - 1, 7)
-            net_prediction = output[0, -1, :].cpu().numpy()
-            
-        # 3. Enforce Recovered Metric Scale on Network Translation
-        net_prediction[:3] *= scale_factor
-        
-        # 4. MSCKF Triplet Measurement Update (Requires 4 edges)
-        triplet_buffer.append(net_prediction[:3])
-        
-        if len(triplet_buffer) >= 4:
-            measurement_4x3 = np.array(triplet_buffer[-4:])
-            update_data = {
-                "relative_pose": measurement_4x3,
-                "joint_covariance": None 
+        if self.derotate:
+            event_data = {
+                "x": downsampled_x.astype(np.float32),
+                "y": downsampled_y.astype(np.float32),
+                "p": p.astype(np.float32),
+                "t": t.astype(np.float64),
+                "ts_start_us": ts_start_us,
+                "ts_end_us": ts_end_us,
             }
-            
-            ekf_main.update(update_data)
-            ekf_main.marginalize_oldest_clone()
-            triplet_buffer.pop(0) 
+            event_data.update(
+                build_derotation_context(
+                    seq_info=self.seq_info,
+                    ts_start_us=ts_start_us,
+                    ts_end_us=ts_end_us,
+                    num_bins=self.derotation_slices,
+                )
+            )
+        else:
+            t = t.astype(np.float32)
+            t = t - t[0]
+            t = t / t[-1] if t[-1] > 0 else np.zeros_like(t, dtype=np.float32)
+            event_data = {
+                "x": downsampled_x.astype(np.float32),
+                "y": downsampled_y.astype(np.float32),
+                "p": p.astype(np.float32),
+                "t": t,
+            }
+        return self.voxel_grid.convert_events(event_data)
 
-        if anchor_idx % 50 == 0:
-            print(f"Processed {anchor_idx}/{len(anchor_times_s)} steps. Estimated Position: {ekf_main.state.p}")
 
-    print("[Online] Pipeline Processing Complete.")
+class NetworkRunner:
+    def __init__(self, checkpoint_file: Path):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.infer_args = load_inference_args(checkpoint_file)
+        self.infer_args["device"] = str(self.device)
+        self.outputs_per_motion = get_outputs_per_motion(self.infer_args)
+        self.clip_len = int(self.infer_args["clip_len"])
+        self.model, _ = build_model(self.infer_args, self.infer_args["model_params"])
+
+        checkpoint = torch.load(checkpoint_file, map_location=self.device, weights_only=False)
+        self.target_mean, self.target_std = load_target_stats(checkpoint, self.device)
+        state_dict = checkpoint.get("model_state_dict", checkpoint)
+        self.model.load_state_dict(normalize_checkpoint_state_dict(state_dict))
+        self.model.to(self.device)
+        self.model.eval()
+
+    def predict(self, voxel_window):
+        clip = torch.stack(list(voxel_window), dim=0).permute(1, 0, 2, 3).unsqueeze(0)
+        with torch.no_grad():
+            x = clip.to(self.device).float()
+            y_hat = self.model(x)
+            y_hat = y_hat.view(1, self.clip_len - 1, self.outputs_per_motion)
+            tr = y_hat[..., :3]
+            if self.target_mean is not None and self.target_std is not None:
+                tr = tr * self.target_std + self.target_mean
+            tr_np = tr[0].cpu().numpy().astype(np.float64)
+            sigmas = None
+            if self.outputs_per_motion == 6:
+                sigmas = np.exp(y_hat[..., 3:][0].cpu().numpy()).astype(np.float64)
+        return tr_np, sigmas
+
+
+class OnlineScaleAdapter:
+    def __init__(self, mode: str, init: float, alpha: float, scale_min: float, scale_max: float):
+        self.mode = mode
+        self.scale = float(init)
+        self.alpha = float(alpha)
+        self.scale_min = float(scale_min)
+        self.scale_max = float(scale_max)
+
+    def update(self, prediction: np.ndarray, reference: np.ndarray | None):
+        if self.mode == "none" or reference is None:
+            return None
+        denom = float(np.sum(prediction * prediction))
+        if denom <= 1e-12:
+            return None
+        candidate = float(np.sum(reference * prediction) / denom)
+        candidate = float(np.clip(candidate, self.scale_min, self.scale_max))
+        self.scale = (1.0 - self.alpha) * self.scale + self.alpha * candidate
+        return candidate
+
+    def apply(self, prediction: np.ndarray, sigmas: np.ndarray | None):
+        scaled_prediction = self.scale * prediction
+        scaled_sigmas = None if sigmas is None else abs(self.scale) * sigmas
+        return scaled_prediction, scaled_sigmas
+
+
+def make_filter_args(config: OnlineConfig):
+    return SimpleNamespace(
+        sigma_na=config.sigma_na,
+        sigma_ng=config.sigma_ng,
+        sigma_nba=config.sigma_nba,
+        sigma_nbg=config.sigma_nbg,
+        sigma_rel_t=config.assumed_sigma_rel_t,
+        meas_cov_scale=config.meas_cov_scale,
+        initial_attitude_sigma_rad=float(np.deg2rad(config.initial_attitude_sigma_deg)),
+        initial_velocity_sigma_mps=config.initial_velocity_sigma_mps,
+        initial_position_sigma_m=config.initial_position_sigma_m,
+        initial_z_sigma_m=config.initial_z_sigma_m,
+        initial_bg_sigma_rps=config.initial_bg_sigma_rps,
+        initial_ba_sigma_mps2=config.initial_ba_sigma_mps2,
+    )
+
+
+def state_to_row(timestamp_s: float, state) -> np.ndarray:
+    return np.concatenate(
+        [
+            np.array([float(timestamp_s)], dtype=np.float64),
+            state.p.astype(np.float64),
+            Rotation.from_matrix(state.R).as_quat().astype(np.float64),
+        ]
+    )
+
+
+def build_ground_truth_trajectory(anchors_us, anchor_pos, anchor_quat):
+    return np.column_stack([anchors_us.astype(np.float64) * 1e-6, anchor_pos, anchor_quat])
+
+
+def clone_relative_predictions(ekf: ImuMSCKF):
+    refs = []
+    for idx in range(4):
+        t_hat, _, _ = predict_relative_pose(
+            ekf.state.clone_Rs[idx],
+            ekf.state.clone_ps[idx],
+            ekf.state.clone_Rs[idx + 1],
+            ekf.state.clone_ps[idx + 1],
+        )
+        refs.append(t_hat)
+    return np.stack(refs, axis=0)
+
+
+def joint_covariance_from_sigmas(sigmas: np.ndarray | None):
+    if sigmas is None:
+        return None
+    covariance = np.zeros((12, 12), dtype=np.float64)
+    np.fill_diagonal(covariance, sigmas.reshape(-1) ** 2)
+    return covariance
+
+
+def average_prediction_store(store: dict[tuple[int, int], list[np.ndarray]]):
+    rows = []
+    for key in sorted(store):
+        values = np.stack(store[key], axis=0)
+        rows.append(np.concatenate([np.asarray(key, dtype=np.float64), values.mean(axis=0)]))
+    if not rows:
+        return np.empty((0, 5), dtype=np.float64)
+    return np.asarray(rows, dtype=np.float64)
+
+
+def save_predictions(path: Path, rows: np.ndarray):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if rows.shape[1] == 8:
+        header = "t0_us t1_us px py pz sigma_x sigma_y sigma_z"
+        fmt = ["%d", "%d"] + ["%.10f"] * 6
+    else:
+        header = "t0_us t1_us px py pz"
+        fmt = ["%d", "%d"] + ["%.10f"] * 3
+    np.savetxt(path, rows, fmt=fmt, header=header, comments="")
+
+
+def integrate_network_trajectory(rows: np.ndarray, anchors_us, anchor_pos, anchor_quat):
+    if len(rows) != len(anchors_us) - 1:
+        return None
+    positions = [anchor_pos[0].astype(np.float64)]
+    quats = [anchor_quat[0].astype(np.float64)]
+    for idx, row in enumerate(rows):
+        R = Rotation.from_quat(anchor_quat[idx]).as_matrix()
+        positions.append(positions[-1] + R @ row[2:5])
+        quats.append(anchor_quat[idx + 1])
+    return build_ground_truth_trajectory(anchors_us, np.asarray(positions), np.asarray(quats))
+
+
+def save_table(path: Path, table: np.ndarray, header: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savetxt(path, table, fmt="%.10f", header=header, comments="")
+
+
+def run(config: OnlineConfig):
+    config.output_dir.mkdir(parents=True, exist_ok=True)
+    serializable = asdict(config)
+    for key, value in serializable.items():
+        if isinstance(value, Path):
+            serializable[key] = str(value)
+    (config.output_dir / "config.json").write_text(json.dumps(serializable, indent=2))
+
+    network = NetworkRunner(config.checkpoint_file)
+    events_file = config.raw_sequence_dir / "events.h5"
+    slicer = RawTartanEventSlicer(events_file, "events/t", config.event_time_divisor)
+    gt_table, gt_ts, gt_pos, gt_quat = load_raw_tartan_gt(
+        config.raw_sequence_dir,
+        slicer.t0_us,
+        slicer.t_final_us,
+    )
+    anchors_us, anchor_pos, anchor_quat, gt_rel = make_anchors(
+        gt_ts,
+        gt_pos,
+        gt_quat,
+        config.delta_t_ms,
+        config.anchor_t_ms,
+    )
+    if config.max_anchors is not None:
+        anchors_us = anchors_us[: config.max_anchors]
+        anchor_pos = anchor_pos[: config.max_anchors]
+        anchor_quat = anchor_quat[: config.max_anchors]
+        gt_rel = gt_rel[: max(0, config.max_anchors - 1)]
+    if len(anchors_us) < network.clip_len:
+        raise ValueError("Not enough anchors for one online network/filter update.")
+
+    imu_table = generate_synthetic_imu(
+        gt_ts,
+        gt_pos,
+        gt_quat,
+        config.imu_rate_hz,
+        np.asarray(config.gravity_world_mps2),
+    )
+    imu_segments = build_anchor_imu_segments(imu_table, anchors_us)
+    voxelizer = OnlineVoxelizer(config.raw_sequence_dir, network.infer_args, gt_ts, gt_quat)
+
+    anchor_times_s = anchors_us.astype(np.float64) * 1e-6
+    R0 = Rotation.from_quat(anchor_quat[0]).as_matrix()
+    p0 = anchor_pos[0].astype(np.float64)
+    v0 = (anchor_pos[1] - anchor_pos[0]) / max(anchor_times_s[1] - anchor_times_s[0], 1e-9)
+    ekf = ImuMSCKF(make_filter_args(config))
+    ekf.g = np.asarray(config.gravity_world_mps2, dtype=np.float64)
+    ekf.initialize_with_state(anchor_times_s[0], R0, v0.astype(np.float64), p0, np.zeros(3), np.zeros(3))
+
+    imu_ekf = ImuMSCKF(make_filter_args(config))
+    imu_ekf.g = np.asarray(config.gravity_world_mps2, dtype=np.float64)
+    imu_ekf.initialize_with_state(anchor_times_s[0], R0.copy(), v0.astype(np.float64), p0.copy(), np.zeros(3), np.zeros(3))
+
+    scale_adapter = OnlineScaleAdapter(
+        config.scale_mode,
+        config.scale_init,
+        config.scale_alpha,
+        config.scale_min,
+        config.scale_max,
+    )
+    default_joint_cov = make_default_joint_covariance(config.assumed_sigma_rel_t)
+    voxel_window = deque(maxlen=network.clip_len)
+    anchor_window = deque(maxlen=network.clip_len)
+    scaled_store = defaultdict(list)
+    raw_store = defaultdict(list)
+    scale_history = []
+    residual_norms = []
+    delta_norms = []
+    rejected_updates = 0
+
+    first_events = slicer.get_events(int(anchors_us[0] - voxelizer.delta_t_us), int(anchors_us[0]))
+    voxel_window.append(voxelizer.build(first_events, int(anchors_us[0])))
+    anchor_window.append(int(anchors_us[0]))
+    ekf.augment_clone()
+
+    trajectory_rows = [state_to_row(anchor_times_s[0], ekf.state)]
+    imu_rows = [state_to_row(anchor_times_s[0], imu_ekf.state)]
+
+    try:
+        for anchor_idx in range(1, len(anchors_us)):
+            ekf.propagate(imu_segments[anchor_idx - 1])
+            ekf.augment_clone()
+            imu_ekf.propagate(imu_segments[anchor_idx - 1])
+
+            events = slicer.get_events(
+                int(anchors_us[anchor_idx] - voxelizer.delta_t_us),
+                int(anchors_us[anchor_idx]),
+            )
+            voxel_window.append(voxelizer.build(events, int(anchors_us[anchor_idx])))
+            anchor_window.append(int(anchors_us[anchor_idx]))
+
+            if len(voxel_window) == network.clip_len:
+                raw_pred, raw_sigmas = network.predict(voxel_window)
+                edge_times = list(zip(list(anchor_window)[:-1], list(anchor_window)[1:]))
+
+                for edge, pred_idx in zip(edge_times, range(network.clip_len - 1)):
+                    if raw_sigmas is None:
+                        raw_store[edge].append(raw_pred[pred_idx])
+                    else:
+                        raw_store[edge].append(np.concatenate([raw_pred[pred_idx], raw_sigmas[pred_idx]]))
+
+                reference = None
+                if config.scale_mode == "gt_debug":
+                    reference = gt_rel[anchor_idx - 4 : anchor_idx, 2:5]
+                elif config.scale_mode == "filter":
+                    reference = clone_relative_predictions(ekf)
+                candidate = scale_adapter.update(raw_pred, reference)
+                pred, sigmas = scale_adapter.apply(raw_pred, raw_sigmas)
+                scale_history.append(
+                    [
+                        float(anchor_times_s[anchor_idx]),
+                        float(scale_adapter.scale),
+                        np.nan if candidate is None else float(candidate),
+                    ]
+                )
+
+                for edge, pred_idx in zip(edge_times, range(network.clip_len - 1)):
+                    if sigmas is None:
+                        scaled_store[edge].append(pred[pred_idx])
+                    else:
+                        scaled_store[edge].append(np.concatenate([pred[pred_idx], sigmas[pred_idx]]))
+
+                update_payload = {"relative_pose": pred}
+                if config.use_network_covariance and sigmas is not None:
+                    update_payload["joint_covariance"] = joint_covariance_from_sigmas(sigmas)
+                else:
+                    update_payload["joint_covariance"] = default_joint_cov
+                update_info = ekf.update(update_payload)
+                if update_info.get("rejected", False):
+                    rejected_updates += 1
+                else:
+                    residual_norms.append(float(np.linalg.norm(update_info["residual"])))
+                    delta_norms.append(float(np.linalg.norm(update_info["delta_x"])))
+                ekf.marginalize_oldest_clone()
+
+            trajectory_rows.append(state_to_row(anchor_times_s[anchor_idx], ekf.state))
+            imu_rows.append(state_to_row(anchor_times_s[anchor_idx], imu_ekf.state))
+    finally:
+        slicer.close()
+
+    trajectory = np.asarray(trajectory_rows, dtype=np.float64)
+    imu_trajectory = np.asarray(imu_rows, dtype=np.float64)
+    gt_trajectory = build_ground_truth_trajectory(anchors_us, anchor_pos, anchor_quat)
+    scaled_rows = average_prediction_store(scaled_store)
+    raw_rows = average_prediction_store(raw_store)
+    regressed_trajectory = integrate_network_trajectory(scaled_rows, anchors_us, anchor_pos, anchor_quat)
+
+    save_table(config.output_dir / "stamped_traj_estimate.txt", trajectory, "timestamp_s px py pz qx qy qz qw")
+    save_table(config.output_dir / "imu_only_trajectory.txt", imu_trajectory, "timestamp_s px py pz qx qy qz qw")
+    save_table(config.output_dir / "gt_anchor_trajectory.txt", gt_trajectory, "timestamp_s px py pz qx qy qz qw")
+    save_predictions(config.output_dir / "predicted_relative_motions.txt", scaled_rows)
+    save_predictions(config.output_dir / "predicted_relative_motions_unscaled.txt", raw_rows)
+    if scale_history:
+        save_table(config.output_dir / "scale_history.txt", np.asarray(scale_history), "timestamp_s scale candidate_scale")
+    np.savetxt(
+        config.output_dir / "gt_relative_motions.txt",
+        gt_rel,
+        fmt=["%d", "%d"] + ["%.10f"] * 6,
+        header="t0_us t1_us px py pz rx ry rz",
+        comments="",
+    )
+    np.savetxt(
+        config.output_dir / "stamped_groundtruth_online.txt",
+        gt_table,
+        fmt=["%d"] + ["%.10f"] * 7,
+        header="timestamp_us px py pz qx qy qz qw",
+        comments="",
+    )
+
+    diagnostics = compute_filter_diagnostics(
+        trajectory,
+        gt_trajectory,
+        regressed_trajectory=regressed_trajectory,
+        imu_trajectory=imu_trajectory,
+        output_dir=config.output_dir,
+        file_prefix=config.raw_sequence_dir.name,
+        plot_projections=config.plot_projections,
+    )
+    summary = {
+        "num_anchors": int(len(anchors_us)),
+        "num_updates_attempted": int(max(0, len(anchors_us) - 4)),
+        "num_updates_rejected": int(rejected_updates),
+        "mean_residual_norm": None if not residual_norms else float(np.mean(residual_norms)),
+        "mean_delta_norm": None if not delta_norms else float(np.mean(delta_norms)),
+        "final_scale": float(scale_adapter.scale),
+        "diagnostics": diagnostics,
+    }
+    (config.output_dir / "diagnostics.json").write_text(json.dumps(summary, indent=2))
+    print(json.dumps(summary, indent=2))
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run raw Tartan online processing, network inference, and EKF fusion.")
+    parser.add_argument("--raw_sequence_dir", type=Path, required=True)
+    parser.add_argument("--checkpoint_file", type=Path, required=True)
+    parser.add_argument("--output_dir", type=Path, required=True)
+    parser.add_argument("--delta_t_ms", type=int, default=50)
+    parser.add_argument("--anchor_t_ms", type=int, default=50)
+    parser.add_argument("--event_time_divisor", type=int, default=1000)
+    parser.add_argument("--imu_rate_hz", type=float, default=200.0)
+    parser.add_argument("--use_network_covariance", action="store_true")
+    parser.add_argument("--scale_mode", choices=["none", "gt_debug", "filter"], default="none")
+    parser.add_argument("--scale_init", type=float, default=1.0)
+    parser.add_argument("--scale_alpha", type=float, default=0.01)
+    parser.add_argument("--scale_min", type=float, default=0.3)
+    parser.add_argument("--scale_max", type=float, default=2.0)
+    parser.add_argument("--max_anchors", type=int, default=None)
+    parser.add_argument("--no_plot_projections", action="store_true")
+    args = parser.parse_args()
+    return OnlineConfig(
+        raw_sequence_dir=args.raw_sequence_dir,
+        checkpoint_file=args.checkpoint_file,
+        output_dir=args.output_dir,
+        delta_t_ms=args.delta_t_ms,
+        anchor_t_ms=args.anchor_t_ms,
+        event_time_divisor=args.event_time_divisor,
+        imu_rate_hz=args.imu_rate_hz,
+        use_network_covariance=args.use_network_covariance,
+        scale_mode=args.scale_mode,
+        scale_init=args.scale_init,
+        scale_alpha=args.scale_alpha,
+        scale_min=args.scale_min,
+        scale_max=args.scale_max,
+        max_anchors=args.max_anchors,
+        plot_projections=not args.no_plot_projections,
+    )
+
 
 if __name__ == "__main__":
-    main()
+    run(parse_args())
