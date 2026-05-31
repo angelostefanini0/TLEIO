@@ -64,6 +64,7 @@ class OnlineConfig:
     gravity_world_mps2: tuple[float, float, float] = (0.0, 0.0, 9.80665)
     use_network_covariance: bool = False
     scale_mode: str = "none"
+    derotation_source: str = "filter"
     scale_init: float = 1.0
     scale_alpha: float = 0.01
     scale_min: float = 0.3
@@ -302,16 +303,44 @@ class OnlineVoxelizer:
     def empty_voxel(self):
         return torch.zeros((self.num_bins, self.new_height, self.new_width), dtype=torch.float32)
 
-    def build(self, events: dict[str, np.ndarray] | None, anchor_us: int):
+    def build(
+        self,
+        events: dict[str, np.ndarray] | None,
+        anchor_us: int,
+        derotation_context: dict | None = None,
+    ):
         if events is None or len(events["t"]) == 0:
             voxel = self.empty_voxel()
         else:
-            voxel = self.events_to_voxel_grid(events, anchor_us)
+            voxel = self.events_to_voxel_grid(events, anchor_us, derotation_context)
         if self.normalize_voxel_nonzero:
             normalize_nonzero_voxel_(voxel)
         return voxel.float()
 
-    def events_to_voxel_grid(self, events: dict[str, np.ndarray], anchor_us: int):
+    def make_filter_derotation_context(
+        self,
+        ts_start_us: int,
+        ts_end_us: int,
+        start_quat_xyzw: np.ndarray,
+        end_quat_xyzw: np.ndarray,
+    ) -> dict:
+        window_duration_us = float(ts_end_us - ts_start_us)
+        query = (np.arange(self.derotation_slices, dtype=np.float64) + 0.5) / self.derotation_slices
+        key_rots = Rotation.from_quat(np.stack([start_quat_xyzw, end_quat_xyzw], axis=0))
+        bin_quat = Slerp([0.0, 1.0], key_rots)(query).as_quat()
+        return {
+            "window_duration_us": np.float32(window_duration_us),
+            "camera_matrix": self.seq_info["camera_matrix"].astype(np.float32),
+            "bin_quat_xyzw": bin_quat.astype(np.float32),
+            "ref_quat_xyzw": np.asarray(end_quat_xyzw, dtype=np.float32),
+        }
+
+    def events_to_voxel_grid(
+        self,
+        events: dict[str, np.ndarray],
+        anchor_us: int,
+        derotation_context: dict | None = None,
+    ):
         x, y, p, t = events["x"], events["y"], events["p"], events["t"]
         if self.denoising:
             x, y, p, t, _ = background_activity_filter_raw(
@@ -335,6 +364,13 @@ class OnlineVoxelizer:
         downsampled_y = y * self.scale_y
 
         if self.derotate:
+            if derotation_context is None:
+                derotation_context = build_derotation_context(
+                    seq_info=self.seq_info,
+                    ts_start_us=ts_start_us,
+                    ts_end_us=ts_end_us,
+                    num_bins=self.derotation_slices,
+                )
             event_data = {
                 "x": downsampled_x.astype(np.float32),
                 "y": downsampled_y.astype(np.float32),
@@ -343,14 +379,7 @@ class OnlineVoxelizer:
                 "ts_start_us": ts_start_us,
                 "ts_end_us": ts_end_us,
             }
-            event_data.update(
-                build_derotation_context(
-                    seq_info=self.seq_info,
-                    ts_start_us=ts_start_us,
-                    ts_end_us=ts_end_us,
-                    num_bins=self.derotation_slices,
-                )
-            )
+            event_data.update(derotation_context)
         else:
             t = t.astype(np.float32)
             t = t - t[0]
@@ -551,6 +580,8 @@ def run(config: OnlineConfig):
     )
     imu_segments = build_anchor_imu_segments(imu_table, anchors_us)
     voxelizer = OnlineVoxelizer(config.raw_sequence_dir, network.infer_args, gt_ts, gt_quat)
+    if voxelizer.derotate:
+        print(f"Derotation source: {config.derotation_source}")
 
     anchor_times_s = anchors_us.astype(np.float64) * 1e-6
     R0 = Rotation.from_quat(anchor_quat[0]).as_matrix()
@@ -582,7 +613,16 @@ def run(config: OnlineConfig):
     rejected_updates = 0
 
     first_events = slicer.get_events(int(anchors_us[0] - voxelizer.delta_t_us), int(anchors_us[0]))
-    voxel_window.append(voxelizer.build(first_events, int(anchors_us[0])))
+    last_filter_quat = Rotation.from_matrix(ekf.state.R).as_quat()
+    first_derotation_context = None
+    if config.derotation_source == "filter":
+        first_derotation_context = voxelizer.make_filter_derotation_context(
+            int(anchors_us[0] - voxelizer.delta_t_us),
+            int(anchors_us[0]),
+            last_filter_quat,
+            last_filter_quat,
+        )
+    voxel_window.append(voxelizer.build(first_events, int(anchors_us[0]), first_derotation_context))
     anchor_window.append(int(anchors_us[0]))
     ekf.augment_clone()
 
@@ -591,15 +631,25 @@ def run(config: OnlineConfig):
 
     try:
         for anchor_idx in range(1, len(anchors_us)):
+            prev_filter_quat = last_filter_quat
             ekf.propagate(imu_segments[anchor_idx - 1])
             ekf.augment_clone()
             imu_ekf.propagate(imu_segments[anchor_idx - 1])
+            current_filter_quat = Rotation.from_matrix(ekf.state.R).as_quat()
 
             events = slicer.get_events(
                 int(anchors_us[anchor_idx] - voxelizer.delta_t_us),
                 int(anchors_us[anchor_idx]),
             )
-            voxel_window.append(voxelizer.build(events, int(anchors_us[anchor_idx])))
+            derotation_context = None
+            if config.derotation_source == "filter":
+                derotation_context = voxelizer.make_filter_derotation_context(
+                    int(anchors_us[anchor_idx] - voxelizer.delta_t_us),
+                    int(anchors_us[anchor_idx]),
+                    prev_filter_quat,
+                    current_filter_quat,
+                )
+            voxel_window.append(voxelizer.build(events, int(anchors_us[anchor_idx]), derotation_context))
             anchor_window.append(int(anchors_us[anchor_idx]))
 
             if len(voxel_window) == network.clip_len:
@@ -646,6 +696,7 @@ def run(config: OnlineConfig):
                     delta_norms.append(float(np.linalg.norm(update_info["delta_x"])))
                 ekf.marginalize_oldest_clone()
 
+            last_filter_quat = Rotation.from_matrix(ekf.state.R).as_quat()
             trajectory_rows.append(state_to_row(anchor_times_s[anchor_idx], ekf.state))
             imu_rows.append(state_to_row(anchor_times_s[anchor_idx], imu_ekf.state))
     finally:
@@ -696,6 +747,7 @@ def run(config: OnlineConfig):
         "mean_residual_norm": None if not residual_norms else float(np.mean(residual_norms)),
         "mean_delta_norm": None if not delta_norms else float(np.mean(delta_norms)),
         "final_scale": float(scale_adapter.scale),
+        "derotation_source": config.derotation_source,
         "diagnostics": diagnostics,
     }
     (config.output_dir / "diagnostics.json").write_text(json.dumps(summary, indent=2))
@@ -713,6 +765,7 @@ def parse_args():
     parser.add_argument("--imu_rate_hz", type=float, default=200.0)
     parser.add_argument("--use_network_covariance", action="store_true")
     parser.add_argument("--scale_mode", choices=["none", "gt_debug", "filter"], default="none")
+    parser.add_argument("--derotation_source", choices=["filter", "gt"], default="filter")
     parser.add_argument("--scale_init", type=float, default=1.0)
     parser.add_argument("--scale_alpha", type=float, default=0.01)
     parser.add_argument("--scale_min", type=float, default=0.3)
@@ -730,6 +783,7 @@ def parse_args():
         imu_rate_hz=args.imu_rate_hz,
         use_network_covariance=args.use_network_covariance,
         scale_mode=args.scale_mode,
+        derotation_source=args.derotation_source,
         scale_init=args.scale_init,
         scale_alpha=args.scale_alpha,
         scale_min=args.scale_min,
