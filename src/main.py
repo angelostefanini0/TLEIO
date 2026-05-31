@@ -71,6 +71,10 @@ class OnlineConfig:
     scale_max: float = 2.0
     max_anchors: int | None = None
     plot_projections: bool = True
+    show_online_visualization: bool = False
+    save_online_visualization: bool = False
+    viz_stride: int = 25
+    viz_max_events: int = 20000
 
     sigma_na: float = 0.011065875226523246
     sigma_ng: float = 0.01251528557615725
@@ -540,6 +544,145 @@ def save_table(path: Path, table: np.ndarray, header: str):
     np.savetxt(path, table, fmt="%.10f", header=header, comments="")
 
 
+def save_online_visualization_frame(
+    output_dir: Path,
+    sequence_name: str,
+    anchor_idx: int,
+    events: dict[str, np.ndarray] | None,
+    voxelizer: OnlineVoxelizer,
+    trajectory_rows: list[np.ndarray],
+    gt_anchor_pos: np.ndarray,
+    max_events: int,
+) -> None:
+    import matplotlib
+
+    if "matplotlib.pyplot" not in sys.modules:
+        matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    viz_dir = output_dir / "online_visualization"
+    viz_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 5))
+    ax_events, ax_traj = axes
+
+    if events is not None and len(events["t"]) > 0:
+        count = len(events["t"])
+        if count > max_events:
+            sample = np.linspace(0, count - 1, max_events, dtype=np.int64)
+        else:
+            sample = slice(None)
+        x = np.asarray(events["x"][sample], dtype=np.float64) * voxelizer.scale_x
+        y = np.asarray(events["y"][sample], dtype=np.float64) * voxelizer.scale_y
+        p = np.asarray(events["p"][sample])
+        colors = np.where(p > 0, "#0f8b8d", "#d1495b")
+        ax_events.scatter(x, y, c=colors, s=0.12, alpha=0.45, linewidths=0)
+        ax_events.set_title(f"events window | n={count}")
+    else:
+        ax_events.set_title("events window | empty")
+    ax_events.set_xlim(0, voxelizer.new_width)
+    ax_events.set_ylim(voxelizer.new_height, 0)
+    ax_events.set_aspect("equal", adjustable="box")
+    ax_events.set_xlabel("x [px]")
+    ax_events.set_ylabel("y [px]")
+
+    est = np.asarray(trajectory_rows, dtype=np.float64)
+    ax_traj.plot(est[:, 1], est[:, 2], color="#1f77b4", linewidth=2.0, label="estimated")
+    upto = min(anchor_idx + 1, len(gt_anchor_pos))
+    if upto > 1:
+        ax_traj.plot(
+            gt_anchor_pos[:upto, 0],
+            gt_anchor_pos[:upto, 1],
+            color="#222222",
+            linestyle="--",
+            linewidth=1.1,
+            alpha=0.55,
+            label="GT reference",
+        )
+    ax_traj.scatter(est[-1, 1], est[-1, 2], color="#1f77b4", s=24)
+    ax_traj.set_title(f"{sequence_name} | anchor {anchor_idx}")
+    ax_traj.set_xlabel("x [m]")
+    ax_traj.set_ylabel("y [m]")
+    ax_traj.axis("equal")
+    ax_traj.grid(True, alpha=0.25)
+    ax_traj.legend(loc="best")
+
+    fig.tight_layout()
+    fig.savefig(viz_dir / f"{sequence_name}_online_{anchor_idx:06d}.png", dpi=140)
+    plt.close(fig)
+
+
+class OnlineTrajectoryVisualizer:
+    def __init__(
+        self,
+        sequence_name: str,
+        voxelizer: OnlineVoxelizer,
+        gt_anchor_pos: np.ndarray,
+        max_events: int,
+    ):
+        import matplotlib.pyplot as plt
+
+        self.plt = plt
+        self.sequence_name = sequence_name
+        self.voxelizer = voxelizer
+        self.gt_anchor_pos = gt_anchor_pos
+        self.max_events = max_events
+        self.plt.ion()
+        self.fig, self.axes = self.plt.subplots(1, 2, figsize=(11, 5))
+        self.fig.canvas.manager.set_window_title(f"TLEIO online | {sequence_name}")
+        self.fig.show()
+
+    def update(self, anchor_idx: int, events: dict[str, np.ndarray] | None, trajectory_rows: list[np.ndarray]):
+        ax_events, ax_traj = self.axes
+        ax_events.clear()
+        ax_traj.clear()
+
+        if events is not None and len(events["t"]) > 0:
+            count = len(events["t"])
+            if count > self.max_events:
+                sample = np.linspace(0, count - 1, self.max_events, dtype=np.int64)
+            else:
+                sample = slice(None)
+            x = np.asarray(events["x"][sample], dtype=np.float64) * self.voxelizer.scale_x
+            y = np.asarray(events["y"][sample], dtype=np.float64) * self.voxelizer.scale_y
+            p = np.asarray(events["p"][sample])
+            colors = np.where(p > 0, "#0f8b8d", "#d1495b")
+            ax_events.scatter(x, y, c=colors, s=0.12, alpha=0.45, linewidths=0)
+            ax_events.set_title(f"events window | n={count}")
+        else:
+            ax_events.set_title("events window | empty")
+        ax_events.set_xlim(0, self.voxelizer.new_width)
+        ax_events.set_ylim(self.voxelizer.new_height, 0)
+        ax_events.set_aspect("equal", adjustable="box")
+        ax_events.set_xlabel("x [px]")
+        ax_events.set_ylabel("y [px]")
+
+        est = np.asarray(trajectory_rows, dtype=np.float64)
+        ax_traj.plot(est[:, 1], est[:, 2], color="#1f77b4", linewidth=2.0, label="estimated")
+        upto = min(anchor_idx + 1, len(self.gt_anchor_pos))
+        if upto > 1:
+            ax_traj.plot(
+                self.gt_anchor_pos[:upto, 0],
+                self.gt_anchor_pos[:upto, 1],
+                color="#222222",
+                linestyle="--",
+                linewidth=1.1,
+                alpha=0.55,
+                label="GT reference",
+            )
+        ax_traj.scatter(est[-1, 1], est[-1, 2], color="#1f77b4", s=24)
+        ax_traj.set_title(f"{self.sequence_name} | anchor {anchor_idx}")
+        ax_traj.set_xlabel("x [m]")
+        ax_traj.set_ylabel("y [m]")
+        ax_traj.axis("equal")
+        ax_traj.grid(True, alpha=0.25)
+        ax_traj.legend(loc="best")
+
+        self.fig.tight_layout()
+        self.fig.canvas.draw_idle()
+        self.plt.pause(0.001)
+
+
 def run(config: OnlineConfig):
     config.output_dir.mkdir(parents=True, exist_ok=True)
     serializable = asdict(config)
@@ -628,6 +771,14 @@ def run(config: OnlineConfig):
 
     trajectory_rows = [state_to_row(anchor_times_s[0], ekf.state)]
     imu_rows = [state_to_row(anchor_times_s[0], imu_ekf.state)]
+    live_visualizer = None
+    if config.show_online_visualization:
+        live_visualizer = OnlineTrajectoryVisualizer(
+            sequence_name=config.raw_sequence_dir.name,
+            voxelizer=voxelizer,
+            gt_anchor_pos=anchor_pos,
+            max_events=config.viz_max_events,
+        )
 
     try:
         for anchor_idx in range(1, len(anchors_us)):
@@ -699,6 +850,27 @@ def run(config: OnlineConfig):
             last_filter_quat = Rotation.from_matrix(ekf.state.R).as_quat()
             trajectory_rows.append(state_to_row(anchor_times_s[anchor_idx], ekf.state))
             imu_rows.append(state_to_row(anchor_times_s[anchor_idx], imu_ekf.state))
+            if (
+                live_visualizer is not None
+                and config.viz_stride > 0
+                and anchor_idx % config.viz_stride == 0
+            ):
+                live_visualizer.update(anchor_idx, events, trajectory_rows)
+            if (
+                config.save_online_visualization
+                and config.viz_stride > 0
+                and anchor_idx % config.viz_stride == 0
+            ):
+                save_online_visualization_frame(
+                    output_dir=config.output_dir,
+                    sequence_name=config.raw_sequence_dir.name,
+                    anchor_idx=anchor_idx,
+                    events=events,
+                    voxelizer=voxelizer,
+                    trajectory_rows=trajectory_rows,
+                    gt_anchor_pos=anchor_pos,
+                    max_events=config.viz_max_events,
+                )
     finally:
         slicer.close()
 
@@ -748,6 +920,8 @@ def run(config: OnlineConfig):
         "mean_delta_norm": None if not delta_norms else float(np.mean(delta_norms)),
         "final_scale": float(scale_adapter.scale),
         "derotation_source": config.derotation_source,
+        "show_online_visualization": bool(config.show_online_visualization),
+        "online_visualization": bool(config.save_online_visualization),
         "diagnostics": diagnostics,
     }
     (config.output_dir / "diagnostics.json").write_text(json.dumps(summary, indent=2))
@@ -772,6 +946,10 @@ def parse_args():
     parser.add_argument("--scale_max", type=float, default=2.0)
     parser.add_argument("--max_anchors", type=int, default=None)
     parser.add_argument("--no_plot_projections", action="store_true")
+    parser.add_argument("--show_online_visualization", action="store_true")
+    parser.add_argument("--save_online_visualization", action="store_true")
+    parser.add_argument("--viz_stride", type=int, default=25)
+    parser.add_argument("--viz_max_events", type=int, default=20000)
     args = parser.parse_args()
     return OnlineConfig(
         raw_sequence_dir=args.raw_sequence_dir,
@@ -790,6 +968,10 @@ def parse_args():
         scale_max=args.scale_max,
         max_anchors=args.max_anchors,
         plot_projections=not args.no_plot_projections,
+        show_online_visualization=args.show_online_visualization,
+        save_online_visualization=args.save_online_visualization,
+        viz_stride=args.viz_stride,
+        viz_max_events=args.viz_max_events,
     )
 
 
