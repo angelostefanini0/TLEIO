@@ -1,8 +1,9 @@
-"""Deterministic coarse-to-fine tuning for `main_filter.py` hyperparameters."""
+"""Deterministic coarse-to-fine tuning for `main_filter.py` hyperparameters across an entire dataset."""
 
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import contextlib
 import io
 import json
@@ -177,11 +178,10 @@ def sample_refined_params(rng: random.Random, center: dict[str, float]) -> dict[
     return refined
 
 
-def evaluate_candidate(
-    base_config: RunnerConfig,
-    candidate: dict[str, float],
-    optimize_for_pos_rmse: bool = False,
-) -> dict | None:
+def _eval_sequence_worker(args_tuple: tuple) -> dict | None:
+    """Worker function per valutare una singola sequenza in un processo separato."""
+    base_config, candidate, optimize_for_pos_rmse = args_tuple
+    
     config = replace(
         base_config,
         **candidate,
@@ -193,24 +193,66 @@ def evaluate_candidate(
     )
     try:
         results = run_filter(config)
+        metrics = score_run(results, config, optimize_for_pos_rmse=optimize_for_pos_rmse)
+        return metrics
     except Exception as exc:
-        candidate_label = ", ".join(f"{key}={candidate[key]:.4g}" for key in SEARCH_KEYS[:4])
-        print(f"  trial failed: {type(exc).__name__}: {exc} [{candidate_label}, ...]")
+        print(f"  [Worker Error] Sequence {config.sequence} failed: {exc}")
         return None
 
-    metrics = score_run(results, config, optimize_for_pos_rmse=optimize_for_pos_rmse)
-    return {"params": candidate, "metrics": metrics}
+
+def evaluate_candidate_on_dataset(
+    base_configs: list[RunnerConfig],
+    candidate: dict[str, float],
+    optimize_for_pos_rmse: bool = False,
+    num_jobs: int = 4,
+) -> dict | None:
+    """Valuta lo stesso set di parametri su tutte le sequenze in parallelo e calcola la media."""
+    num_sequences = len(base_configs)
+    if num_sequences == 0:
+        return None
+
+    args_list = [(cfg, candidate, optimize_for_pos_rmse) for cfg in base_configs]
+    results_list = []
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=num_jobs) as executor:
+        results_list = list(executor.map(_eval_sequence_worker, args_list))
+
+    # Se un qualsiasi worker ha restituito None (ha fallito), scartiamo il candidato
+    if None in results_list:
+        return None
+
+    aggregate_metrics = {
+        "score": 0.0,
+        "ate_rmse": 0.0,
+        "position_rmse_m": 0.0,
+        "rotation_rmse_deg": 0.0,
+        "num_updates_rejected": 0,
+    }
+
+    # Somma i risultati
+    for metrics in results_list:
+        aggregate_metrics["score"] += metrics["score"]
+        aggregate_metrics["ate_rmse"] += metrics["ate_rmse"]
+        aggregate_metrics["position_rmse_m"] += metrics["position_rmse_m"]
+        aggregate_metrics["rotation_rmse_deg"] += metrics["rotation_rmse_deg"]
+        aggregate_metrics["num_updates_rejected"] += metrics["num_updates_rejected"]
+
+    # Calcola la media per tutte le metriche
+    for key in aggregate_metrics:
+        aggregate_metrics[key] /= num_sequences
+
+    return {"params": candidate, "metrics": aggregate_metrics}
 
 
 def print_trial(label: str, trial_index: int, evaluated: dict) -> None:
     metrics = evaluated["metrics"]
     print(
         f"[{label} {trial_index:03d}] "
-        f"score={metrics['score']:.6f} "
-        f"ate={metrics['ate_rmse']:.6f} "
-        f"pos={metrics['position_rmse_m']:.6f} "
-        f"rot={metrics['rotation_rmse_deg']:.6f} "
-        f"rej={metrics['num_updates_rejected']}"
+        f"MEAN_score={metrics['score']:.6f} "
+        f"MEAN_ate={metrics['ate_rmse']:.6f} "
+        f"MEAN_pos={metrics['position_rmse_m']:.6f} "
+        f"MEAN_rot={metrics['rotation_rmse_deg']:.6f} "
+        f"MEAN_rej={metrics['num_updates_rejected']:.1f}"
     )
 
 
@@ -221,21 +263,23 @@ def maybe_update_best(best: dict | None, candidate: dict) -> tuple[dict | None, 
 
 
 def run_search(
-    base_config: RunnerConfig,
+    base_configs: list[RunnerConfig],
     coarse_trials: int,
     refine_trials: int,
     seed: int,
     optimize_for_pos_rmse: bool = False,
+    num_jobs: int = 4,
 ) -> dict:
     rng = random.Random(seed)
     completed: list[dict] = []
     best: dict | None = None
 
     for idx in range(coarse_trials):
-        evaluated = evaluate_candidate(
-            base_config,
+        evaluated = evaluate_candidate_on_dataset(
+            base_configs,
             sample_coarse_params(rng),
             optimize_for_pos_rmse=optimize_for_pos_rmse,
+            num_jobs=num_jobs,
         )
         if evaluated is None:
             continue
@@ -250,10 +294,11 @@ def run_search(
 
     refine_center = best["params"]
     for idx in range(refine_trials):
-        evaluated = evaluate_candidate(
-            base_config,
+        evaluated = evaluate_candidate_on_dataset(
+            base_configs,
             sample_refined_params(rng, refine_center),
             optimize_for_pos_rmse=optimize_for_pos_rmse,
+            num_jobs=num_jobs,
         )
         if evaluated is None:
             continue
@@ -265,6 +310,11 @@ def run_search(
             print("  new best refined candidate")
 
     completed_sorted = sorted(completed, key=lambda item: item["metrics"]["score"])
+    
+    # Salviamo un base config generico di riferimento
+    generic_base_config = asdict(base_configs[0])
+    generic_base_config["sequence"] = "ALL_SEQUENCES"
+
     return {
         "best": best,
         "top_k": completed_sorted[:10],
@@ -273,7 +323,7 @@ def run_search(
         "coarse_trials": coarse_trials,
         "refine_trials": refine_trials,
         "objective": "position_rmse_m" if optimize_for_pos_rmse else "ate_rmse",
-        "base_config": asdict(base_config),
+        "base_config": generic_base_config,
     }
 
 
@@ -307,6 +357,12 @@ def parse_args() -> argparse.Namespace:
         default=Path("outputs") / "tuning",
         help="Directory to save the best result JSONs.",
     )
+    parser.add_argument(
+        "-j", "--jobs",
+        type=int,
+        default=4,
+        help="Numero di processi paralleli da lanciare per la valutazione delle sequenze.",
+    )
     return parser.parse_args()
 
 
@@ -335,20 +391,18 @@ def main() -> None:
 
     sequences.sort()
 
-    for seq in sequences:
-        print("\n" + "=" * 50)
-        print(f"Optimizing: {seq}")
-        print("=" * 50)
+    print("\n" + "=" * 50)
+    print(f"Preparing configurations for Dataset: {args.dataset}")
+    print("=" * 50)
 
+    base_configs = []
+    for seq in sequences:
         sequence_dir = processed_dir / seq
         if not sequence_dir.exists():
-            print(
-                f"Error while optimizing {seq}: sequence folder not found at {sequence_dir}. "
-                f"Check `--dataset` and `--sequence`."
-            )
+            print(f"Warning: sequence folder not found at {sequence_dir}. Skipping.")
             continue
 
-        base_config = replace(
+        config = replace(
             CONFIG,
             dataset=args.dataset,
             sequence=seq,
@@ -359,35 +413,44 @@ def main() -> None:
             plot_projections=False,
             **dataset_specific_overrides(args.dataset),
         )
+        base_configs.append(config)
 
-        try:
-            summary = run_search(
-                base_config=base_config,
-                coarse_trials=args.coarse_trials,
-                refine_trials=args.refine_trials,
-                seed=args.seed,
-                optimize_for_pos_rmse=args.optimize_for_pos_rmse,
-            )
-        except Exception as exc:
-            print(f"Errorwhile optimizing {seq}: {exc}")
-            continue
+    if not base_configs:
+        print("Error: No valid sequences to optimize.")
+        return
 
-        best = summary["best"]
-        assert best is not None
+    print(f"Optimizing across {len(base_configs)} sequences: {', '.join([c.sequence for c in base_configs])}")
+    print(f"Using {args.jobs} parallel jobs.")
 
-        print("\nBest result")
-        print(
-            f"score={best['metrics']['score']:.6f} "
-            f"ate={best['metrics']['ate_rmse']:.6f} "
-            f"pos={best['metrics']['position_rmse_m']:.6f} "
-            f"rot={best['metrics']['rotation_rmse_deg']:.6f} "
-            f"rej={best['metrics']['num_updates_rejected']}"
+    try:
+        summary = run_search(
+            base_configs=base_configs,
+            coarse_trials=args.coarse_trials,
+            refine_trials=args.refine_trials,
+            seed=args.seed,
+            optimize_for_pos_rmse=args.optimize_for_pos_rmse,
+            num_jobs=args.jobs,
         )
+    except Exception as exc:
+        print(f"Error while optimizing the dataset: {exc}")
+        return
 
-        seq_output_file = args.output_dir / seq / "best_filter_params.json"
-        seq_output_file.parent.mkdir(parents=True, exist_ok=True)
-        seq_output_file.write_text(json.dumps(to_jsonable(summary), indent=2), encoding="utf-8")
-        print(f"Saved summary to {seq_output_file}")
+    best = summary["best"]
+    assert best is not None
+
+    print("\nBest OVERALL result (Averages)")
+    print(
+        f"score={best['metrics']['score']:.6f} "
+        f"ate={best['metrics']['ate_rmse']:.6f} "
+        f"pos={best['metrics']['position_rmse_m']:.6f} "
+        f"rot={best['metrics']['rotation_rmse_deg']:.6f} "
+        f"rej={best['metrics']['num_updates_rejected']:.1f}"
+    )
+
+    dataset_output_file = args.output_dir / args.dataset / "best_dataset_filter_params.json"
+    dataset_output_file.parent.mkdir(parents=True, exist_ok=True)
+    dataset_output_file.write_text(json.dumps(to_jsonable(summary), indent=2), encoding="utf-8")
+    print(f"Saved dataset summary to {dataset_output_file}")
 
 
 if __name__ == "__main__":
