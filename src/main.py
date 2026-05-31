@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import functools
+import http.server
 import json
+import socketserver
 import sys
+import threading
 from collections import defaultdict, deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -73,6 +77,8 @@ class OnlineConfig:
     plot_projections: bool = True
     show_online_visualization: bool = False
     save_online_visualization: bool = False
+    serve_online_visualization: bool = False
+    viz_port: int = 8765
     viz_stride: int = 25
     viz_max_events: int = 20000
 
@@ -612,6 +618,105 @@ def save_online_visualization_frame(
     plt.close(fig)
 
 
+def render_online_visualization_frame(
+    path: Path,
+    sequence_name: str,
+    anchor_idx: int,
+    events: dict[str, np.ndarray] | None,
+    voxelizer: OnlineVoxelizer,
+    trajectory_rows: list[np.ndarray],
+    gt_anchor_pos: np.ndarray,
+    max_events: int,
+) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 5))
+    ax_events, ax_traj = axes
+
+    if events is not None and len(events["t"]) > 0:
+        count = len(events["t"])
+        sample = np.linspace(0, count - 1, max_events, dtype=np.int64) if count > max_events else slice(None)
+        x = np.asarray(events["x"][sample], dtype=np.float64) * voxelizer.scale_x
+        y = np.asarray(events["y"][sample], dtype=np.float64) * voxelizer.scale_y
+        p = np.asarray(events["p"][sample])
+        colors = np.where(p > 0, "#0f8b8d", "#d1495b")
+        ax_events.scatter(x, y, c=colors, s=0.12, alpha=0.45, linewidths=0)
+        ax_events.set_title(f"events window | n={count}")
+    else:
+        ax_events.set_title("events window | empty")
+    ax_events.set_xlim(0, voxelizer.new_width)
+    ax_events.set_ylim(voxelizer.new_height, 0)
+    ax_events.set_aspect("equal", adjustable="box")
+    ax_events.set_xlabel("x [px]")
+    ax_events.set_ylabel("y [px]")
+
+    est = np.asarray(trajectory_rows, dtype=np.float64)
+    ax_traj.plot(est[:, 1], est[:, 2], color="#1f77b4", linewidth=2.0, label="estimated")
+    upto = min(anchor_idx + 1, len(gt_anchor_pos))
+    if upto > 1:
+        ax_traj.plot(
+            gt_anchor_pos[:upto, 0],
+            gt_anchor_pos[:upto, 1],
+            color="#222222",
+            linestyle="--",
+            linewidth=1.1,
+            alpha=0.55,
+            label="GT reference",
+        )
+    ax_traj.scatter(est[-1, 1], est[-1, 2], color="#1f77b4", s=24)
+    ax_traj.set_title(f"{sequence_name} | anchor {anchor_idx}")
+    ax_traj.set_xlabel("x [m]")
+    ax_traj.set_ylabel("y [m]")
+    ax_traj.axis("equal")
+    ax_traj.grid(True, alpha=0.25)
+    ax_traj.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(path, dpi=140)
+    plt.close(fig)
+
+
+def start_online_visualization_server(output_dir: Path, port: int):
+    live_dir = output_dir / "online_live"
+    live_dir.mkdir(parents=True, exist_ok=True)
+    (live_dir / "index.html").write_text(
+        """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TLEIO online visualization</title>
+  <style>
+    body { margin: 0; background: #111; color: #eee; font-family: sans-serif; }
+    header { padding: 10px 14px; background: #1b1b1b; }
+    img { display: block; max-width: 100vw; max-height: calc(100vh - 42px); margin: auto; }
+  </style>
+</head>
+<body>
+  <header>TLEIO online visualization</header>
+  <img id="frame" src="latest.png">
+  <script>
+    setInterval(() => {
+      document.getElementById("frame").src = "latest.png?t=" + Date.now();
+    }, 500);
+  </script>
+</body>
+</html>
+""".strip()
+    )
+
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(live_dir))
+    httpd = socketserver.ThreadingTCPServer(("0.0.0.0", int(port)), handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    print(f"Online visualization server: http://127.0.0.1:{port}")
+    print(f"Serving live files from: {live_dir}")
+    return httpd, live_dir
+
+
 class OnlineTrajectoryVisualizer:
     def __init__(
         self,
@@ -779,6 +884,10 @@ def run(config: OnlineConfig):
             gt_anchor_pos=anchor_pos,
             max_events=config.viz_max_events,
         )
+    live_server = None
+    live_dir = None
+    if config.serve_online_visualization:
+        live_server, live_dir = start_online_visualization_server(config.output_dir, config.viz_port)
 
     try:
         for anchor_idx in range(1, len(anchors_us)):
@@ -857,6 +966,21 @@ def run(config: OnlineConfig):
             ):
                 live_visualizer.update(anchor_idx, events, trajectory_rows)
             if (
+                live_dir is not None
+                and config.viz_stride > 0
+                and anchor_idx % config.viz_stride == 0
+            ):
+                render_online_visualization_frame(
+                    path=live_dir / "latest.png",
+                    sequence_name=config.raw_sequence_dir.name,
+                    anchor_idx=anchor_idx,
+                    events=events,
+                    voxelizer=voxelizer,
+                    trajectory_rows=trajectory_rows,
+                    gt_anchor_pos=anchor_pos,
+                    max_events=config.viz_max_events,
+                )
+            if (
                 config.save_online_visualization
                 and config.viz_stride > 0
                 and anchor_idx % config.viz_stride == 0
@@ -873,6 +997,8 @@ def run(config: OnlineConfig):
                 )
     finally:
         slicer.close()
+        if live_server is not None:
+            live_server.shutdown()
 
     trajectory = np.asarray(trajectory_rows, dtype=np.float64)
     imu_trajectory = np.asarray(imu_rows, dtype=np.float64)
@@ -922,6 +1048,7 @@ def run(config: OnlineConfig):
         "derotation_source": config.derotation_source,
         "show_online_visualization": bool(config.show_online_visualization),
         "online_visualization": bool(config.save_online_visualization),
+        "serve_online_visualization": bool(config.serve_online_visualization),
         "diagnostics": diagnostics,
     }
     (config.output_dir / "diagnostics.json").write_text(json.dumps(summary, indent=2))
@@ -948,6 +1075,8 @@ def parse_args():
     parser.add_argument("--no_plot_projections", action="store_true")
     parser.add_argument("--show_online_visualization", action="store_true")
     parser.add_argument("--save_online_visualization", action="store_true")
+    parser.add_argument("--serve_online_visualization", action="store_true")
+    parser.add_argument("--viz_port", type=int, default=8765)
     parser.add_argument("--viz_stride", type=int, default=25)
     parser.add_argument("--viz_max_events", type=int, default=20000)
     args = parser.parse_args()
@@ -970,6 +1099,8 @@ def parse_args():
         plot_projections=not args.no_plot_projections,
         show_online_visualization=args.show_online_visualization,
         save_online_visualization=args.save_online_visualization,
+        serve_online_visualization=args.serve_online_visualization,
+        viz_port=args.viz_port,
         viz_stride=args.viz_stride,
         viz_max_events=args.viz_max_events,
     )
