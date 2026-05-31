@@ -297,6 +297,27 @@ def raw_model_output_header(clip_len: int):
     return " ".join(columns)
 
 
+def should_apply_eds_axis_remap(sequence_dir: Path) -> bool:
+    return any(part.lower() == "eds" for part in sequence_dir.resolve().parts)
+
+
+def remap_eds_prediction_axes(rows_pred: np.ndarray) -> np.ndarray:
+    """Map model-frame translations to the EDS local target convention."""
+    remapped = rows_pred.copy()
+    remapped[:, :3] = rows_pred[:, [1, 2, 0]]
+    if rows_pred.shape[1] == 6:
+        remapped[:, 3:6] = rows_pred[:, [4, 5, 3]]
+    return remapped
+
+
+def remap_eds_raw_model_outputs(raw_model_outputs: np.ndarray, clip_len: int) -> np.ndarray:
+    remapped = raw_model_outputs.copy()
+    for step_idx in range(clip_len - 1):
+        base = step_idx * 5
+        remapped[:, base + 2 : base + 5] = raw_model_outputs[:, [base + 3, base + 4, base + 2]]
+    return remapped
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sequence_dir", type=str, required=True)
@@ -379,6 +400,11 @@ def main():
     raw_model_outputs = collect_raw_model_outputs(
         loader, model, device, infer_args, target_mean, target_std
     )
+    if should_apply_eds_axis_remap(sequence_dir):
+        rows_pred = remap_eds_prediction_axes(rows_pred)
+        raw_model_outputs = remap_eds_raw_model_outputs(raw_model_outputs, infer_args["clip_len"])
+        print("Applied EDS prediction axis remap: [px, py, pz] -> [py, pz, px]")
+
     out = np.concatenate([timestamps, rows_pred], axis=1)
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
