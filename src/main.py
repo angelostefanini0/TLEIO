@@ -260,13 +260,15 @@ class OnlineVoxelizer:
         self.normalize_voxel_nonzero = bool(infer_args.get("normalize_voxel_nonzero", False))
 
         k_path = raw_sequence_dir / "K.yaml"
-        if not k_path.exists():
-            raise FileNotFoundError(f"Missing calibration file: {k_path}")
-        with k_path.open("r") as fh:
-            calibration = yaml.safe_load(fh)
-        cam = calibration.get("cam1") or calibration.get("cam0")
-        if cam is None:
-            raise KeyError(f"{k_path}: missing cam1/cam0 calibration block.")
+        if k_path.exists():
+            with k_path.open("r") as fh:
+                calibration = yaml.safe_load(fh)
+            cam = calibration.get("cam1") or calibration.get("cam0")
+            if cam is None:
+                raise KeyError(f"{k_path}: missing cam1/cam0 calibration block.")
+        else:
+            print(f"Missing {k_path}; using default TartanAir pinhole intrinsics.")
+            cam = {"intrinsics": [320.0, 320.0, 320.0, 240.0], "resolution": [640, 480]}
         width, height = cam.get("resolution", [640, 480])
         self.original_width = int(width)
         self.original_height = int(height)
