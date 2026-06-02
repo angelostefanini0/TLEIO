@@ -141,6 +141,7 @@ def inspect_covariance_dataset(args) -> None:
         max_points=args.max_points,
         error_limit=args.error_limit,
         sigma_limit=args.sigma_limit,
+        sigma_multiplier=args.sigma_multiplier,
     )
 
     summary_path = save_dir / "covariance_error_cones_summary.txt"
@@ -166,7 +167,7 @@ def inspect_covariance_dataset(args) -> None:
     print(f"Sequences used: {len(used_sequences)}")
     print(f"Rows used: {stats['num_valid']}")
     print(
-        "Outside 3 sigma [%]: "
+        f"Outside {args.sigma_multiplier:g} sigma [%]: "
         + ", ".join(
             f"{label}={stats['outside_percent'][i]:.2f}"
             for i, label in enumerate(axis_labels)
@@ -198,6 +199,8 @@ def main():
                         help="Optional symmetric x-axis limit for covariance error-cone plots.")
     parser.add_argument("--sigma_limit", type=float, default=None,
                         help="Optional y-axis limit for covariance error-cone plots.")
+    parser.add_argument("--sigma_multiplier", type=float, default=3.0,
+                        help="Sigma bound multiplier for covariance error-cone plots.")
     
     args = parse_args_with_config(
         parser,
@@ -322,6 +325,7 @@ def main():
         rel_sigma=rel_sigma,
         error_ref_label=error_ref_label,
         save_dir=args.save_dir,
+        sigma_multiplier=args.sigma_multiplier,
     )
 
 

@@ -12,12 +12,13 @@ def plot_covariance_error_cones(
     max_points: int = 200_000,
     error_limit: float | None = None,
     sigma_limit: float | None = None,
+    sigma_multiplier: float = 3.0,
     random_seed: int = 0,
 ) -> dict[str, np.ndarray | int]:
     """Plot predicted per-axis sigmas against relative translation errors.
 
-    The dashed red boundary is the 3-sigma condition: points below it have
-    ``abs(error) > 3 * sigma`` and are counted as outside the bound.
+    The dashed red boundary is the n-sigma condition: points below it have
+    ``abs(error) > n * sigma`` and are counted as outside the bound.
     """
     rel_err_xyz = np.asarray(rel_err_xyz, dtype=np.float64)
     rel_sigma = np.asarray(rel_sigma, dtype=np.float64)
@@ -35,7 +36,10 @@ def plot_covariance_error_cones(
     if len(rel_err_xyz) == 0:
         raise ValueError("No valid covariance/error rows to plot.")
 
-    outside_mask = np.abs(rel_err_xyz) > 3.0 * rel_sigma
+    if sigma_multiplier <= 0:
+        raise ValueError(f"sigma_multiplier must be positive, got {sigma_multiplier}.")
+
+    outside_mask = np.abs(rel_err_xyz) > sigma_multiplier * rel_sigma
     outside_percent = outside_mask.mean(axis=0) * 100.0
     rms_error = np.sqrt(np.mean(rel_err_xyz**2, axis=0))
     mean_sigma = np.mean(rel_sigma, axis=0)
@@ -58,7 +62,7 @@ def plot_covariance_error_cones(
     labels = ["X", "Y", "Z"]
     fig, axes = plt.subplots(1, 3, figsize=(13, 4), sharey=True)
     x_line = np.linspace(-error_limit, error_limit, 300)
-    y_line = np.abs(x_line) / 3.0
+    y_line = np.abs(x_line) / sigma_multiplier
 
     for i, label in enumerate(labels):
         axes[i].scatter(
@@ -73,7 +77,7 @@ def plot_covariance_error_cones(
         axes[i].set_ylim(0.0, sigma_limit)
         axes[i].set_xlabel(f"Error {label} [m]")
         axes[i].grid(True, alpha=0.55)
-        axes[i].set_title(f"{outside_percent[i]:.2f}% outside 3 sigma")
+        axes[i].set_title(f"{outside_percent[i]:.2f}% outside {sigma_multiplier:g} sigma")
     axes[0].set_ylabel("Sigmas [m]")
     fig.suptitle(title)
     fig.tight_layout()
@@ -106,6 +110,7 @@ def plot_relative_motion_inspection(
     rel_sigma: np.ndarray | None,
     error_ref_label: str,
     save_dir: Path | None,
+    sigma_multiplier: float = 3.0,
 ) -> None:
     """Plot reconstructed relative-motion trajectories against GT."""
     t_gt = (gt_ts - gt_ts[0]) * 1e-6
@@ -218,12 +223,13 @@ def plot_relative_motion_inspection(
                 rel_sigma=rel_sigma,
                 save_path=save_dir / "relative_uncertainty_error_cones.png",
                 title=f"Uncertainty vs Translation Error ({error_ref_label})",
+                sigma_multiplier=sigma_multiplier,
             )
         print(f"Saved figures to {save_dir}")
         if cone_stats is not None:
             outside = cone_stats["outside_percent"]
             print(
-                "Outside 3 sigma [%]: "
+                f"Outside {sigma_multiplier:g} sigma [%]: "
                 f"x={outside[0]:.2f}, y={outside[1]:.2f}, z={outside[2]:.2f}"
             )
     else:
