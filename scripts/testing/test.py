@@ -146,7 +146,12 @@ def average_overlapping_predictions(prediction_store):
 
     for key in sorted(prediction_store.keys()):
         values = np.stack(prediction_store[key], axis=0)
-        rows.append(values.mean(axis=0))
+        if values.shape[1] == 6:
+            mean_translation = values[:, :3].mean(axis=0)
+            rms_sigma = np.sqrt(np.mean(values[:, 3:6] ** 2, axis=0))
+            rows.append(np.concatenate([mean_translation, rms_sigma], axis=0))
+        else:
+            rows.append(values.mean(axis=0))
         timestamps.append(key)
 
     rows_pred = np.asarray(rows, dtype=np.float64)
@@ -177,7 +182,10 @@ def collect_last_step_predictions(loader, model, device, infer_args, target_mean
 
             y_hat_tr = y_hat_tr.cpu().numpy()
             if y_hat_cov is not None:
-                y_hat_cov = np.exp(y_hat_cov.cpu().numpy())
+                y_hat_cov = torch.exp(y_hat_cov)
+                if target_std is not None:
+                    y_hat_cov = y_hat_cov * target_std
+                y_hat_cov = y_hat_cov.cpu().numpy()
 
             for i in range(y_hat_tr.shape[0]):
                 anc_i = anchors[i]
@@ -228,7 +236,10 @@ def collect_averaged_predictions(loader, model, device, infer_args, target_mean,
 
             y_hat_tr = y_hat_tr.cpu().numpy()
             if y_hat_cov is not None:
-                y_hat_cov = np.exp(y_hat_cov.cpu().numpy())
+                y_hat_cov = torch.exp(y_hat_cov)
+                if target_std is not None:
+                    y_hat_cov = y_hat_cov * target_std
+                y_hat_cov = y_hat_cov.cpu().numpy()
 
             for i in range(y_hat_tr.shape[0]):
                 anc_i = anchors[i]
@@ -309,6 +320,11 @@ def main():
         help="Optional path for one raw model-output row per clip.",
     )
     parser.add_argument(
+        "--save_raw_outputs",
+        action="store_true",
+        help="Save one raw model-output row per clip. Skipping this avoids a second forward pass.",
+    )
+    parser.add_argument(
         "--num_workers",
         type=int,
         default=0,
@@ -334,11 +350,14 @@ def main():
     sequence_dir = Path(args_cli.sequence_dir)
     checkpoint_file = Path(args_cli.checkpoint_file)
     output_file = Path(args_cli.output_file)
-    raw_output_file = (
-        Path(args_cli.raw_model_output_file)
-        if args_cli.raw_model_output_file is not None
-        else raw_model_output_path(output_file)
-    )
+    save_raw_outputs = args_cli.save_raw_outputs or args_cli.raw_model_output_file is not None
+    raw_output_file = None
+    if save_raw_outputs:
+        raw_output_file = (
+            Path(args_cli.raw_model_output_file)
+            if args_cli.raw_model_output_file is not None
+            else raw_model_output_path(output_file)
+        )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -376,13 +395,16 @@ def main():
         rows_pred, timestamps = collect_last_step_predictions(
             loader, model, device, infer_args, target_mean, target_std, args_cli.save_covariance
         )
-    raw_model_outputs = collect_raw_model_outputs(
-        loader, model, device, infer_args, target_mean, target_std
-    )
+    raw_model_outputs = None
+    if save_raw_outputs:
+        raw_model_outputs = collect_raw_model_outputs(
+            loader, model, device, infer_args, target_mean, target_std
+        )
     out = np.concatenate([timestamps, rows_pred], axis=1)
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    raw_output_file.parent.mkdir(parents=True, exist_ok=True)
+    if raw_output_file is not None:
+        raw_output_file.parent.mkdir(parents=True, exist_ok=True)
     
     if args_cli.save_covariance:
         header = "t0_us t1_us px py pz sigma_x sigma_y sigma_z"
@@ -398,18 +420,23 @@ def main():
         header=header,
         comments="",
     )
-    np.savetxt(
-        raw_output_file,
-        raw_model_outputs,
-        fmt=(["%d", "%d"] + ["%.10f"] * 3) * (infer_args["clip_len"] - 1),
-        header=raw_model_output_header(infer_args["clip_len"]),
-        comments="",
-    )
+    if raw_output_file is not None and raw_model_outputs is not None:
+        np.savetxt(
+            raw_output_file,
+            raw_model_outputs,
+            fmt=(["%d", "%d"] + ["%.10f"] * 3) * (infer_args["clip_len"] - 1),
+            header=raw_model_output_header(infer_args["clip_len"]),
+            comments="",
+        )
 
     print(f"Saved: {output_file}")
-    print(f"Saved raw model outputs: {raw_output_file}")
+    if raw_output_file is not None:
+        print(f"Saved raw model outputs: {raw_output_file}")
     print(f"num_relative_motions: {len(rows_pred)}")
-    print(f"num_raw_model_output_clips: {len(raw_model_outputs)}")
+    if raw_model_outputs is not None:
+        print(f"num_raw_model_output_clips: {len(raw_model_outputs)}")
+    else:
+        print("raw_model_outputs: skipped")
     print(f"average_overlaps: {args_cli.average_overlaps}")
 
 

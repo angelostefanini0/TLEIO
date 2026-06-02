@@ -1,7 +1,6 @@
 import argparse
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -66,37 +65,37 @@ def main() -> None:
             f"Expected files: {', '.join(REQUIRED_SEQUENCE_FILES)}"
         )
 
-    with tempfile.TemporaryDirectory(prefix="batch_test_raw_") as tmp_dir:
-        tmp_dir = Path(tmp_dir)
-        for sequence_dir in valid_sequences:
-            output_file = output_dir / f"{sequence_dir.name}.txt"
-            if args.raw_output:
-                raw_output_file = output_dir / f"{sequence_dir.name}_raw.txt"
-            else:
-                raw_output_file = tmp_dir / f"{sequence_dir.name}_raw.txt"
+    for sequence_dir in valid_sequences:
+        output_file = output_dir / f"{sequence_dir.name}.txt"
 
-            print(f"Testing {sequence_dir.name} -> {output_file}")
-            command = [
-                sys.executable,
-                str(test_script),
-                "--sequence_dir",
-                str(sequence_dir),
-                "--checkpoint_file",
-                str(checkpoint_file),
-                "--output_file",
-                str(output_file),
-                "--raw_model_output_file",
-                str(raw_output_file),
-            ]
-            if args.average_overlaps:
-                command.append("--average_overlaps")
-            command.extend(extra_args)
+        print(f"Testing {sequence_dir.name} -> {output_file}")
+        command = [
+            sys.executable,
+            str(test_script),
+            "--sequence_dir",
+            str(sequence_dir),
+            "--checkpoint_file",
+            str(checkpoint_file),
+            "--output_file",
+            str(output_file),
+        ]
+        if args.raw_output:
+            command.extend(
+                [
+                    "--save_raw_outputs",
+                    "--raw_model_output_file",
+                    str(output_dir / f"{sequence_dir.name}_raw.txt"),
+                ]
+            )
+        if args.average_overlaps:
+            command.append("--average_overlaps")
+        command.extend(extra_args)
 
-            try:
-                subprocess.run(command, check=True)
-            except subprocess.CalledProcessError as exc:
-                print(f"Error: sequence failed: {sequence_dir.name}", file=sys.stderr)
-                raise SystemExit(exc.returncode) from exc
+        try:
+            subprocess.run(command, check=True)
+        except subprocess.CalledProcessError as exc:
+            print(f"Error: sequence failed: {sequence_dir.name}", file=sys.stderr)
+            raise SystemExit(exc.returncode) from exc
 
 
 if __name__ == "__main__":

@@ -441,7 +441,10 @@ class NetworkRunner:
             tr_np = tr[0].cpu().numpy().astype(np.float64)
             sigmas = None
             if self.outputs_per_motion == 6:
-                sigmas = np.exp(y_hat[..., 3:][0].cpu().numpy()).astype(np.float64)
+                sigma_tensor = torch.exp(y_hat[..., 3:])
+                if self.target_std is not None:
+                    sigma_tensor = sigma_tensor * self.target_std
+                sigmas = sigma_tensor[0].cpu().numpy().astype(np.float64)
         return tr_np, sigmas
 
     def inference_stats(self):
