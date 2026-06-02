@@ -7,6 +7,7 @@ import json
 import socketserver
 import sys
 import threading
+import time
 from collections import defaultdict, deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -410,6 +411,8 @@ class NetworkRunner:
         self.infer_args["device"] = str(self.device)
         self.outputs_per_motion = get_outputs_per_motion(self.infer_args)
         self.clip_len = int(self.infer_args["clip_len"])
+        self.inference_count = 0
+        self.inference_time_s = 0.0
         self.model, _ = build_model(self.infer_args, self.infer_args["model_params"])
 
         checkpoint = torch.load(checkpoint_file, map_location=self.device, weights_only=False)
@@ -423,7 +426,14 @@ class NetworkRunner:
         clip = torch.stack(list(voxel_window), dim=0).permute(1, 0, 2, 3).unsqueeze(0)
         with torch.no_grad():
             x = clip.to(self.device).float()
+            if self.device.type == "cuda":
+                torch.cuda.synchronize(self.device)
+            t0 = time.perf_counter()
             y_hat = self.model(x)
+            if self.device.type == "cuda":
+                torch.cuda.synchronize(self.device)
+            self.inference_time_s += time.perf_counter() - t0
+            self.inference_count += 1
             y_hat = y_hat.view(1, self.clip_len - 1, self.outputs_per_motion)
             tr = y_hat[..., :3]
             if self.target_mean is not None and self.target_std is not None:
@@ -433,6 +443,15 @@ class NetworkRunner:
             if self.outputs_per_motion == 6:
                 sigmas = np.exp(y_hat[..., 3:][0].cpu().numpy()).astype(np.float64)
         return tr_np, sigmas
+
+    def inference_stats(self):
+        mean_s = self.inference_time_s / max(self.inference_count, 1)
+        return {
+            "count": int(self.inference_count),
+            "total_s": float(self.inference_time_s),
+            "mean_ms": float(mean_s * 1000.0),
+            "hz": float(1.0 / mean_s) if self.inference_count > 0 and mean_s > 0.0 else None,
+        }
 
 
 class OnlineScaleAdapter:
@@ -1038,6 +1057,7 @@ def run(config: OnlineConfig):
         file_prefix=config.raw_sequence_dir.name,
         plot_projections=config.plot_projections,
     )
+    inference_stats = network.inference_stats()
     summary = {
         "num_anchors": int(len(anchors_us)),
         "num_updates_attempted": int(max(0, len(anchors_us) - 4)),
@@ -1049,9 +1069,17 @@ def run(config: OnlineConfig):
         "show_online_visualization": bool(config.show_online_visualization),
         "online_visualization": bool(config.save_online_visualization),
         "serve_online_visualization": bool(config.serve_online_visualization),
+        "network_inference": inference_stats,
         "diagnostics": diagnostics,
     }
     (config.output_dir / "diagnostics.json").write_text(json.dumps(summary, indent=2))
+    if inference_stats["hz"] is not None:
+        print(
+            "Network inference | "
+            f"count={inference_stats['count']} | "
+            f"mean={inference_stats['mean_ms']:.3f} ms | "
+            f"hz={inference_stats['hz']:.2f}"
+        )
     print(json.dumps(summary, indent=2))
 
 
