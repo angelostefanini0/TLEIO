@@ -17,7 +17,7 @@ from src.spatial_math import (
     rotation_error_deg,
     rotvec_to_rotmat,
 )
-from scripts.utils.plotting import plot_relative_motion_inspection
+from scripts.utils.plotting import plot_covariance_error_cones, plot_relative_motion_inspection
 from scripts.utils.config import default_config_path, parse_args_with_config
 
 """
@@ -67,6 +67,113 @@ def translation_rel_to_T(pred_row: np.ndarray, gt_row: np.ndarray | None = None)
     return T_rel
 
 
+def gt_rows_by_timestamp(gt_rel: np.ndarray) -> dict[tuple[int, int], np.ndarray]:
+    keys = gt_rel[:, :2].astype(np.int64)
+    return {(int(t0), int(t1)): gt_rel[i] for i, (t0, t1) in enumerate(keys)}
+
+
+def match_prediction_to_gt(pred: np.ndarray, gt_rel: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    gt_lookup = gt_rows_by_timestamp(gt_rel)
+    matched_pred = []
+    matched_gt = []
+    for row in pred:
+        key = (int(row[0]), int(row[1]))
+        gt_row = gt_lookup.get(key)
+        if gt_row is None:
+            continue
+        matched_pred.append(row)
+        matched_gt.append(gt_row)
+
+    if not matched_pred:
+        return np.empty((0, pred.shape[1])), np.empty((0, gt_rel.shape[1]))
+    return np.stack(matched_pred, axis=0), np.stack(matched_gt, axis=0)
+
+
+def inspect_covariance_dataset(args) -> None:
+    rel_files = sorted(
+        path for path in args.rel_dir.glob(args.pattern)
+        if path.is_file()
+        and not path.stem.endswith("_raw")
+        and "raw_model_outputs" not in path.stem
+    )
+    all_errors = []
+    all_sigmas = []
+    used_sequences = []
+    skipped = []
+
+    for rel_file in rel_files:
+        seq_name = rel_file.stem
+        gt_rel_file = args.gt_rel_root / seq_name / "relative_motions.txt"
+        if not gt_rel_file.is_file():
+            skipped.append((seq_name, "missing gt relative_motions.txt"))
+            continue
+
+        pred = load_table(rel_file)
+        gt_rel = load_table(gt_rel_file)
+        if pred.shape[1] != 8:
+            skipped.append((seq_name, f"prediction has {pred.shape[1]} columns, expected 8"))
+            continue
+        if gt_rel.shape[1] != 8:
+            skipped.append((seq_name, f"gt_rel has {gt_rel.shape[1]} columns, expected 8"))
+            continue
+
+        matched_pred, matched_gt = match_prediction_to_gt(pred, gt_rel)
+        if len(matched_pred) == 0:
+            skipped.append((seq_name, "no matching timestamps"))
+            continue
+
+        all_errors.append(matched_pred[:, 2:5] - matched_gt[:, 2:5])
+        all_sigmas.append(matched_pred[:, 5:8])
+        used_sequences.append((seq_name, len(matched_pred), len(pred)))
+
+    if not all_errors:
+        details = "\n".join(f"{seq}: {reason}" for seq, reason in skipped[:20])
+        raise SystemExit(f"No covariance predictions could be aggregated.\n{details}")
+
+    save_dir = args.save_dir or Path("plots/covariance_dataset")
+    save_dir.mkdir(parents=True, exist_ok=True)
+    plot_path = save_dir / "covariance_error_cones_dataset.png"
+    stats = plot_covariance_error_cones(
+        rel_err_xyz=np.vstack(all_errors),
+        rel_sigma=np.vstack(all_sigmas),
+        save_path=plot_path,
+        title=f"Dataset Uncertainty vs Translation Error ({len(used_sequences)} sequences)",
+        max_points=args.max_points,
+        error_limit=args.error_limit,
+        sigma_limit=args.sigma_limit,
+    )
+
+    summary_path = save_dir / "covariance_error_cones_summary.txt"
+    axis_labels = ["x", "y", "z"]
+    with open(summary_path, "w", encoding="utf-8") as f:
+        f.write(f"plot: {plot_path}\n")
+        f.write(f"num_sequences: {len(used_sequences)}\n")
+        f.write(f"num_valid_rows: {stats['num_valid']}\n")
+        f.write(f"num_plotted_rows: {stats['num_plotted']}\n")
+        for i, label in enumerate(axis_labels):
+            f.write(
+                f"{label}: outside_3sigma_percent={stats['outside_percent'][i]:.6f} "
+                f"rms_error_m={stats['rms_error'][i]:.10f} "
+                f"mean_sigma_m={stats['mean_sigma'][i]:.10f}\n"
+            )
+        if skipped:
+            f.write("\nskipped:\n")
+            for seq_name, reason in skipped:
+                f.write(f"{seq_name}: {reason}\n")
+
+    print(f"Saved aggregate covariance plot: {plot_path}")
+    print(f"Saved summary: {summary_path}")
+    print(f"Sequences used: {len(used_sequences)}")
+    print(f"Rows used: {stats['num_valid']}")
+    print(
+        "Outside 3 sigma [%]: "
+        + ", ".join(
+            f"{label}={stats['outside_percent'][i]:.2f}"
+            for i, label in enumerate(axis_labels)
+        )
+    )
+
+
 def main():
     # PARSE ARGUMENTS 
     parser = argparse.ArgumentParser()
@@ -79,12 +186,33 @@ def main():
     
     parser.add_argument("--gt_rel", type=Path, default=None,
                         help="Optional GT relative motions used for rotations and relative-motion error.")
+    parser.add_argument("--rel_dir", type=Path, default=None,
+                        help="Dataset mode: directory of predicted relative-motion files.")
+    parser.add_argument("--gt_rel_root", type=Path, default=None,
+                        help="Dataset mode: root with <sequence>/relative_motions.txt files.")
+    parser.add_argument("--pattern", type=str, default="*.txt",
+                        help="Dataset mode: prediction filename glob.")
+    parser.add_argument("--max_points", type=int, default=200_000,
+                        help="Dataset covariance plot downsampling limit.")
+    parser.add_argument("--error_limit", type=float, default=None,
+                        help="Optional symmetric x-axis limit for covariance error-cone plots.")
+    parser.add_argument("--sigma_limit", type=float, default=None,
+                        help="Optional y-axis limit for covariance error-cone plots.")
     
     args = parse_args_with_config(
         parser,
         default_config_path("inspect_relative_motions"),
-        required=("gt", "rel"),
+        required=(),
     )
+
+    if args.rel_dir is not None:
+        if args.gt_rel_root is None:
+            raise SystemExit("--gt_rel_root is required when using --rel_dir.")
+        inspect_covariance_dataset(args)
+        return
+
+    if args.gt is None or args.rel is None:
+        raise SystemExit("--gt and --rel are required unless using dataset mode with --rel_dir.")
 
     # LOAD GT AND RELATIVE MOTIONS AND CHECK DIMENSIONS
     gt = load_table(args.gt)

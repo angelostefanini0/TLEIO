@@ -4,6 +4,96 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+def plot_covariance_error_cones(
+    rel_err_xyz: np.ndarray,
+    rel_sigma: np.ndarray,
+    save_path: Path | None,
+    title: str = "Predicted Uncertainty vs Translation Error",
+    max_points: int = 200_000,
+    error_limit: float | None = None,
+    sigma_limit: float | None = None,
+    random_seed: int = 0,
+) -> dict[str, np.ndarray | int]:
+    """Plot predicted per-axis sigmas against relative translation errors.
+
+    The dashed red boundary is the 3-sigma condition: points below it have
+    ``abs(error) > 3 * sigma`` and are counted as outside the bound.
+    """
+    rel_err_xyz = np.asarray(rel_err_xyz, dtype=np.float64)
+    rel_sigma = np.asarray(rel_sigma, dtype=np.float64)
+    if rel_err_xyz.shape != rel_sigma.shape or rel_err_xyz.ndim != 2 or rel_err_xyz.shape[1] != 3:
+        raise ValueError(
+            "Expected rel_err_xyz and rel_sigma with matching shape [N, 3], "
+            f"got {rel_err_xyz.shape} and {rel_sigma.shape}."
+        )
+
+    finite = np.isfinite(rel_err_xyz).all(axis=1) & np.isfinite(rel_sigma).all(axis=1)
+    nonnegative_sigma = (rel_sigma >= 0).all(axis=1)
+    valid = finite & nonnegative_sigma
+    rel_err_xyz = rel_err_xyz[valid]
+    rel_sigma = rel_sigma[valid]
+    if len(rel_err_xyz) == 0:
+        raise ValueError("No valid covariance/error rows to plot.")
+
+    outside_mask = np.abs(rel_err_xyz) > 3.0 * rel_sigma
+    outside_percent = outside_mask.mean(axis=0) * 100.0
+    rms_error = np.sqrt(np.mean(rel_err_xyz**2, axis=0))
+    mean_sigma = np.mean(rel_sigma, axis=0)
+
+    plot_err = rel_err_xyz
+    plot_sigma = rel_sigma
+    if max_points > 0 and len(plot_err) > max_points:
+        rng = np.random.default_rng(random_seed)
+        keep = rng.choice(len(plot_err), size=max_points, replace=False)
+        plot_err = plot_err[keep]
+        plot_sigma = plot_sigma[keep]
+
+    if error_limit is None:
+        q_error = np.nanpercentile(np.abs(plot_err), 99.5)
+        error_limit = max(float(q_error), 1e-6)
+    if sigma_limit is None:
+        q_sigma = np.nanpercentile(plot_sigma, 99.5)
+        sigma_limit = max(float(q_sigma), error_limit / 3.0, 1e-6)
+
+    labels = ["X", "Y", "Z"]
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4), sharey=True)
+    x_line = np.linspace(-error_limit, error_limit, 300)
+    y_line = np.abs(x_line) / 3.0
+
+    for i, label in enumerate(labels):
+        axes[i].scatter(
+            plot_err[:, i],
+            plot_sigma[:, i],
+            s=2,
+            alpha=0.35,
+            linewidths=0,
+        )
+        axes[i].plot(x_line, y_line, "r--", linewidth=1.0)
+        axes[i].set_xlim(-error_limit, error_limit)
+        axes[i].set_ylim(0.0, sigma_limit)
+        axes[i].set_xlabel(f"Error {label} [m]")
+        axes[i].grid(True, alpha=0.55)
+        axes[i].set_title(f"{outside_percent[i]:.2f}% outside 3 sigma")
+    axes[0].set_ylabel("Sigmas [m]")
+    fig.suptitle(title)
+    fig.tight_layout()
+
+    if save_path is not None:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=180, bbox_inches="tight")
+        plt.close(fig)
+    else:
+        plt.show()
+
+    return {
+        "num_valid": len(rel_err_xyz),
+        "num_plotted": len(plot_err),
+        "outside_percent": outside_percent,
+        "rms_error": rms_error,
+        "mean_sigma": mean_sigma,
+    }
+
+
 def plot_relative_motion_inspection(
     gt_ts: np.ndarray,
     gt_pos: np.ndarray,
@@ -108,6 +198,8 @@ def plot_relative_motion_inspection(
     else:
         fig6 = None
 
+    cone_stats = None
+
     plt.tight_layout()
 
     if save_dir is not None:
@@ -121,6 +213,18 @@ def plot_relative_motion_inspection(
             fig5.savefig(save_dir / "relative_uncertainty_sigma.png", dpi=150, bbox_inches="tight")
         if fig6 is not None:
             fig6.savefig(save_dir / "relative_error_with_uncertainty.png", dpi=150, bbox_inches="tight")
+            cone_stats = plot_covariance_error_cones(
+                rel_err_xyz=rel_err_xyz,
+                rel_sigma=rel_sigma,
+                save_path=save_dir / "relative_uncertainty_error_cones.png",
+                title=f"Uncertainty vs Translation Error ({error_ref_label})",
+            )
         print(f"Saved figures to {save_dir}")
+        if cone_stats is not None:
+            outside = cone_stats["outside_percent"]
+            print(
+                "Outside 3 sigma [%]: "
+                f"x={outside[0]:.2f}, y={outside[1]:.2f}, z={outside[2]:.2f}"
+            )
     else:
         plt.show()
