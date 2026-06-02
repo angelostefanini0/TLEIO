@@ -89,7 +89,9 @@ class MultiEventVoxelClipDataset(Dataset):
                  denoise_same_polarity_only: bool = False,
                  derotate: bool = False,
                  derotation_slices: int = 100,
-                 normalize_voxel_nonzero: bool = False):
+                 normalize_voxel_nonzero: bool = False,
+                 original_height: int = 480,
+                 original_width: int = 640):
         """Initialize the Event-to-Voxel clip dataset.
 
         Args:
@@ -131,8 +133,8 @@ class MultiEventVoxelClipDataset(Dataset):
         self.clip_len = clip_len
         self.patch_size = patch_size
         self.root_path = root_path
-        self.original_height = 480
-        self.original_width = 640
+        self.original_height = original_height
+        self.original_width = original_width
         
         #Downsampling
         self.downsampling_factor = downsampling_factor

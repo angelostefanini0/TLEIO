@@ -69,7 +69,6 @@ def get_outputs_per_motion(infer_args):
 def apply_precomputed_voxel_args(args_dict, dataset):
     for key in (
         "num_bins",
-        "downsampling_factor",
         "denoising",
         "denoise_dt_us",
         "denoise_radius",

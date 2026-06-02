@@ -34,6 +34,8 @@ def parse_args():
     parser.add_argument("--delta_t_ms", type=int, default=50)
     parser.add_argument("--num_bins", type=int, default=5)
     parser.add_argument("--downsampling_factor", type=float, default=1.0)
+    parser.add_argument("--original_height", type=int, default=480)
+    parser.add_argument("--original_width", type=int, default=640)
     parser.add_argument("--patch_size", type=int, default=16)
     parser.add_argument("--denoising", type=str2bool, default=False)
     parser.add_argument("--denoise_dt_us", type=int, default=1000)
@@ -106,6 +108,8 @@ def write_sequence_voxels(dataset, seq_idx, output_dir, args):
         "num_bins": args.num_bins,
         "height": dataset.new_height,
         "width": dataset.new_width,
+        "original_height": args.original_height,
+        "original_width": args.original_width,
         "downsampling_factor": args.downsampling_factor,
         "denoising": args.denoising,
         "denoise_dt_us": args.denoise_dt_us,
@@ -133,6 +137,8 @@ def main():
         num_bins=args.num_bins,
         clip_len=2,
         downsampling_factor=args.downsampling_factor,
+        original_height=args.original_height,
+        original_width=args.original_width,
         patch_size=args.patch_size,
         denoising=args.denoising,
         denoise_dt_us=args.denoise_dt_us,
