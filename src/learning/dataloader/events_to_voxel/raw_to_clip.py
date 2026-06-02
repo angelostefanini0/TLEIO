@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import bisect
+import warnings
 
 from ..representation.event_denoising import background_activity_filter_raw
 from ..representation.voxel_grid import VoxelGrid
@@ -120,7 +121,13 @@ class MultiEventVoxelClipDataset(Dataset):
 
         assert num_bins >= 1
         assert clip_len >= 1
-        assert delta_t_ms <= 100, 'if duration is higher than 100 ms'
+        if delta_t_ms > 100:
+            warnings.warn(
+                f"delta_t_ms={delta_t_ms} is larger than the training-time limit of 100 ms; "
+                "use this only for exploratory cross-dataset evaluation.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         assert root_path.is_dir()
 
 
