@@ -22,6 +22,7 @@ from scripts.utils.gt_training import (
     save_anchor_poses,
     save_relative_motions,
 )
+from src.spatial_math import quat_to_rotmat, rotmat_to_quat
 
 
 DEFAULT_EVENT_CHUNK_LINES = 1_000_000
@@ -53,6 +54,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--anchor_t_ms", type=float, default=50.0)
     parser.add_argument("--width", type=int, default=240)
     parser.add_argument("--height", type=int, default=180)
+    parser.add_argument(
+        "--pose-frame-remap",
+        choices=("none", "davis_to_tleio"),
+        default="none",
+        help="Apply a fixed camera-frame rotation to DAVIS GT quaternions before supervision.",
+    )
     parser.add_argument(
         "--event-chunk-lines",
         type=int,
@@ -178,6 +185,40 @@ def convert_seconds_table(path: Path, t0_us: int, last_event_us: int) -> np.ndar
     return converted
 
 
+def davis_to_tleio_frame_rotation() -> np.ndarray:
+    """Rotation from original DAVIS camera frame to the model/TLEIO frame.
+
+    This matches the empirical output-axis relation found on DAVIS:
+    model [x,y,z] ~= DAVIS [z,x,y], so DAVIS-frame GT is transformed before
+    relative-motion generation instead of remapping predictions after inference.
+    """
+    return np.array(
+        [
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ],
+        dtype=np.float64,
+    )
+
+
+def remap_pose_frame(gt: np.ndarray, remap: str) -> np.ndarray:
+    if remap == "none":
+        return gt
+    if remap != "davis_to_tleio":
+        raise ValueError(f"Unsupported pose-frame remap: {remap}")
+
+    out = gt.copy()
+    R_davis_model = davis_to_tleio_frame_rotation()
+    remapped_quat = []
+    for q in out[:, 4:8]:
+        R_world_davis = quat_to_rotmat(q)
+        R_world_model = R_world_davis @ R_davis_model
+        remapped_quat.append(rotmat_to_quat(R_world_model))
+    out[:, 4:8] = np.stack(remapped_quat, axis=0)
+    return out
+
+
 def write_groundtruth_and_supervision(
     raw_gt: Path,
     out_dir: Path,
@@ -185,10 +226,12 @@ def write_groundtruth_and_supervision(
     last_event_us: int,
     delta_t_ms: float,
     anchor_t_ms: float,
+    pose_frame_remap: str,
 ) -> None:
     gt = convert_seconds_table(raw_gt, t0_us, last_event_us)
     if gt.shape[1] != 8:
         raise ValueError(f"{raw_gt}: expected columns t px py pz qx qy qz qw.")
+    gt = remap_pose_frame(gt, pose_frame_remap)
 
     stamped_gt = out_dir / "stamped_groundtruth.txt"
     np.savetxt(stamped_gt, gt, fmt=["%d"] + ["%.10f"] * 7)
@@ -206,6 +249,8 @@ def write_groundtruth_and_supervision(
     print(f"GT poses:           {len(ts_gt)}")
     print(f"Anchors generated:  {len(anchors_us)}")
     print(f"Relative motions:   {len(rel)}")
+    if pose_frame_remap != "none":
+        print(f"Pose frame remap:   {pose_frame_remap}")
 
 
 def write_imu_if_present(raw_imu: Path, out_dir: Path, t0_us: int, last_event_us: int) -> None:
@@ -259,6 +304,7 @@ def process_sequence(seq_dir: Path, out_root: Path, args: argparse.Namespace) ->
         last_event_us=last_event_us,
         delta_t_ms=args.delta_t_ms,
         anchor_t_ms=args.anchor_t_ms,
+        pose_frame_remap=args.pose_frame_remap,
     )
     write_imu_if_present(seq_dir / "imu.txt", out_dir, t0_us, last_event_us)
     if (seq_dir / "calib.txt").exists():
