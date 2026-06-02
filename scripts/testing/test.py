@@ -297,7 +297,8 @@ def raw_model_output_header(clip_len: int):
 
 
 def should_apply_eds_axis_remap(sequence_dir: Path) -> bool:
-    return any(part.lower() == "eds" for part in sequence_dir.resolve().parts)
+    remap_datasets = {"eds", "davis240c"}
+    return any(part.lower() in remap_datasets for part in sequence_dir.resolve().parts)
 
 
 def remap_eds_prediction_axes(rows_pred: np.ndarray) -> np.ndarray:
