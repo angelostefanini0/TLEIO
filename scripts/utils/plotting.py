@@ -15,10 +15,10 @@ def plot_covariance_error_cones(
     sigma_multiplier: float = 3.0,
     random_seed: int = 0,
 ) -> dict[str, np.ndarray | int]:
-    """Plot predicted per-axis sigmas against relative translation errors.
+    """Plot predicted translation sigma norm against relative translation error norm.
 
     The dashed red boundary is the n-sigma condition: points below it have
-    ``abs(error) > n * sigma`` and are counted as outside the bound.
+    ``||error|| > n * ||sigma||`` and are counted as outside the bound.
     """
     rel_err_xyz = np.asarray(rel_err_xyz, dtype=np.float64)
     rel_sigma = np.asarray(rel_sigma, dtype=np.float64)
@@ -39,13 +39,15 @@ def plot_covariance_error_cones(
     if sigma_multiplier <= 0:
         raise ValueError(f"sigma_multiplier must be positive, got {sigma_multiplier}.")
 
-    outside_mask = np.abs(rel_err_xyz) > sigma_multiplier * rel_sigma
-    outside_percent = outside_mask.mean(axis=0) * 100.0
-    rms_error = np.sqrt(np.mean(rel_err_xyz**2, axis=0))
-    mean_sigma = np.mean(rel_sigma, axis=0)
+    error_norm = np.linalg.norm(rel_err_xyz, axis=1)
+    sigma_norm = np.linalg.norm(rel_sigma, axis=1)
+    outside_mask = error_norm > sigma_multiplier * sigma_norm
+    outside_percent = float(outside_mask.mean() * 100.0)
+    rms_error = float(np.sqrt(np.mean(error_norm**2)))
+    mean_sigma = float(np.mean(sigma_norm))
 
-    plot_err = rel_err_xyz
-    plot_sigma = rel_sigma
+    plot_err = error_norm
+    plot_sigma = sigma_norm
     if max_points > 0 and len(plot_err) > max_points:
         rng = np.random.default_rng(random_seed)
         keep = rng.choice(len(plot_err), size=max_points, replace=False)
@@ -53,32 +55,23 @@ def plot_covariance_error_cones(
         plot_sigma = plot_sigma[keep]
 
     if error_limit is None:
-        q_error = np.nanpercentile(np.abs(plot_err), 99.5)
+        q_error = np.nanpercentile(plot_err, 99.5)
         error_limit = max(float(q_error), 1e-6)
     if sigma_limit is None:
         q_sigma = np.nanpercentile(plot_sigma, 99.5)
         sigma_limit = max(float(q_sigma), error_limit / 3.0, 1e-6)
 
-    labels = ["X", "Y", "Z"]
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4), sharey=True)
-    x_line = np.linspace(-error_limit, error_limit, 300)
-    y_line = np.abs(x_line) / sigma_multiplier
-
-    for i, label in enumerate(labels):
-        axes[i].scatter(
-            plot_err[:, i],
-            plot_sigma[:, i],
-            s=2,
-            alpha=0.35,
-            linewidths=0,
-        )
-        axes[i].plot(x_line, y_line, "r--", linewidth=1.0)
-        axes[i].set_xlim(-error_limit, error_limit)
-        axes[i].set_ylim(0.0, sigma_limit)
-        axes[i].set_xlabel(f"Error {label} [m]")
-        axes[i].grid(True, alpha=0.55)
-        axes[i].set_title(f"{outside_percent[i]:.2f}% outside {sigma_multiplier:g} sigma")
-    axes[0].set_ylabel("Sigmas [m]")
+    fig, ax = plt.subplots(figsize=(6, 5))
+    x_line = np.linspace(0.0, error_limit, 300)
+    y_line = x_line / sigma_multiplier
+    ax.scatter(plot_err, plot_sigma, s=2, alpha=0.35, linewidths=0)
+    ax.plot(x_line, y_line, "r--", linewidth=1.0)
+    ax.set_xlim(0.0, error_limit)
+    ax.set_ylim(0.0, sigma_limit)
+    ax.set_xlabel("||Error|| [m]")
+    ax.set_ylabel("||Sigma|| [m]")
+    ax.grid(True, alpha=0.55)
+    ax.set_title(f"{outside_percent:.2f}% outside {sigma_multiplier:g} sigma")
     fig.suptitle(title)
     fig.tight_layout()
 
@@ -230,7 +223,7 @@ def plot_relative_motion_inspection(
             outside = cone_stats["outside_percent"]
             print(
                 f"Outside {sigma_multiplier:g} sigma [%]: "
-                f"x={outside[0]:.2f}, y={outside[1]:.2f}, z={outside[2]:.2f}"
+                f"norm={outside:.2f}"
             )
     else:
         plt.show()

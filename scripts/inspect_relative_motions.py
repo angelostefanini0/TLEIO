@@ -145,18 +145,16 @@ def inspect_covariance_dataset(args) -> None:
     )
 
     summary_path = save_dir / "covariance_error_cones_summary.txt"
-    axis_labels = ["x", "y", "z"]
     with open(summary_path, "w", encoding="utf-8") as f:
         f.write(f"plot: {plot_path}\n")
         f.write(f"num_sequences: {len(used_sequences)}\n")
         f.write(f"num_valid_rows: {stats['num_valid']}\n")
         f.write(f"num_plotted_rows: {stats['num_plotted']}\n")
-        for i, label in enumerate(axis_labels):
-            f.write(
-                f"{label}: outside_3sigma_percent={stats['outside_percent'][i]:.6f} "
-                f"rms_error_m={stats['rms_error'][i]:.10f} "
-                f"mean_sigma_m={stats['mean_sigma'][i]:.10f}\n"
-            )
+        f.write(
+            f"norm: outside_{args.sigma_multiplier:g}sigma_percent={stats['outside_percent']:.6f} "
+            f"rms_error_m={stats['rms_error']:.10f} "
+            f"mean_sigma_m={stats['mean_sigma']:.10f}\n"
+        )
         if skipped:
             f.write("\nskipped:\n")
             for seq_name, reason in skipped:
@@ -168,10 +166,7 @@ def inspect_covariance_dataset(args) -> None:
     print(f"Rows used: {stats['num_valid']}")
     print(
         f"Outside {args.sigma_multiplier:g} sigma [%]: "
-        + ", ".join(
-            f"{label}={stats['outside_percent'][i]:.2f}"
-            for i, label in enumerate(axis_labels)
-        )
+        f"norm={stats['outside_percent']:.2f}"
     )
 
 
