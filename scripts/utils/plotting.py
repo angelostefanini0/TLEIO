@@ -5,13 +5,13 @@ import numpy as np
 
 
 POSTER_COLORS = {
-    "blue": "#2B61B1",
-    "light_blue": "#9BB7F4",
-    "panel": "#EEF3FF",
-    "red": "#D64B5F",
-    "purple": "#7C5CC4",
-    "grid": "#8C97A8",
-    "text": "#1F2937",
+    "blue": "#2563A9",
+    "light_blue": "#7EA6E0",
+    "panel": "#FFFFFF",
+    "red": "#C93F4A",
+    "purple": "#6B7280",
+    "grid": "#D0D5DD",
+    "text": "#111827",
 }
 
 
@@ -73,17 +73,16 @@ def plot_covariance_error_cones(
         sigma_limit = max(float(q_sigma), error_limit / 3.0, 1e-6)
 
     fig, ax = plt.subplots(figsize=(6, 5), facecolor="white")
-    ax.set_facecolor(POSTER_COLORS["panel"])
     x_line = np.linspace(0.0, error_limit, 300)
     y_line = x_line / sigma_multiplier
-    ax.scatter(plot_err, plot_sigma, s=3, alpha=0.35, linewidths=0, color=POSTER_COLORS["red"])
-    ax.plot(x_line, y_line, color=POSTER_COLORS["blue"], linestyle="--", linewidth=1.3)
+    ax.scatter(plot_err, plot_sigma, s=3, alpha=0.28, linewidths=0, color=POSTER_COLORS["blue"])
+    ax.plot(x_line, y_line, color=POSTER_COLORS["red"], linestyle="--", linewidth=1.2)
     ax.set_xlim(0.0, error_limit)
     ax.set_ylim(0.0, sigma_limit)
     ax.set_xlabel("||Error|| [m]")
     ax.set_ylabel("||Sigma|| [m]")
-    ax.grid(True, color=POSTER_COLORS["grid"], alpha=0.32, linewidth=0.8)
-    ax.set_title(f"{outside_percent:.2f}% outside {sigma_multiplier:g} sigma", color=POSTER_COLORS["text"])
+    ax.grid(True, color=POSTER_COLORS["grid"], alpha=0.65, linewidth=0.7)
+    ax.set_title(f"{outside_percent:.2f}% outside {sigma_multiplier:g} sigma", color=POSTER_COLORS["text"], fontsize=12)
     fig.suptitle(title)
     fig.tight_layout()
 
@@ -124,7 +123,7 @@ def plot_relative_motion_inspection(
 
     fig1, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
     labels = ["x", "y", "z"]
-    sigma_colors = [POSTER_COLORS["blue"], POSTER_COLORS["light_blue"], POSTER_COLORS["purple"]]
+    sigma_colors = [POSTER_COLORS["blue"], POSTER_COLORS["blue"], POSTER_COLORS["blue"]]
     for i in range(3):
         axes[i].plot(t_gt, gt_pos[:, i], label="raw stamped GT")
         axes[i].plot(t_anchor, ref_pos[:, i], "--", label="GT at anchor times")
@@ -182,53 +181,52 @@ def plot_relative_motion_inspection(
         fig4 = None
 
     if rel_sigma is not None:
-        fig5, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+        fig5, axes = plt.subplots(3, 1, figsize=(11, 7.2), sharex=True)
         for i, label in enumerate(labels):
-            axes[i].set_facecolor(POSTER_COLORS["panel"])
             axes[i].plot(
                 t_err,
                 rel_sigma[:, i],
                 label=f"sigma {label}",
                 color=sigma_colors[i],
-                linewidth=1.8,
+                linewidth=1.4,
             )
             axes[i].set_ylabel(f"sigma_{label} [m]")
-            axes[i].grid(True, color=POSTER_COLORS["grid"], alpha=0.32, linewidth=0.8)
-            axes[i].legend()
+            axes[i].grid(True, color=POSTER_COLORS["grid"], alpha=0.65, linewidth=0.7)
+            axes[i].legend(loc="upper right", frameon=False, fontsize=9)
         axes[-1].set_xlabel("time [s]")
-        fig5.suptitle("Predicted Translation Uncertainty", color=POSTER_COLORS["text"])
+        fig5.suptitle("Predicted Translation Uncertainty", color=POSTER_COLORS["text"], fontsize=13)
     else:
         fig5 = None
 
     if rel_err_xyz is not None and rel_sigma is not None:
-        fig6, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+        fig6, axes = plt.subplots(3, 1, figsize=(11, 7.2), sharex=True)
         for i, label in enumerate(labels):
             sigma_i = rel_sigma[:, i]
-            axes[i].set_facecolor(POSTER_COLORS["panel"])
             axes[i].plot(
                 t_err,
                 rel_err_xyz[:, i],
                 label=f"error {label}",
                 color=POSTER_COLORS["red"],
-                linewidth=1.5,
+                linewidth=1.2,
             )
             axes[i].fill_between(
                 t_err,
                 -sigma_i,
                 sigma_i,
-                color=sigma_colors[i],
-                alpha=0.24,
+                color=POSTER_COLORS["blue"],
+                alpha=0.13,
                 label=f"+/- sigma {label}",
             )
-            axes[i].plot(t_err, sigma_i, color=sigma_colors[i], linewidth=0.9)
-            axes[i].plot(t_err, -sigma_i, color=sigma_colors[i], linewidth=0.9)
+            axes[i].plot(t_err, sigma_i, color=POSTER_COLORS["blue"], linewidth=0.8)
+            axes[i].plot(t_err, -sigma_i, color=POSTER_COLORS["blue"], linewidth=0.8)
             axes[i].set_ylabel(f"e{label} [m]")
-            axes[i].grid(True, color=POSTER_COLORS["grid"], alpha=0.32, linewidth=0.8)
-            axes[i].legend()
+            axes[i].grid(True, color=POSTER_COLORS["grid"], alpha=0.65, linewidth=0.7)
+            axes[i].legend(loc="upper right", frameon=False, fontsize=9)
         axes[-1].set_xlabel("time [s]")
         fig6.suptitle(
             f"Translation Error with Predicted Uncertainty vs {error_ref_label}",
             color=POSTER_COLORS["text"],
+            fontsize=13,
         )
     else:
         fig6 = None
