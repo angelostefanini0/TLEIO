@@ -120,6 +120,7 @@ def plot_relative_motion_inspection(
     t_gt = (gt_ts - gt_ts[0]) * 1e-6
     t_anchor = (anchor_ts - gt_ts[0]) * 1e-6
     t_err = (rel_t1 - gt_ts[0]) * 1e-6
+    sequence_title = f" ({save_dir.name})" if save_dir is not None else ""
 
     fig1, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
     labels = ["x", "y", "z"]
@@ -199,34 +200,33 @@ def plot_relative_motion_inspection(
         fig5 = None
 
     if rel_err_xyz is not None and rel_sigma is not None:
-        fig6, axes = plt.subplots(3, 1, figsize=(11, 7.2), sharex=True)
+        fig6, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
         for i, label in enumerate(labels):
             sigma_i = rel_sigma[:, i]
             axes[i].plot(
                 t_err,
                 rel_err_xyz[:, i],
-                label=f"error {label}",
-                color=POSTER_COLORS["red"],
-                linewidth=1.2,
+                label=f"error_{label}",
+                color="tab:blue",
+                linewidth=1.0,
             )
             axes[i].fill_between(
                 t_err,
                 -sigma_i,
                 sigma_i,
-                color=POSTER_COLORS["blue"],
-                alpha=0.13,
-                label=f"+/- sigma {label}",
+                color="tab:blue",
+                alpha=0.22,
+                linewidth=0.0,
+                edgecolor="none",
+                label=f"+/- sigma_{label}",
             )
-            axes[i].plot(t_err, sigma_i, color=POSTER_COLORS["blue"], linewidth=0.8)
-            axes[i].plot(t_err, -sigma_i, color=POSTER_COLORS["blue"], linewidth=0.8)
             axes[i].set_ylabel(f"e{label} [m]")
-            axes[i].grid(True, color=POSTER_COLORS["grid"], alpha=0.65, linewidth=0.7)
-            axes[i].legend(loc="upper right", frameon=False, fontsize=9)
+            axes[i].grid(True)
+            axes[i].legend(loc="upper left", fontsize=8)
         axes[-1].set_xlabel("time [s]")
         fig6.suptitle(
-            f"Translation Error with Predicted Uncertainty vs {error_ref_label}",
-            color=POSTER_COLORS["text"],
-            fontsize=13,
+            f"Translation Error with Predicted Uncertainty vs {error_ref_label}{sequence_title}",
+            fontsize=10,
         )
     else:
         fig6 = None
