@@ -793,7 +793,7 @@ def main() -> None:
             "gravity_world_mps2": (0.0, 0.0, -9.80665)
         }
     json_params = {}
-    json_path = ROOT / "outputs" / "tuning" / args.sequence / "best_filter_params.json"
+    json_path = ROOT / "outputtestv7"/ args.sequence / "best_filter_params.json"
     
     if json_path.exists():
         with open(json_path, "r", encoding="utf-8") as f:

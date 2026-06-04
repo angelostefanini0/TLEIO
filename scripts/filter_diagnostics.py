@@ -138,16 +138,16 @@ def save_trajectory_comparison_plot(
         axis = axes[row, col]
         axis.plot(t_rel, gt_positions[:, axis_idx], label=f"GT {label}", color="tab:blue")
         if regressed_positions is not None:
-            axis.plot(t_rel, regressed_positions[:, axis_idx], label=f"Regressed {label}", color="red")
+            axis.plot(t_rel, regressed_positions[:, axis_idx], label=f"EventsFormer {label}", color="red")
         if imu_positions is not None:
             axis.plot(t_rel, imu_positions[:, axis_idx], label=f"IMU {label}", color="tab:purple", linestyle=":")
-        axis.plot(t_rel, estimated_positions[:, axis_idx], label=f"EKF {label}", color="tab:green")
+        axis.plot(t_rel, estimated_positions[:, axis_idx], label=f"TLEIO {label}", color="tab:green")
         
         if ate_positions is not None:
             min_len = min(len(t_rel), len(ate_positions))
-            axis.plot(t_rel[:min_len], ate_positions[:min_len, axis_idx], label=f"EKF (RPG ATE) {label}", color="tab:red", linestyle="-.")
+            axis.plot(t_rel[:min_len], ate_positions[:min_len, axis_idx], label=f"TLEIO (RPG ATE) {label}", color="tab:red", linestyle="-.")
         if aa_regressed_trajectory is not None:
-            axis.plot(t_rel, aa_regressed_trajectory[:, axis_idx], label=f"Transformer ATE Aligned {label}", color="y", linestyle="--")
+            axis.plot(t_rel, aa_regressed_trajectory[:, axis_idx], label=f"EventsFormer ATE Aligned {label}", color="y", linestyle="--")
 
         axis.set_title(f"{label.upper()} Position")
         axis.set_xlabel("time [s]")
@@ -158,7 +158,7 @@ def save_trajectory_comparison_plot(
     position_error = np.linalg.norm(estimated_positions - gt_positions, axis=1)
     if regressed_positions is not None:
         regressed_error = np.linalg.norm(regressed_positions - gt_positions, axis=1)
-        axes[1, 1].plot(t_rel, regressed_error, color="tab:orange", linestyle="--", label="Regressed Error")
+        axes[1, 1].plot(t_rel, regressed_error, color="tab:orange", linestyle="--", label="EventsFormer Error")
 
     if imu_positions is not None:
         imu_error = np.linalg.norm(imu_positions - gt_positions, axis=1)
@@ -167,9 +167,9 @@ def save_trajectory_comparison_plot(
     if ate_positions is not None:
         min_len = min(len(gt_positions), len(ate_positions))
         ate_error = np.linalg.norm(ate_positions[:min_len] - gt_positions[:min_len], axis=1)
-        axes[1, 1].plot(t_rel[:min_len], ate_error, color="tab:red", linestyle="-.", label="EKF (RPG ATE) Error")
+        axes[1, 1].plot(t_rel[:min_len], ate_error, color="tab:red", linestyle="-.", label="TLEIO (RPG ATE) Error")
         
-    axes[1, 1].plot(t_rel, position_error, color="tab:red", label="EKF Error")
+    axes[1, 1].plot(t_rel, position_error, color="tab:red", label="TLEIO Error")
     axes[1, 1].set_title("Total Position Error")
     axes[1, 1].set_xlabel("time [s]")
     axes[1, 1].set_ylabel("||p_est - p_gt|| [m]")
@@ -211,7 +211,7 @@ def save_rotation_comparison_plot(
         col = axis_idx % 2
         axis = axes[row, col]
         axis.plot(t_rel, gt_euler_deg[:, axis_idx], label=f"GT {label}", color="tab:blue")
-        axis.plot(t_rel, est_euler_deg[:, axis_idx], label=f"EKF {label}", color="tab:green")
+        axis.plot(t_rel, est_euler_deg[:, axis_idx], label=f"TLEIO {label}", color="tab:green")
         if imu_quaternions_xyzw is not None:
             axes[axis_idx//2, axis_idx%2].plot(t_rel, imu_euler_deg[:, axis_idx], color="tab:purple", linestyle=":", label=f"IMU {label}")
         axis.set_title(f"{label} Angle")
@@ -220,7 +220,7 @@ def save_rotation_comparison_plot(
         axis.grid(True)
         axis.legend()
 
-    axes[1, 1].plot(t_rel, rot_errors_deg, color="tab:red", label="EKF Error")
+    axes[1, 1].plot(t_rel, rot_errors_deg, color="tab:red", label="TLEIO Error")
     axes[1, 1].set_title("Absolute Rotation Error")
     axes[1, 1].set_xlabel("time [s]")
     axes[1, 1].set_ylabel("Geodesic Error [deg]")
@@ -252,26 +252,37 @@ def save_3d_trajectory_plot(
     ax.plot(gt_positions[:, 0], gt_positions[:, 1], gt_positions[:, 2], label="Ground Truth", color="tab:blue", linewidth=2)
     
     if regressed_positions is not None:
-        ax.plot(regressed_positions[:, 0], regressed_positions[:, 1], regressed_positions[:, 2], label="Regressed", color="red", linewidth=2)
+        ax.plot(regressed_positions[:, 0], regressed_positions[:, 1], regressed_positions[:, 2], label="EventsFormer", color="red", linewidth=2)
 
     if imu_positions is not None:
         ax.plot(imu_positions[:, 0], imu_positions[:, 1], imu_positions[:, 2], label="IMU Only", color="tab:purple", linestyle=":", linewidth=2)
     if aa_regressed_trajectory is not None:
-        ax.plot(aa_regressed_trajectory[:, 0], aa_regressed_trajectory[:, 1], aa_regressed_trajectory[:, 2], label="Transformer ATE Aligned", color="y", linestyle="--", linewidth=2)
+        ax.plot(aa_regressed_trajectory[:, 0], aa_regressed_trajectory[:, 1], aa_regressed_trajectory[:, 2], label="EventsFormer ATE Aligned", color="y", linestyle="--", linewidth=2)
 
-    ax.plot(estimated_positions[:, 0], estimated_positions[:, 1], estimated_positions[:, 2], label="EKF Estimated", color="tab:green", linewidth=2)
+    ax.plot(estimated_positions[:, 0], estimated_positions[:, 1], estimated_positions[:, 2], label="TLEIO", color="tab:green", linewidth=2)
     
     if ate_positions is not None:
         min_len = min(len(gt_positions), len(ate_positions))
-        ax.plot(ate_positions[:min_len, 0], ate_positions[:min_len, 1], ate_positions[:min_len, 2], label="EKF (RPG ATE Aligned)", color="tab:red", linestyle="-.", linewidth=2)
+        ax.plot(ate_positions[:min_len, 0], ate_positions[:min_len, 1], ate_positions[:min_len, 2], label="TLEIO (RPG ATE Aligned)", color="tab:red", linestyle="-.", linewidth=2)
         
     ax.scatter(*gt_positions[0], color="black", marker="o", s=60, label="Start", zorder=5)
     ax.scatter(*gt_positions[-1], color="red", marker="x", s=60, label="End", zorder=5)
-    ax.set_title("3D Trajectory Comparison", fontsize=18, pad=20)
-    ax.set_xlabel("X [m]", fontsize=16, labelpad=15)
-    ax.set_ylabel("Y [m]", fontsize=16, labelpad=15)
-    ax.set_zlabel("Z [m]", fontsize=16, labelpad=15)
-    ax.legend(fontsize=18, prop={'size': 18})
+    # ax.set_title("3D Trajectory Comparison")
+    # ax.set_xlabel("X [m]")
+    # ax.set_ylabel("Y [m]")
+    # ax.set_zlabel("Z [m]")
+    # ax.legend()
+    # Aumentato fontsize a 26 per compensare la dimensione della figura (10x10)
+    ax.set_title("3D Trajectory Comparison", fontsize=26, pad=20)
+    
+    # Mantieni il resto delle label proporzionate
+    ax.set_xlabel("X [m]", fontsize=14, labelpad=10)
+    ax.set_ylabel("Y [m]", fontsize=14, labelpad=10)
+    ax.set_zlabel("Z [m]", fontsize=14, labelpad=10)
+    
+    # Regola la dimensione dei numeri sugli assi
+    ax.tick_params(axis='both', which='major', labelsize=12)
+    ax.legend(loc="upper right", fontsize=18)
 
     max_range = np.array([
         gt_positions[:, 0].max() - gt_positions[:, 0].min(),
@@ -314,18 +325,18 @@ def save_projections_plot(
         ax.plot(gt_positions[:, idx1], gt_positions[:, idx2], label="Ground Truth", color="tab:blue")
         
         if regressed_positions is not None:
-            ax.plot(regressed_positions[:, idx1], regressed_positions[:, idx2], label="Regressed", color="red")
+            ax.plot(regressed_positions[:, idx1], regressed_positions[:, idx2], label="EventsFormer", color="red")
 
         if imu_positions is not None:
             ax.plot(imu_positions[:, idx1], imu_positions[:, idx2], label="IMU Only", color="tab:purple", linestyle=":", alpha=0.7)
         if aa_regressed_trajectory is not None:
-            ax.plot(aa_regressed_trajectory[:, idx1], aa_regressed_trajectory[:, idx2], label="Transformer ATE Aligned", color="y", linestyle="--")
+            ax.plot(aa_regressed_trajectory[:, idx1], aa_regressed_trajectory[:, idx2], label="EventsFormer ATE Aligned", color="y", linestyle="--")
 
-        ax.plot(estimated_positions[:, idx1], estimated_positions[:, idx2], label="EKF Estimated", color="tab:green")
+        ax.plot(estimated_positions[:, idx1], estimated_positions[:, idx2], label="TLEIO", color="tab:green")
         
         if ate_positions is not None:
             min_len = min(len(gt_positions), len(ate_positions))
-            ax.plot(ate_positions[:min_len, idx1], ate_positions[:min_len, idx2], label="EKF (RPG ATE)", color="tab:red", linestyle="-.")
+            ax.plot(ate_positions[:min_len, idx1], ate_positions[:min_len, idx2], label="TLEIO (RPG ATE)", color="tab:red", linestyle="-.")
             
         ax.scatter(gt_positions[0, idx1], gt_positions[0, idx2], color="black", marker="o", s=40, zorder=5)
         ax.scatter(gt_positions[-1, idx1], gt_positions[-1, idx2], color="red", marker="x", s=40, zorder=5)
@@ -362,7 +373,7 @@ def show_interactive_3d_plot(
     
     if regressed_trajectory is not None:
         reg_pos = regressed_trajectory[:, 1:4]
-        ax.plot(reg_pos[:, 0], reg_pos[:, 1], reg_pos[:, 2], label="Regressed", color="red", linewidth=2)
+        ax.plot(reg_pos[:, 0], reg_pos[:, 1], reg_pos[:, 2], label="EventsFormer", color="red", linewidth=2)
 
     if imu_trajectory is not None:
         imu_pos = imu_trajectory[:, 1:4]
@@ -370,12 +381,12 @@ def show_interactive_3d_plot(
 
     if aa_regressed_trajectory is not None:
         aa_pos = aa_regressed_trajectory[:, 1:4]
-        ax.plot(aa_pos[:, 0], aa_pos[:, 1], aa_pos[:, 2], label="Transformer ATE Aligned", color="y", linestyle="--", linewidth=2)
+        ax.plot(aa_pos[:, 0], aa_pos[:, 1], aa_pos[:, 2], label="EventsFormer ATE Aligned", color="y", linestyle="--", linewidth=2)
         
-    ax.plot(est_pos[:, 0], est_pos[:, 1], est_pos[:, 2], label="EKF Estimated", color="tab:green", linewidth=2)
+    ax.plot(est_pos[:, 0], est_pos[:, 1], est_pos[:, 2], label="TLEIO Estimated", color="tab:green", linewidth=2)
     if ate_positions is not None:
         min_len = min(len(gt_pos), len(ate_positions))
-        ax.plot(ate_positions[:min_len, 0], ate_positions[:min_len, 1], ate_positions[:min_len, 2], label="EKF (RPG ATE Aligned)", color="tab:red", linestyle="-.", linewidth=2)  
+        ax.plot(ate_positions[:min_len, 0], ate_positions[:min_len, 1], ate_positions[:min_len, 2], label="TLEIO (RPG ATE Aligned)", color="tab:red", linestyle="-.", linewidth=2)  
     ax.scatter(*gt_pos[0], color="black", marker="o", s=60, label="Start", zorder=5)
     ax.scatter(*gt_pos[-1], color="red", marker="x", s=60, label="End", zorder=5)
     

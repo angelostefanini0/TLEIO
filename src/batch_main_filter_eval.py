@@ -66,7 +66,8 @@ def dataset_specific_overrides(dataset: str) -> dict:
 
 
 def load_tuned_params(sequence: str, dataset: str = "") -> dict:
-    json_path = ROOT / "outputs" / "tuning" / sequence / "best_filter_params.json"
+    # json_path = ROOT / "outputs" / "tuning" / sequence / "best_filter_params.json"
+    json_path = ROOT / "outputtestv7"/ args.sequence / "best_filter_params.json"
     
     if not json_path.exists():
         print(f"  [!] File di tuning non trovato per {sequence}: {json_path}. Uso i default.")
