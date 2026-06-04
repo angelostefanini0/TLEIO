@@ -60,6 +60,9 @@ class RunnerConfig:
     plot_projections: bool = False
     plot_ate: bool = False 
     plot_aa_transformer: bool = False # Set via CLI argument to plot ATE aligned trajectory
+    plot_only_ate_aligned: bool = False
+    plot_only_network_imu: bool = False
+    plot_only_network_tleio: bool = False
     save_trajectory_file: bool = True
     save_diagnostic_plots: bool = True
 
@@ -705,6 +708,9 @@ def run_filter(config: RunnerConfig) -> dict:
         plot_projections=config.plot_projections,
         aa_regressed_trajectory=aa_regressed_trajectory,
         plot_ate=config.plot_ate,
+        plot_only_ate_aligned=config.plot_only_ate_aligned,
+        plot_only_network_imu=config.plot_only_network_imu,
+        plot_only_network_tleio=config.plot_only_network_tleio,
     )
 
     diagnostics["ate_transformer_m"] = ate_transformer
@@ -777,6 +783,21 @@ def parse_args():
         action="store_true",
         help="Plots the network output shifted and aligned according to the ATE Umeyama transformation (yellow dashed)."
     )
+    parser.add_argument(
+        "--plot_only_ate_aligned",
+        action="store_true",
+        help="In saved position plots, show only RPG ATE-aligned TLEIO and ground truth."
+    )
+    parser.add_argument(
+        "--plot_only_network_imu",
+        action="store_true",
+        help="In saved position plots, show only ground truth, network output, and IMU-only propagation."
+    )
+    parser.add_argument(
+        "--plot_only_network_tleio",
+        action="store_true",
+        help="In saved position plots, show only ground truth, EventsFormer, and TLEIO."
+    )
     return parser.parse_args()
 
 
@@ -807,12 +828,15 @@ def main() -> None:
         use_gt=args.gt, 
         dataset=args.dataset,
         sequence=args.sequence,
-        plot_transformer=args.plot_transformer,
+        plot_transformer=args.plot_transformer or args.plot_only_network_tleio,
         plot_imu=args.plot_imu,
         interactive_plot=args.interactive_plot,
         plot_projections=args.plot_projections,
-        plot_ate=args.plot_ate,
-        plot_aa_transformer=args.plot_aa_transformer,
+        plot_ate=args.plot_ate or args.plot_only_network_tleio,
+        plot_aa_transformer=args.plot_aa_transformer or args.plot_only_network_tleio,
+        plot_only_ate_aligned=args.plot_only_ate_aligned,
+        plot_only_network_imu=args.plot_only_network_imu,
+        plot_only_network_tleio=args.plot_only_network_tleio,
         **dataset_params,
         **json_params
     )

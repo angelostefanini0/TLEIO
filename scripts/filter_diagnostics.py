@@ -117,6 +117,14 @@ def rotation_error_deg(reference_quaternion_xyzw: np.ndarray, estimate_quaternio
     return float(np.rad2deg(2.0 * np.arccos(dot)))
 
 
+def short_sequence_name_from_path(path: Path, suffix: str) -> str:
+    name = path.stem.replace(suffix, "")
+    for token in reversed(name.split("_")):
+        if len(token) >= 3 and token[:2] in {"ME", "MH"} and token[2:].isdigit():
+            return token
+    return name
+
+
 def save_trajectory_comparison_plot(
     path: Path,
     gt_times_s: np.ndarray,
@@ -126,17 +134,173 @@ def save_trajectory_comparison_plot(
     imu_positions: np.ndarray | None = None,
     ate_positions: np.ndarray | None = None,
     aa_regressed_trajectory: np.ndarray | None = None,
+    plot_only_ate_aligned: bool = False,
+    plot_only_network_imu: bool = False,
+    plot_only_network_tleio: bool = False,
 ) -> Path:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     t_rel = gt_times_s - gt_times_s[0]
+    if plot_only_network_tleio:
+        if ate_positions is not None:
+            min_len = min(len(t_rel), len(gt_positions), len(ate_positions))
+            t_rel = t_rel[:min_len]
+            gt_positions = gt_positions[:min_len]
+            estimated_positions = ate_positions[:min_len]
+            if regressed_positions is not None:
+                regressed_positions = regressed_positions[:min_len]
+            if aa_regressed_trajectory is not None:
+                aa_regressed_trajectory = aa_regressed_trajectory[:min_len]
+        if aa_regressed_trajectory is not None:
+            regressed_positions = aa_regressed_trajectory
+
+        sequence_name = short_sequence_name_from_path(path, "_trajectory_comparison")
+        fig, axes = plt.subplots(3, 1, figsize=(13, 8.5), sharex=True)
+        line_handles = None
+        for axis_idx, label in enumerate(("x", "y", "z")):
+            gt_line, = axes[axis_idx].plot(
+                t_rel,
+                gt_positions[:, axis_idx],
+                label="Ground Truth",
+                color="tab:blue",
+                linewidth=1.8,
+            )
+            handles = [gt_line]
+            if regressed_positions is not None:
+                net_line, = axes[axis_idx].plot(
+                    t_rel,
+                    regressed_positions[:, axis_idx],
+                    label="EventsFormer",
+                    color="tab:red",
+                    linewidth=1.8,
+                )
+                handles.append(net_line)
+            tleio_line, = axes[axis_idx].plot(
+                t_rel,
+                estimated_positions[:, axis_idx],
+                label="TLEIO",
+                color="tab:green",
+                linewidth=1.8,
+            )
+            handles.append(tleio_line)
+            if line_handles is None:
+                line_handles = handles
+            axes[axis_idx].set_title(f"{label.upper()} Position", fontsize=16, pad=7)
+            axes[axis_idx].set_ylabel(f"{label} [m]", fontsize=12)
+            axes[axis_idx].grid(True, color="#9a9a9a", alpha=0.38, linewidth=0.8)
+            axes[axis_idx].tick_params(axis="both", labelsize=10)
+        axes[-1].set_xlabel("time [s]")
+        fig.suptitle(f"EventsFormer and TLEIO ({sequence_name})", fontsize=18, y=0.99)
+        if line_handles is not None:
+            axes[0].legend(handles=line_handles, loc="upper left", ncol=len(line_handles), frameon=True, fontsize=14)
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        return path
+
+    if plot_only_network_imu:
+        sequence_name = short_sequence_name_from_path(path, "_trajectory_comparison")
+        fig, axes = plt.subplots(3, 1, figsize=(13, 8.5), sharex=True)
+        line_handles = None
+        for axis_idx, label in enumerate(("x", "y", "z")):
+            gt_line, = axes[axis_idx].plot(
+                t_rel,
+                gt_positions[:, axis_idx],
+                label="Ground Truth",
+                color="tab:blue",
+                linewidth=1.8,
+            )
+            handles = [gt_line]
+            if regressed_positions is not None:
+                net_line, = axes[axis_idx].plot(
+                    t_rel,
+                    regressed_positions[:, axis_idx],
+                    label="Network",
+                    color="tab:red",
+                    linewidth=1.8,
+                )
+                handles.append(net_line)
+            if imu_positions is not None:
+                imu_line, = axes[axis_idx].plot(
+                    t_rel,
+                    imu_positions[:, axis_idx],
+                    label="IMU Only",
+                    color="tab:purple",
+                    linestyle=":",
+                    linewidth=1.8,
+                )
+                handles.append(imu_line)
+            if line_handles is None:
+                line_handles = handles
+            axes[axis_idx].set_title(f"{label.upper()} Position", fontsize=16, pad=7)
+            axes[axis_idx].set_ylabel(f"{label} [m]", fontsize=12)
+            axes[axis_idx].grid(True, color="#9a9a9a", alpha=0.38, linewidth=0.8)
+            axes[axis_idx].tick_params(axis="both", labelsize=10)
+        axes[-1].set_xlabel("time [s]")
+        fig.suptitle(f"Network and IMU Baselines ({sequence_name})", fontsize=18, y=0.99)
+        if line_handles is not None:
+            axes[0].legend(handles=line_handles, loc="upper left", ncol=len(line_handles), frameon=True, fontsize=14)
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        return path
+
+    if plot_only_ate_aligned and ate_positions is not None:
+        min_len = min(len(t_rel), len(gt_positions), len(ate_positions))
+        t_rel = t_rel[:min_len]
+        gt_positions = gt_positions[:min_len]
+        estimated_positions = ate_positions[:min_len]
+        regressed_positions = None
+        imu_positions = None
+        aa_regressed_trajectory = None
+        ate_positions = None
+
+        sequence_name = short_sequence_name_from_path(path, "_trajectory_comparison")
+        fig, axes = plt.subplots(3, 1, figsize=(13, 8.5), sharex=True)
+        line_handles = None
+        for axis_idx, label in enumerate(("x", "y", "z")):
+            gt_line, = axes[axis_idx].plot(
+                t_rel,
+                gt_positions[:, axis_idx],
+                label="Ground Truth",
+                color="tab:blue",
+                linewidth=1.8,
+            )
+            tleio_line, = axes[axis_idx].plot(
+                t_rel,
+                estimated_positions[:, axis_idx],
+                label="TLEIO",
+                color="tab:green",
+                linewidth=1.8,
+            )
+            if line_handles is None:
+                line_handles = [gt_line, tleio_line]
+            axes[axis_idx].set_title(f"{label.upper()} Position", fontsize=16, pad=7)
+            axes[axis_idx].set_ylabel(f"{label} [m]", fontsize=12)
+            axes[axis_idx].grid(True, color="#9a9a9a", alpha=0.38, linewidth=0.8)
+            axes[axis_idx].tick_params(axis="both", labelsize=10)
+        axes[-1].set_xlabel("time [s]")
+        fig.suptitle(f"Position Axes ({sequence_name})", fontsize=18, y=0.99)
+        if line_handles is not None:
+            axes[0].legend(
+                handles=line_handles,
+                loc="upper left",
+                ncol=2,
+                frameon=True,
+                fontsize=14,
+            )
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        return path
+
     fig, axes = plt.subplots(2, 2, figsize=(12, 9))
 
     for axis_idx, label in enumerate(("x", "y", "z")):
         row = axis_idx // 2
         col = axis_idx % 2
         axis = axes[row, col]
-        axis.plot(t_rel, gt_positions[:, axis_idx], label=f"GT {label}", color="tab:blue")
+        axis.plot(t_rel, gt_positions[:, axis_idx], label=f"Ground Truth {label}", color="tab:blue")
         if regressed_positions is not None:
             axis.plot(t_rel, regressed_positions[:, axis_idx], label=f"EventsFormer {label}", color="red")
         if imu_positions is not None:
@@ -243,9 +407,105 @@ def save_3d_trajectory_plot(
     imu_positions: np.ndarray | None = None,
     ate_positions: np.ndarray | None = None,
     aa_regressed_trajectory: np.ndarray | None = None,
+    plot_only_ate_aligned: bool = False,
+    plot_only_network_imu: bool = False,
+    plot_only_network_tleio: bool = False,
 ) -> Path:
 
     path.parent.mkdir(parents=True, exist_ok=True)
+    if plot_only_network_tleio:
+        if ate_positions is not None:
+            min_len = min(len(gt_positions), len(ate_positions))
+            gt_positions = gt_positions[:min_len]
+            estimated_positions = ate_positions[:min_len]
+            if regressed_positions is not None:
+                regressed_positions = regressed_positions[:min_len]
+            if aa_regressed_trajectory is not None:
+                aa_regressed_trajectory = aa_regressed_trajectory[:min_len]
+        if aa_regressed_trajectory is not None:
+            regressed_positions = aa_regressed_trajectory
+
+        fig = plt.figure(figsize=(10, 10))
+        ax = fig.add_subplot(111, projection="3d")
+
+        ax.plot(gt_positions[:, 0], gt_positions[:, 1], gt_positions[:, 2], label="Ground Truth", color="tab:blue", linewidth=2)
+        if regressed_positions is not None:
+            ax.plot(regressed_positions[:, 0], regressed_positions[:, 1], regressed_positions[:, 2], label="EventsFormer", color="tab:red", linewidth=2)
+        ax.plot(estimated_positions[:, 0], estimated_positions[:, 1], estimated_positions[:, 2], label="TLEIO", color="tab:green", linewidth=2)
+
+        ax.scatter(*gt_positions[0], color="black", marker="o", s=60, label="Start", zorder=5)
+        ax.scatter(*gt_positions[-1], color="red", marker="x", s=60, label="End", zorder=5)
+        sequence_name = short_sequence_name_from_path(path, "_trajectory_3d")
+        ax.set_title(f"3D Plot ({sequence_name})", fontsize=26, pad=20)
+        ax.set_xlabel("X [m]", fontsize=14, labelpad=10)
+        ax.set_ylabel("Y [m]", fontsize=14, labelpad=10)
+        ax.set_zlabel("Z [m]", fontsize=14, labelpad=10)
+        ax.tick_params(axis='both', which='major', labelsize=12)
+        ax.legend(loc="upper right", fontsize=18)
+
+        max_range = np.array([
+            gt_positions[:, 0].max() - gt_positions[:, 0].min(),
+            gt_positions[:, 1].max() - gt_positions[:, 1].min(),
+            gt_positions[:, 2].max() - gt_positions[:, 2].min(),
+        ]).max() / 2.0
+        mid_x = (gt_positions[:, 0].max() + gt_positions[:, 0].min()) * 0.5
+        mid_y = (gt_positions[:, 1].max() + gt_positions[:, 1].min()) * 0.5
+        mid_z = (gt_positions[:, 2].max() + gt_positions[:, 2].min()) * 0.5
+        ax.set_xlim(mid_x - max_range, mid_x + max_range)
+        ax.set_ylim(mid_y - max_range, mid_y + max_range)
+        ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+        fig.tight_layout()
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        return path
+
+    if plot_only_network_imu:
+        fig = plt.figure(figsize=(10, 10))
+        ax = fig.add_subplot(111, projection="3d")
+
+        ax.plot(gt_positions[:, 0], gt_positions[:, 1], gt_positions[:, 2], label="Ground Truth", color="tab:blue", linewidth=2)
+        if regressed_positions is not None:
+            ax.plot(regressed_positions[:, 0], regressed_positions[:, 1], regressed_positions[:, 2], label="Network", color="tab:red", linewidth=2)
+        if imu_positions is not None:
+            ax.plot(imu_positions[:, 0], imu_positions[:, 1], imu_positions[:, 2], label="IMU Only", color="tab:purple", linestyle=":", linewidth=2)
+
+        ax.scatter(*gt_positions[0], color="black", marker="o", s=60, label="Start", zorder=5)
+        ax.scatter(*gt_positions[-1], color="red", marker="x", s=60, label="End", zorder=5)
+        sequence_name = short_sequence_name_from_path(path, "_trajectory_3d")
+        ax.set_title(f"3D Plot ({sequence_name})", fontsize=26, pad=20)
+        ax.set_xlabel("X [m]", fontsize=14, labelpad=10)
+        ax.set_ylabel("Y [m]", fontsize=14, labelpad=10)
+        ax.set_zlabel("Z [m]", fontsize=14, labelpad=10)
+        ax.tick_params(axis='both', which='major', labelsize=12)
+        ax.legend(loc="upper right", fontsize=18)
+
+        max_range = np.array([
+            gt_positions[:, 0].max() - gt_positions[:, 0].min(),
+            gt_positions[:, 1].max() - gt_positions[:, 1].min(),
+            gt_positions[:, 2].max() - gt_positions[:, 2].min(),
+        ]).max() / 2.0
+        mid_x = (gt_positions[:, 0].max() + gt_positions[:, 0].min()) * 0.5
+        mid_y = (gt_positions[:, 1].max() + gt_positions[:, 1].min()) * 0.5
+        mid_z = (gt_positions[:, 2].max() + gt_positions[:, 2].min()) * 0.5
+        ax.set_xlim(mid_x - max_range, mid_x + max_range)
+        ax.set_ylim(mid_y - max_range, mid_y + max_range)
+        ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+        fig.tight_layout()
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        return path
+
+    if plot_only_ate_aligned and ate_positions is not None:
+        min_len = min(len(gt_positions), len(ate_positions))
+        gt_positions = gt_positions[:min_len]
+        estimated_positions = ate_positions[:min_len]
+        regressed_positions = None
+        imu_positions = None
+        aa_regressed_trajectory = None
+        ate_positions = None
+
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection="3d")
     
@@ -273,7 +533,8 @@ def save_3d_trajectory_plot(
     # ax.set_zlabel("Z [m]")
     # ax.legend()
     # Aumentato fontsize a 26 per compensare la dimensione della figura (10x10)
-    ax.set_title("3D Trajectory Comparison", fontsize=26, pad=20)
+    sequence_name = short_sequence_name_from_path(path, "_trajectory_3d")
+    ax.set_title(f"3D Plot ({sequence_name})", fontsize=26, pad=20)
     
     # Mantieni il resto delle label proporzionate
     ax.set_xlabel("X [m]", fontsize=14, labelpad=10)
@@ -310,31 +571,58 @@ def save_projections_plot(
     imu_positions: np.ndarray | None = None,
     ate_positions: np.ndarray | None = None,
     aa_regressed_trajectory: np.ndarray | None = None,
+    plot_only_ate_aligned: bool = False,
+    plot_only_network_imu: bool = False,
+    plot_only_network_tleio: bool = False,
 ) -> Path:
 
     path.parent.mkdir(parents=True, exist_ok=True)
+    if plot_only_ate_aligned and ate_positions is not None:
+        min_len = min(len(gt_positions), len(ate_positions))
+        gt_positions = gt_positions[:min_len]
+        estimated_positions = ate_positions[:min_len]
+        regressed_positions = None
+        imu_positions = None
+        aa_regressed_trajectory = None
+        ate_positions = None
+    elif plot_only_network_tleio:
+        if ate_positions is not None:
+            min_len = min(len(gt_positions), len(ate_positions))
+            gt_positions = gt_positions[:min_len]
+            estimated_positions = ate_positions[:min_len]
+            if regressed_positions is not None:
+                regressed_positions = regressed_positions[:min_len]
+            if aa_regressed_trajectory is not None:
+                aa_regressed_trajectory = aa_regressed_trajectory[:min_len]
+        if aa_regressed_trajectory is not None:
+            regressed_positions = aa_regressed_trajectory
+        imu_positions = None
+        ate_positions = None
+
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
+    sequence_name = short_sequence_name_from_path(path, "_projections")
     planes = [
-        (0, 1, "X", "Y", "XY Projection (Top View)"),
-        (0, 2, "X", "Z", "XZ Projection (Front View)"),
-        (1, 2, "Y", "Z", "YZ Projection (Side View)"),
+        (0, 1, "X", "Y", f"XY Projection ({sequence_name})"),
+        (0, 2, "X", "Z", f"XZ Projection ({sequence_name})"),
+        (1, 2, "Y", "Z", f"YZ Projection ({sequence_name})"),
     ]
 
     for ax, (idx1, idx2, label1, label2, title) in zip(axes, planes):
         ax.plot(gt_positions[:, idx1], gt_positions[:, idx2], label="Ground Truth", color="tab:blue")
         
         if regressed_positions is not None:
-            ax.plot(regressed_positions[:, idx1], regressed_positions[:, idx2], label="EventsFormer", color="red")
+            ax.plot(regressed_positions[:, idx1], regressed_positions[:, idx2], label="EventsFormer", color="tab:red")
 
-        if imu_positions is not None:
+        if imu_positions is not None and not plot_only_network_tleio:
             ax.plot(imu_positions[:, idx1], imu_positions[:, idx2], label="IMU Only", color="tab:purple", linestyle=":", alpha=0.7)
-        if aa_regressed_trajectory is not None:
+        if aa_regressed_trajectory is not None and not plot_only_network_imu and not plot_only_network_tleio:
             ax.plot(aa_regressed_trajectory[:, idx1], aa_regressed_trajectory[:, idx2], label="EventsFormer ATE Aligned", color="y", linestyle="--")
 
-        ax.plot(estimated_positions[:, idx1], estimated_positions[:, idx2], label="TLEIO", color="tab:green")
+        if not plot_only_network_imu:
+            ax.plot(estimated_positions[:, idx1], estimated_positions[:, idx2], label="TLEIO", color="tab:green")
         
-        if ate_positions is not None:
+        if ate_positions is not None and not plot_only_network_imu and not plot_only_network_tleio:
             min_len = min(len(gt_positions), len(ate_positions))
             ax.plot(ate_positions[:min_len, idx1], ate_positions[:min_len, idx2], label="TLEIO (RPG ATE)", color="tab:red", linestyle="-.")
             
@@ -421,6 +709,9 @@ def compute_filter_diagnostics(
     plot_projections: bool = False,
     aa_regressed_trajectory: np.ndarray | None = None,
     plot_ate: bool = False,
+    plot_only_ate_aligned: bool = False,
+    plot_only_network_imu: bool = False,
+    plot_only_network_tleio: bool = False,
 ) -> dict:
 
     est = np.asarray(estimated_trajectory, dtype=np.float64)
@@ -525,6 +816,9 @@ def compute_filter_diagnostics(
                 imu_positions=aligned_imu_positions,
                 ate_positions=ate_est_positions,
                 aa_regressed_trajectory=aligned_aa_regr_positions,
+                plot_only_ate_aligned=plot_only_ate_aligned,
+                plot_only_network_imu=plot_only_network_imu,
+                plot_only_network_tleio=plot_only_network_tleio,
             )
         )
         saved_files["rotation_plot"] = str(
@@ -545,6 +839,9 @@ def compute_filter_diagnostics(
                 imu_positions=aligned_imu_positions,
                 ate_positions=ate_est_positions,
                 aa_regressed_trajectory=aligned_aa_regr_positions,
+                plot_only_ate_aligned=plot_only_ate_aligned,
+                plot_only_network_imu=plot_only_network_imu,
+                plot_only_network_tleio=plot_only_network_tleio,
             )
         )
         
@@ -558,6 +855,9 @@ def compute_filter_diagnostics(
                     imu_positions=aligned_imu_positions,
                     ate_positions=ate_est_positions,
                     aa_regressed_trajectory=aligned_aa_regr_positions,
+                    plot_only_ate_aligned=plot_only_ate_aligned,
+                    plot_only_network_imu=plot_only_network_imu,
+                    plot_only_network_tleio=plot_only_network_tleio,
                 )
             )
 

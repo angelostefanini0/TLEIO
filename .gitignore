@@ -17,10 +17,12 @@ data/*
 !data/.gitkeep
 results/
 outputs/main_filter/
+plots/
 checkpoints/
 *.h5
 *.log
 *.zip
+*.tar
 
 
 thirdparty/*
@@ -47,3 +49,8 @@ var/
 wheels/
 *.egg-info/
 tartanairpy/*
+
+# Local experiment artifacts / generated datasets
+dataset_tartan_competition_for_filter/
+outputtestv7/
+vggt_massive_v6_1_tartan_test/
