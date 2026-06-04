@@ -15,6 +15,13 @@ POSTER_COLORS = {
 }
 
 
+def short_sequence_name(sequence: str) -> str:
+    for token in reversed(sequence.split("_")):
+        if len(token) >= 3 and token[:2] in {"ME", "MH"} and token[2:].isdigit():
+            return token
+    return sequence
+
+
 def plot_covariance_error_cones(
     rel_err_xyz: np.ndarray,
     rel_sigma: np.ndarray,
@@ -120,7 +127,7 @@ def plot_relative_motion_inspection(
     t_gt = (gt_ts - gt_ts[0]) * 1e-6
     t_anchor = (anchor_ts - gt_ts[0]) * 1e-6
     t_err = (rel_t1 - gt_ts[0]) * 1e-6
-    sequence_title = f" ({save_dir.name})" if save_dir is not None else ""
+    sequence_title = f" ({short_sequence_name(save_dir.name)})" if save_dir is not None else ""
 
     fig1, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
     labels = ["x", "y", "z"]
