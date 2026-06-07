@@ -19,24 +19,6 @@ from scripts.utils.config import default_config_path, parse_args_with_config
 "python scripts/testing/test.py --sequence_dir data/eds/testing --checkpoint_file checkpoints/noquat_normalized_v1_epoch100_checkpoint_best.pth --output_file data/eds/predicted_relative_motions/sequence_02/v1_predicted_relative_motions.txt"
 
 
-class RepresentationScaleDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset, scale: float):
-        self.dataset = dataset
-        self.scale = float(scale)
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def __getitem__(self, index):
-        sample = self.dataset[index]
-        if self.scale == 1.0:
-            return sample
-
-        sample = dict(sample)
-        sample["representation"] = sample["representation"] * self.scale
-        return sample
-
-
 def load_inference_args(checkpoint_file: Path):
     args_file = checkpoint_file.parent / "args.txt"
 
@@ -116,6 +98,7 @@ def build_inference_dataset(sequence_dir: Path, args_dict):
         clip_len=args_dict["clip_len"],
         num_bins=None,
         voxel_filename=voxel_filename,
+        normalize_voxel_nonzero=args_dict.get("normalize_voxel_nonzero", False),
     )
     apply_precomputed_voxel_args(args_dict, dataset)
 
@@ -135,50 +118,6 @@ def build_inference_dataset(sequence_dir: Path, args_dict):
         raise ValueError(f"Sequence not found in dataset: {requested_sequence}")
 
     return torch.utils.data.Subset(dataset, selected_indices)
-
-
-def iter_precomputed_voxel_files(root_path: Path, voxel_filename: str):
-    if (root_path / voxel_filename).exists():
-        yield root_path / voxel_filename
-        return
-
-    for seq_path in sorted(p for p in root_path.iterdir() if p.is_dir()):
-        voxel_file = seq_path / voxel_filename
-        if voxel_file.exists():
-            yield voxel_file
-
-
-def compute_precomputed_mean_abs(root_path: Path, voxel_filename: str, chunk_size: int):
-    total_abs = 0.0
-    total_count = 0
-    voxel_files = list(iter_precomputed_voxel_files(root_path, voxel_filename))
-
-    if not voxel_files:
-        raise FileNotFoundError(
-            f"No '{voxel_filename}' files found under {root_path}"
-        )
-
-    for voxel_file in voxel_files:
-        voxels = np.load(voxel_file, mmap_mode="r")
-        for start in range(0, voxels.shape[0], chunk_size):
-            chunk = np.asarray(voxels[start:start + chunk_size], dtype=np.float32)
-            total_abs += np.abs(chunk).sum(dtype=np.float64)
-            total_count += chunk.size
-
-    if total_count == 0:
-        raise ValueError(f"No voxel values found under {root_path}")
-
-    return total_abs / total_count
-
-
-def compute_auto_voxel_scale(reference_dir: Path, target_dir: Path, voxel_filename: str, chunk_size: int):
-    reference_mean_abs = compute_precomputed_mean_abs(reference_dir, voxel_filename, chunk_size)
-    target_mean_abs = compute_precomputed_mean_abs(target_dir, voxel_filename, chunk_size)
-
-    if target_mean_abs <= 0:
-        raise ValueError(f"Target voxel mean abs is zero for {target_dir}")
-
-    return reference_mean_abs / target_mean_abs, reference_mean_abs, target_mean_abs
 
 
 def load_target_stats(checkpoint, device):
@@ -358,6 +297,27 @@ def raw_model_output_header(clip_len: int):
     return " ".join(columns)
 
 
+def should_apply_eds_axis_remap(sequence_dir: Path) -> bool:
+    return any(part.lower() == "eds" for part in sequence_dir.resolve().parts)
+
+
+def remap_eds_prediction_axes(rows_pred: np.ndarray) -> np.ndarray:
+    """Map model-frame translations to the EDS local target convention."""
+    remapped = rows_pred.copy()
+    remapped[:, :3] = rows_pred[:, [1, 2, 0]]
+    if rows_pred.shape[1] == 6:
+        remapped[:, 3:6] = rows_pred[:, [4, 5, 3]]
+    return remapped
+
+
+def remap_eds_raw_model_outputs(raw_model_outputs: np.ndarray, clip_len: int) -> np.ndarray:
+    remapped = raw_model_outputs.copy()
+    for step_idx in range(clip_len - 1):
+        base = step_idx * 5
+        remapped[:, base + 2 : base + 5] = raw_model_outputs[:, [base + 3, base + 4, base + 2]]
+    return remapped
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sequence_dir", type=str, required=True)
@@ -407,28 +367,6 @@ def main():
     infer_args["device"] = str(device)
     dataset = build_inference_dataset(sequence_dir, infer_args)
 
-    effective_voxel_scale = args_cli.voxel_scale
-    if args_cli.voxel_scale_reference_dir is not None:
-        if not infer_args["precomputed_voxels"]:
-            raise ValueError("--voxel_scale_reference_dir requires precomputed voxel inference.")
-        auto_scale, ref_mean_abs, target_mean_abs = compute_auto_voxel_scale(
-            reference_dir=Path(args_cli.voxel_scale_reference_dir),
-            target_dir=Path(args_cli.voxel_scale_target_dir) if args_cli.voxel_scale_target_dir else sequence_dir,
-            voxel_filename=infer_args["voxel_filename"],
-            chunk_size=args_cli.voxel_scale_chunk_size,
-        )
-        effective_voxel_scale *= auto_scale
-        print(
-            "Auto voxel scale: "
-            f"reference_mean_abs={ref_mean_abs:.8g} | "
-            f"target_mean_abs={target_mean_abs:.8g} | "
-            f"auto_scale={auto_scale:.8g}"
-        )
-
-    if effective_voxel_scale != 1.0:
-        dataset = RepresentationScaleDataset(dataset, effective_voxel_scale)
-    print(f"voxel_scale: {effective_voxel_scale:.8g}")
-
     loader = DataLoader(
         dataset,
         batch_size=infer_args["b_size"],
@@ -462,6 +400,11 @@ def main():
     raw_model_outputs = collect_raw_model_outputs(
         loader, model, device, infer_args, target_mean, target_std
     )
+    if should_apply_eds_axis_remap(sequence_dir):
+        rows_pred = remap_eds_prediction_axes(rows_pred)
+        raw_model_outputs = remap_eds_raw_model_outputs(raw_model_outputs, infer_args["clip_len"])
+        print("Applied EDS prediction axis remap: [px, py, pz] -> [py, pz, px]")
+
     out = np.concatenate([timestamps, rows_pred], axis=1)
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
