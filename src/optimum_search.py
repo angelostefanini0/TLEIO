@@ -37,7 +37,7 @@ SEARCH_KEYS = (
     "assumed_sigma_rel_x_t", "assumed_sigma_rel_y_t", "assumed_sigma_rel_z_t", 
     "meas_cov_scale", "initial_attitude_sigma_deg",
     "initial_velocity_sigma_mps", "initial_position_sigma_m", "initial_z_sigma_m",
-    "initial_bg_sigma_rps", "initial_ba_sigma_mps2",
+    "initial_bg_sigma_rps", "initial_ba_sigma_mps2","network_scale",
 )
 
 COARSE_LOG10_RANGES = {
@@ -47,7 +47,7 @@ COARSE_LOG10_RANGES = {
     "meas_cov_scale": (-0.7, 0.6),
     "initial_attitude_sigma_deg": (-1.0, 0.8), "initial_velocity_sigma_mps": (-1.2, 0.4),
     "initial_position_sigma_m": (-2.5, -0.3), "initial_z_sigma_m": (-2.5, -0.3),
-    "initial_bg_sigma_rps": (-4.0, -1.5), "initial_ba_sigma_mps2": (-3.0, -0.3),
+    "initial_bg_sigma_rps": (-4.0, -1.5), "initial_ba_sigma_mps2": (-3.0, -0.3),"network_scale": (-0.8, 0.5),
 }
 
 REFINE_LOG10_HALF_WIDTH = {
@@ -55,7 +55,7 @@ REFINE_LOG10_HALF_WIDTH = {
     "assumed_sigma_rel_x_t": 0.5, "assumed_sigma_rel_y_t": 0.5, "assumed_sigma_rel_z_t": 0.5, 
     "meas_cov_scale": 0.35, "initial_attitude_sigma_deg": 0.5,
     "initial_velocity_sigma_mps": 0.5, "initial_position_sigma_m": 0.5, "initial_z_sigma_m": 0.5,
-    "initial_bg_sigma_rps": 0.5, "initial_ba_sigma_mps2": 0.5,
+    "initial_bg_sigma_rps": 0.5, "initial_ba_sigma_mps2": 0.5,"network_scale": 0.15,
 }
 
 
@@ -293,8 +293,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sequence", type=str, default=None, help="Sequence to tune. If omitted, tunes all sequences.")
     parser.add_argument("--gt", action="store_true", help="Use relative_motions.txt instead of regressed_relative_motions.txt.")
     parser.add_argument("--max-frames", type=int, default=None)
-    parser.add_argument("--coarse-trials", type=int, default=300)
-    parser.add_argument("--refine-trials", type=int, default=400)
+    parser.add_argument("--coarse-trials", type=int, default=400)
+    parser.add_argument("--refine-trials", type=int, default=600)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
         "--optimize-for-pos-rmse",

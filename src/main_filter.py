@@ -80,6 +80,7 @@ class RunnerConfig:
     assumed_sigma_rel_y_t: float = 0.02194332115673975
     assumed_sigma_rel_z_t: float = 0.02194332115673975
     assumed_sigma_rel_r_deg: float = 2.0
+    network_scale: float = 1.0
     meas_cov_scale: float = 1.2649054158337365
 
     # Optional extra synthetic noise added on top of measurements
@@ -134,7 +135,7 @@ def _load_anchor_poses(sequence_path: Path) -> tuple[np.ndarray, np.ndarray, np.
 def _load_relative_motion_table(sequence_path: Path, use_gt: bool) -> np.ndarray:
     """Load processed relative motions and skip any stale non-numeric header lines."""
     # Chooses file based on configuration
-    filename = "relative_motions.txt" if use_gt else f"{sequence_path.name}.txt"
+    filename = "relative_motions.txt" if use_gt else f"{sequence_path.name}_scaled_rmse.txt"
     rel_path = sequence_path / filename
     
     rows: list[list[float]] = []
@@ -432,7 +433,8 @@ def _compute_transformer_trajectory(
     anchor_timestamps_us: np.ndarray,
     anchor_positions: np.ndarray,
     anchor_quaternions: np.ndarray,
-    max_frames: int | None
+    max_frames: int | None,
+    network_scale: float = 1.0
 ) -> np.ndarray | None:
     """
     Computes the trajectory based solely on the Transformer's
@@ -443,7 +445,7 @@ def _compute_transformer_trajectory(
         # Reload the Transformer's predictions 
         regressed_table = _load_relative_motion_table(sequence_path, use_gt=False)
         
-        reg_dp = regressed_table[:, 2:5]
+        reg_dp = regressed_table[:, 2:5]*network_scale
         
         # Apply truncation if requested
         if max_frames is not None:
@@ -538,6 +540,8 @@ def run_filter(config: RunnerConfig) -> dict:
         relative_motion_table
     )
     # relative_sigmas=None
+    if not config.use_gt:
+        relative_measurements = relative_measurements * config.network_scale
 
     # Ensure that anchor_poses timeline perfectly matches the relative_motions timeline
     anchor_timestamps_us, _, relative_measurements, relative_sigmas = _validate_anchor_alignment(
@@ -674,7 +678,8 @@ def run_filter(config: RunnerConfig) -> dict:
             anchor_timestamps_us,
             anchor_positions,
             anchor_quaternions,
-            config.max_frames
+            config.max_frames,
+            config.network_scale
         )
 
     ate_transformer = None
@@ -793,7 +798,8 @@ def main() -> None:
             "gravity_world_mps2": (0.0, 0.0, -9.80665)
         }
     json_params = {}
-    json_path = ROOT / "outputtestv7"/ args.sequence / "best_filter_params.json"
+    # json_path = ROOT / "outputtestv7"/ args.sequence / "best_filter_params.json"
+    json_path = ROOT / "scaled_eds"/ args.sequence / "best_filter_params.json"
     
     if json_path.exists():
         with open(json_path, "r", encoding="utf-8") as f:
