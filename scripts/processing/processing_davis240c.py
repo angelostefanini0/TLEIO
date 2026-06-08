@@ -4,6 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
+import cv2
 import h5py
 import numpy as np
 import yaml
@@ -54,6 +55,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--anchor_t_ms", type=float, default=50.0)
     parser.add_argument("--width", type=int, default=240)
     parser.add_argument("--height", type=int, default=180)
+    parser.add_argument(
+        "--rectify-events-to-virtual-camera",
+        action="store_true",
+        help="Undistort and reproject DAVIS events into a virtual pinhole camera.",
+    )
+    parser.add_argument(
+        "--virtual-intrinsics",
+        type=float,
+        nargs=4,
+        default=[224.0, 224.0, 224.0, 168.0],
+        metavar=("FX", "FY", "CX", "CY"),
+        help="Virtual-camera intrinsics in the output event resolution.",
+    )
+    parser.add_argument(
+        "--virtual-resolution",
+        type=int,
+        nargs=2,
+        default=[448, 336],
+        metavar=("WIDTH", "HEIGHT"),
+        help="Virtual-camera event resolution.",
+    )
     parser.add_argument(
         "--pose-frame-remap",
         choices=("none", "davis_to_tleio"),
@@ -128,7 +150,59 @@ def build_ms_to_idx(t_us: np.ndarray) -> np.ndarray:
     return np.searchsorted(t_us, ms_grid_us, side="left").astype(np.int64)
 
 
-def write_events_h5(events_txt: Path, out_h5: Path, chunk_lines: int, overwrite: bool) -> tuple[int, int, int]:
+def build_camera_matrix(intrinsics: np.ndarray | list[float]) -> np.ndarray:
+    fx, fy, cx, cy = intrinsics
+    return np.array(
+        [[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]],
+        dtype=np.float64,
+    )
+
+
+def load_raw_calibration(raw_calib: Path) -> tuple[np.ndarray, np.ndarray]:
+    values = np.loadtxt(raw_calib, dtype=np.float64, ndmin=1)
+    if values.size < 4:
+        raise ValueError(f"{raw_calib}: expected at least fx fy cx cy.")
+    distortion = values[4:] if values.size > 4 else np.zeros(5, dtype=np.float64)
+    return build_camera_matrix(values[:4]), np.asarray(distortion, dtype=np.float64)
+
+
+def rectify_event_chunk(
+    chunk: np.ndarray,
+    source_camera_matrix: np.ndarray,
+    distortion: np.ndarray,
+    virtual_camera_matrix: np.ndarray,
+    virtual_resolution: tuple[int, int],
+) -> np.ndarray:
+    points = chunk[:, 1:3].astype(np.float32).reshape(-1, 1, 2)
+    rectified = cv2.undistortPoints(
+        points,
+        source_camera_matrix,
+        distortion,
+        R=None,
+        P=virtual_camera_matrix,
+    ).reshape(-1, 2)
+    width, height = virtual_resolution
+    keep = (
+        np.isfinite(rectified).all(axis=1)
+        & (rectified[:, 0] >= 0.0)
+        & (rectified[:, 0] < width)
+        & (rectified[:, 1] >= 0.0)
+        & (rectified[:, 1] < height)
+    )
+    out = chunk[keep].copy()
+    out[:, 1:3] = rectified[keep]
+    return out
+
+
+def write_events_h5(
+    events_txt: Path,
+    out_h5: Path,
+    chunk_lines: int,
+    overwrite: bool,
+    source_calibration: tuple[np.ndarray, np.ndarray] | None = None,
+    virtual_intrinsics: list[float] | None = None,
+    virtual_resolution: tuple[int, int] | None = None,
+) -> tuple[int, int, int]:
     if chunk_lines <= 0:
         raise ValueError("--event-chunk-lines must be > 0.")
     if out_h5.exists() and not overwrite:
@@ -139,26 +213,49 @@ def write_events_h5(events_txt: Path, out_h5: Path, chunk_lines: int, overwrite:
     offset = 0
     t0_us: int | None = None
     last_t = -1
+    rectify_events = source_calibration is not None
+    virtual_camera_matrix = (
+        build_camera_matrix(virtual_intrinsics) if rectify_events else None
+    )
 
     with h5py.File(out_h5, mode) as h5f:
         events = h5f.create_group("events")
         chunks = (min(chunk_lines, DEFAULT_EVENT_CHUNK_LINES),)
         d_t = events.create_dataset("t", shape=(0,), maxshape=(None,), dtype=np.int64, chunks=chunks)
-        d_x = events.create_dataset("x", shape=(0,), maxshape=(None,), dtype=np.uint16, chunks=chunks)
-        d_y = events.create_dataset("y", shape=(0,), maxshape=(None,), dtype=np.uint16, chunks=chunks)
+        coordinate_dtype = np.float32 if rectify_events else np.uint16
+        d_x = events.create_dataset("x", shape=(0,), maxshape=(None,), dtype=coordinate_dtype, chunks=chunks)
+        d_y = events.create_dataset("y", shape=(0,), maxshape=(None,), dtype=coordinate_dtype, chunks=chunks)
         d_p = events.create_dataset("p", shape=(0,), maxshape=(None,), dtype=np.uint8, chunks=chunks)
 
         for chunk in iter_event_chunks(events_txt, chunk_lines):
-            t_abs_us = np.rint(chunk[:, 0] * 1e6).astype(np.int64)
+            raw_t_abs_us = np.rint(chunk[:, 0] * 1e6).astype(np.int64)
             if t0_us is None:
-                t0_us = int(t_abs_us[0])
+                t0_us = int(raw_t_abs_us[0])
+
+            if rectify_events:
+                source_camera_matrix, distortion = source_calibration
+                chunk = rectify_event_chunk(
+                    chunk,
+                    source_camera_matrix=source_camera_matrix,
+                    distortion=distortion,
+                    virtual_camera_matrix=virtual_camera_matrix,
+                    virtual_resolution=virtual_resolution,
+                )
+                if len(chunk) == 0:
+                    continue
+
+            t_abs_us = np.rint(chunk[:, 0] * 1e6).astype(np.int64)
             t_rel_us = t_abs_us - t0_us
             if len(t_rel_us) and int(t_rel_us[0]) < last_t:
                 raise ValueError(f"{events_txt}: event timestamps are not sorted.")
             last_t = int(t_rel_us[-1])
 
-            x = np.rint(chunk[:, 1]).astype(np.uint16)
-            y = np.rint(chunk[:, 2]).astype(np.uint16)
+            if rectify_events:
+                x = chunk[:, 1].astype(np.float32)
+                y = chunk[:, 2].astype(np.float32)
+            else:
+                x = np.rint(chunk[:, 1]).astype(np.uint16)
+                y = np.rint(chunk[:, 2]).astype(np.uint16)
             p = np.rint(chunk[:, 3]).astype(np.uint8)
 
             offset = append_dataset(d_t, t_rel_us, offset)
@@ -172,6 +269,7 @@ def write_events_h5(events_txt: Path, out_h5: Path, chunk_lines: int, overwrite:
         t_us = d_t[...]
         h5f.create_dataset("ms_to_idx", data=build_ms_to_idx(t_us), dtype=np.int64)
         h5f.attrs["normalize_polarity_to_binary"] = 0
+        h5f.attrs["rectified_to_virtual_camera"] = int(rectify_events)
 
     return t0_us, last_t, offset
 
@@ -294,16 +392,44 @@ def write_calibration(raw_calib: Path, out_dir: Path, width: int, height: int) -
         yaml.safe_dump(calib, fh, sort_keys=False)
 
 
+def write_virtual_calibration(
+    out_dir: Path,
+    intrinsics: list[float],
+    resolution: tuple[int, int],
+) -> None:
+    calib = {
+        "cam1": {
+            "intrinsics": [float(value) for value in intrinsics],
+            "resolution": [int(value) for value in resolution],
+        }
+    }
+    with (out_dir / "K.yaml").open("w") as fh:
+        yaml.safe_dump(calib, fh, sort_keys=False)
+
+
 def process_sequence(seq_dir: Path, out_root: Path, args: argparse.Namespace) -> None:
     out_dir = out_root / seq_dir.name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Processing {seq_dir.name} -> {out_dir}")
+    raw_calib = seq_dir / "calib.txt"
+    source_calibration = None
+    virtual_resolution = tuple(args.virtual_resolution)
+    if args.rectify_events_to_virtual_camera:
+        if not raw_calib.exists():
+            raise FileNotFoundError(
+                f"{raw_calib} is required with --rectify-events-to-virtual-camera."
+            )
+        source_calibration = load_raw_calibration(raw_calib)
+
     t0_us, last_event_us, num_events = write_events_h5(
         seq_dir / "events.txt",
         out_dir / "events.h5",
         chunk_lines=args.event_chunk_lines,
         overwrite=args.overwrite,
+        source_calibration=source_calibration,
+        virtual_intrinsics=args.virtual_intrinsics,
+        virtual_resolution=virtual_resolution,
     )
     write_groundtruth_and_supervision(
         seq_dir / "groundtruth.txt",
@@ -315,8 +441,19 @@ def process_sequence(seq_dir: Path, out_root: Path, args: argparse.Namespace) ->
         pose_frame_remap=args.pose_frame_remap,
     )
     write_imu_if_present(seq_dir / "imu.txt", out_dir, t0_us, last_event_us)
-    if (seq_dir / "calib.txt").exists():
-        write_calibration(seq_dir / "calib.txt", out_dir, args.width, args.height)
+    if args.rectify_events_to_virtual_camera:
+        write_virtual_calibration(
+            out_dir,
+            intrinsics=args.virtual_intrinsics,
+            resolution=virtual_resolution,
+        )
+        print(
+            "Virtual camera:      "
+            f"{virtual_resolution[0]}x{virtual_resolution[1]} "
+            f"K={args.virtual_intrinsics}"
+        )
+    elif raw_calib.exists():
+        write_calibration(raw_calib, out_dir, args.width, args.height)
 
     print(f"Events:             {num_events}")
     print(f"First raw event us: {t0_us}")
