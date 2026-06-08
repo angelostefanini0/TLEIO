@@ -158,7 +158,7 @@ Run the `scripts/viz/test_trajectory_with_events.py` script with trajectory argu
 python scripts/viz/test_trajectory_with_events.py
 ```
 
-## 10. Running the filter
+## 9. Running the filter
 Run the `src/main_filter.py` script to run the filter and save the results in the output directory 'outputs', alongside 3D trajectory, position and rotation comparison plots. Use '--h' for a complete overview of the parsers.
 ```bash
 python src/main_filter.py \
