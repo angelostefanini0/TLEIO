@@ -89,6 +89,38 @@ def match_prediction_to_gt(pred: np.ndarray, gt_rel: np.ndarray) -> tuple[np.nda
     return np.stack(matched_pred, axis=0), np.stack(matched_gt, axis=0)
 
 
+def align_positions_sim3(
+    estimated: np.ndarray,
+    reference: np.ndarray,
+    fit_mask: np.ndarray,
+) -> tuple[np.ndarray, float, np.ndarray, np.ndarray]:
+    """Align estimated positions to reference positions with Umeyama Sim(3)."""
+    source = estimated[fit_mask]
+    target = reference[fit_mask]
+    if len(source) < 3:
+        raise ValueError("Sim(3) alignment requires at least three poses.")
+
+    source_mean = source.mean(axis=0)
+    target_mean = target.mean(axis=0)
+    source_centered = source - source_mean
+    target_centered = target - target_mean
+
+    covariance = target_centered.T @ source_centered / len(source)
+    u, singular_values, vt = np.linalg.svd(covariance)
+    correction = np.eye(3)
+    if np.linalg.det(u @ vt) < 0:
+        correction[-1, -1] = -1.0
+    rotation = u @ correction @ vt
+
+    source_variance = np.mean(np.sum(source_centered ** 2, axis=1))
+    if source_variance <= 1e-12:
+        raise ValueError("Cannot align a trajectory with near-zero variance.")
+    scale = float(np.sum(singular_values * np.diag(correction)) / source_variance)
+    translation = target_mean - scale * (rotation @ source_mean)
+    aligned = (scale * (rotation @ estimated.T)).T + translation
+    return aligned, scale, rotation, translation
+
+
 def inspect_covariance_dataset(args) -> None:
     rel_files = sorted(
         path for path in args.rel_dir.glob(args.pattern)
@@ -196,6 +228,15 @@ def main():
                         help="Optional y-axis limit for covariance error-cone plots.")
     parser.add_argument("--sigma_multiplier", type=float, default=3.0,
                         help="Sigma bound multiplier for covariance error-cone plots.")
+    parser.add_argument(
+        "--align_first_seconds",
+        type=float,
+        default=None,
+        help=(
+            "Optionally align the reconstructed trajectory to GT with Sim(3), "
+            "fitted using this many seconds from the beginning."
+        ),
+    )
     
     args = parse_args_with_config(
         parser,
@@ -275,6 +316,21 @@ def main():
     # GT reference at the same anchor timestamps
     ref_pos, ref_quat = interpolate_gt_pose(gt_ts, gt_pos, gt_quat, anchor_ts)
     ref_quat = normalize_quat(ref_quat)
+
+    if args.align_first_seconds is not None:
+        if args.align_first_seconds <= 0:
+            raise ValueError("--align_first_seconds must be positive.")
+        elapsed_s = (anchor_ts - anchor_ts[0]) / 1e6
+        fit_mask = elapsed_s <= args.align_first_seconds
+        recon_pos, alignment_scale, _, _ = align_positions_sim3(
+            recon_pos,
+            ref_pos,
+            fit_mask,
+        )
+        print(
+            f"Applied Sim(3) alignment over first "
+            f"{args.align_first_seconds:g} s: scale={alignment_scale:.6f}"
+        )
 
     # CALCULATE ERROR STATS
     
