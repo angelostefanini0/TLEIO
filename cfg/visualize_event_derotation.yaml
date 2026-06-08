@@ -1,16 +1,16 @@
-sequence_dir: data/eds/processed/00_peanuts_dark
+sequence_dir: data/eds/processed_train/00_peanuts_dark
 duration_ms: 50.0
-anchor_index:
+anchor_index: 200
 start_us:
 end_us:
 num_bins: 5
-derotation_slices:
+derotation_slices: 100
 derotation_slice_ms: 0.5
 height: 480
 width: 640
 downsampling_factor: 1.0
 patch_size: 16
-max_events: 60000
+max_events: 100000
 voxel_eps: 1.0e-6
 output:
 show: true
