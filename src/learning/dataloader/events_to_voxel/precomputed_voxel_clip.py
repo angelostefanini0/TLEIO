@@ -2,11 +2,9 @@ from pathlib import Path
 import bisect
 import json
 
-import cv2
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-import yaml
 
 #
 
@@ -25,70 +23,6 @@ def normalize_nonzero_voxel_(voxel: torch.Tensor) -> torch.Tensor:
     return voxel
 
 
-def build_voxel_rectification_maps(
-    calibration_path: Path,
-    output_height: int,
-    output_width: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    with calibration_path.open("r") as fh:
-        calibration = yaml.safe_load(fh)
-
-    if "cam1" not in calibration:
-        raise KeyError(f"{calibration_path}: missing cam1 calibration.")
-    cam = calibration["cam1"]
-    intrinsics = cam.get("intrinsics")
-    distortion = cam.get("distortion_coeffs")
-    resolution = cam.get("resolution")
-    if intrinsics is None or len(intrinsics) != 4:
-        raise ValueError(f"{calibration_path}: expected four cam1 intrinsics.")
-    if distortion is None or len(distortion) < 4:
-        raise ValueError(f"{calibration_path}: missing distortion_coeffs.")
-    if resolution is None or len(resolution) != 2:
-        raise ValueError(f"{calibration_path}: expected cam1 resolution [width, height].")
-
-    source_width, source_height = (int(resolution[0]), int(resolution[1]))
-    scale_x = output_width / source_width
-    scale_y = output_height / source_height
-    fx, fy, cx, cy = (float(value) for value in intrinsics)
-    camera_matrix = np.array(
-        [
-            [fx * scale_x, 0.0, cx * scale_x],
-            [0.0, fy * scale_y, cy * scale_y],
-            [0.0, 0.0, 1.0],
-        ],
-        dtype=np.float64,
-    )
-    distortion = np.asarray(distortion, dtype=np.float64)
-    return cv2.initUndistortRectifyMap(
-        camera_matrix,
-        distortion,
-        None,
-        camera_matrix,
-        (output_width, output_height),
-        cv2.CV_32FC1,
-    )
-
-
-def rectify_voxel_clip(
-    clip: torch.Tensor,
-    map_x: np.ndarray,
-    map_y: np.ndarray,
-) -> torch.Tensor:
-    clip_np = clip.numpy()
-    rectified = np.empty_like(clip_np)
-    for time_idx in range(clip_np.shape[0]):
-        for bin_idx in range(clip_np.shape[1]):
-            rectified[time_idx, bin_idx] = cv2.remap(
-                clip_np[time_idx, bin_idx],
-                map_x,
-                map_y,
-                interpolation=cv2.INTER_LINEAR,
-                borderMode=cv2.BORDER_CONSTANT,
-                borderValue=0,
-            )
-    return torch.from_numpy(rectified)
-
-
 class PrecomputedVoxelClipDataset(Dataset):
     def __init__(
         self,
@@ -98,8 +32,6 @@ class PrecomputedVoxelClipDataset(Dataset):
         voxel_filename: str = "derotated_voxels.npy",
         mmap_mode: str | None = "r",
         normalize_voxel_nonzero: bool = False,
-        rectify_precomputed: bool = False,
-        rectification_calibration: Path | None = None,
     ):
         assert clip_len >= 1
         assert root_path.is_dir()
@@ -110,12 +42,6 @@ class PrecomputedVoxelClipDataset(Dataset):
         self.voxel_filename = voxel_filename
         self.mmap_mode = mmap_mode
         self.normalize_voxel_nonzero = normalize_voxel_nonzero
-        self.rectify_precomputed = rectify_precomputed
-        self.rectification_calibration = (
-            Path(rectification_calibration)
-            if rectification_calibration is not None
-            else None
-        )
         self.seq_infos = []
         self.cum_lengths = []
         self._voxels = []
@@ -123,12 +49,6 @@ class PrecomputedVoxelClipDataset(Dataset):
         self.train_std = None
         self.train_mean = None
         self.eps = 1e-7
-        self._rectification_maps = {}
-
-        if self.rectify_precomputed and self.rectification_calibration is None:
-            raise ValueError(
-                "rectify_precomputed requires rectification_calibration."
-            )
 
         total = 0
         sequence_dirs = sorted([p for p in self.root_path.iterdir() if p.is_dir()])
@@ -225,35 +145,6 @@ class PrecomputedVoxelClipDataset(Dataset):
                 mmap_mode=self.mmap_mode,
             )
 
-    def _resolve_rectification_calibration(self, seq_idx: int) -> Path:
-        calibration = self.rectification_calibration
-        if calibration.is_file():
-            return calibration
-
-        seq_name = self.seq_infos[seq_idx]["seq_path"].name
-        candidate = calibration / seq_name / "K.yaml"
-        if candidate.exists():
-            return candidate
-
-        fallback = calibration / "K.yaml"
-        if fallback.exists() and len(self.seq_infos) == 1:
-            return fallback
-
-        raise FileNotFoundError(
-            f"Could not find rectification calibration for {seq_name}. "
-            f"Tried {candidate}."
-        )
-
-    def _rectify_clip(self, clip: torch.Tensor, seq_idx: int) -> torch.Tensor:
-        if seq_idx not in self._rectification_maps:
-            calibration_path = self._resolve_rectification_calibration(seq_idx)
-            self._rectification_maps[seq_idx] = build_voxel_rectification_maps(
-                calibration_path=calibration_path,
-                output_height=int(clip.shape[-2]),
-                output_width=int(clip.shape[-1]),
-            )
-        return rectify_voxel_clip(clip, *self._rectification_maps[seq_idx])
-
     def get_relative_motion(self, rel_transf, t0_idx, t0, t1):
         assert (t0 == rel_transf[t0_idx, 0]) and (t1 == rel_transf[t0_idx, 1])
         return rel_transf[t0_idx, 2:5]
@@ -266,8 +157,6 @@ class PrecomputedVoxelClipDataset(Dataset):
         anchors = seq_info["anchors_us"][local_idx : local_idx + self.clip_len]
         clip_np = self._voxels[seq_idx][local_idx : local_idx + self.clip_len]
         clip = torch.from_numpy(clip_np.astype(np.float32, copy=True))
-        if self.rectify_precomputed:
-            clip = self._rectify_clip(clip, seq_idx)
         if self.normalize_voxel_nonzero:
             for t in range(clip.shape[0]):
                 normalize_nonzero_voxel_(clip[t])
