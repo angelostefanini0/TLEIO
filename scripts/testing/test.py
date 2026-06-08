@@ -82,12 +82,7 @@ def apply_precomputed_voxel_args(args_dict, dataset):
             args_dict[key] = value
 
 
-def build_inference_dataset(
-    sequence_dir: Path,
-    args_dict,
-    rectify_precomputed: bool = False,
-    rectification_calibration: Path | None = None,
-):
+def build_inference_dataset(sequence_dir: Path, args_dict):
     sequence_dir = sequence_dir.resolve()
 
     dataset_root = sequence_dir
@@ -103,8 +98,6 @@ def build_inference_dataset(
         num_bins=None,
         voxel_filename=voxel_filename,
         normalize_voxel_nonzero=args_dict.get("normalize_voxel_nonzero", False),
-        rectify_precomputed=rectify_precomputed,
-        rectification_calibration=rectification_calibration,
     )
     apply_precomputed_voxel_args(args_dict, dataset)
 
@@ -304,8 +297,7 @@ def raw_model_output_header(clip_len: int):
 
 
 def should_apply_eds_axis_remap(sequence_dir: Path) -> bool:
-    remap_datasets = {"eds", "davis240c"}
-    return any(part.lower() in remap_datasets for part in sequence_dir.resolve().parts)
+    return any(part.lower() == "eds" for part in sequence_dir.resolve().parts)
 
 
 def remap_eds_prediction_axes(rows_pred: np.ndarray) -> np.ndarray:
@@ -352,24 +344,7 @@ def main():
         action="store_true",
         help="Save diagonal covariance sigma_x sigma_y sigma_z for each predicted relative motion.",
     )
-    parser.add_argument(
-        "--rectify_precomputed",
-        action="store_true",
-        help=(
-            "Approximately undistort precomputed voxel grids before inference. "
-            "Use only when event-level rectification was not applied before precomputation."
-        ),
-    )
-    parser.add_argument(
-        "--rectification_calibration",
-        type=Path,
-        default=None,
-        help=(
-            "K.yaml file, or processed root containing <sequence>/K.yaml, "
-            "used with --rectify_precomputed."
-        ),
-    )
-   
+
     args_cli = parse_args_with_config(
         parser,
         default_config_path("test"),
@@ -389,17 +364,7 @@ def main():
     print(f"Using device: {device}")
     infer_args = load_inference_args(checkpoint_file)
     infer_args["device"] = str(device)
-    dataset = build_inference_dataset(
-        sequence_dir,
-        infer_args,
-        rectify_precomputed=args_cli.rectify_precomputed,
-        rectification_calibration=args_cli.rectification_calibration,
-    )
-    if args_cli.rectify_precomputed:
-        print(
-            "Applied approximate test-time voxel rectification using "
-            f"{args_cli.rectification_calibration}"
-        )
+    dataset = build_inference_dataset(sequence_dir, infer_args)
 
     loader = DataLoader(
         dataset,

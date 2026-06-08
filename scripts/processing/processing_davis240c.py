@@ -228,17 +228,25 @@ def write_groundtruth_and_supervision(
     anchor_t_ms: float,
     pose_frame_remap: str,
 ) -> None:
-    gt = convert_seconds_table(raw_gt, t0_us, last_event_us)
-    if gt.shape[1] != 8:
+    camera_gt = convert_seconds_table(raw_gt, t0_us, last_event_us)
+    if camera_gt.shape[1] != 8:
         raise ValueError(f"{raw_gt}: expected columns t px py pz qx qy qz qw.")
-    gt = remap_pose_frame(gt, pose_frame_remap)
 
-    stamped_gt = out_dir / "stamped_groundtruth.txt"
-    np.savetxt(stamped_gt, gt, fmt=["%d"] + ["%.10f"] * 7)
+    supervision_gt = remap_pose_frame(camera_gt, pose_frame_remap)
+    np.savetxt(
+        out_dir / "camera_groundtruth.txt",
+        camera_gt,
+        fmt=["%d"] + ["%.10f"] * 7,
+    )
+    np.savetxt(
+        out_dir / "stamped_groundtruth.txt",
+        supervision_gt,
+        fmt=["%d"] + ["%.10f"] * 7,
+    )
 
     delta_t_us = int(round(delta_t_ms * 1000.0))
     anchor_step_us = int(round(anchor_t_ms * 1000.0))
-    ts_gt, pos_gt, quat_gt = load_gt(gt)
+    ts_gt, pos_gt, quat_gt = load_gt(supervision_gt)
     anchors_us = get_anchor_grid(ts_gt, delta_t_us=delta_t_us, anchor_step_us=anchor_step_us)
     anchor_pos, anchor_quat = interpolate_gt_to_anchors(ts_gt, pos_gt, quat_gt, anchors_us)
     rel = compute_relative_motions(anchors_us, anchor_pos, anchor_quat)

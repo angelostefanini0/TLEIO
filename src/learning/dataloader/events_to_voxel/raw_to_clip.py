@@ -30,8 +30,9 @@ class MultiEventVoxelClipDataset(Dataset):
 
     Each valid sequence directory under `root_path` must contain
     `anchor_poses.txt`, `relative_motions.txt`, and `events.h5`.
-    When de-rotation is enabled, the sequence must also contain
-    `stamped_groundtruth.txt` and a `K.yaml` calibration file.
+    When de-rotation is enabled, the sequence must also contain a `K.yaml`
+    calibration file and either `camera_groundtruth.txt` or
+    `stamped_groundtruth.txt`.
 
     A dataset item corresponds to `clip_len` consecutive anchors from one
     sequence. For every anchor, the dataset reads the event window ending at
@@ -192,16 +193,19 @@ class MultiEventVoxelClipDataset(Dataset):
             gt_rel_transf_fn = seq_path / "relative_motions.txt"
             events_file = seq_path / "events.h5"
             events_meta_file = seq_path / "events_meta.h5"
-            gt_full_fn = seq_path / "stamped_groundtruth.txt"
+            camera_gt_fn = seq_path / "camera_groundtruth.txt"
+            stamped_gt_fn = seq_path / "stamped_groundtruth.txt"
+            gt_full_fn = camera_gt_fn if camera_gt_fn.exists() else stamped_gt_fn
 
             # skip folders that do not contain a valid processed sequence
             if not (gt_poses_fn.exists() and gt_rel_transf_fn.exists() and events_file.exists()):
                 continue
 
-            # stamped gt needed only when de-rotation happens 
+            # Full-rate camera-frame GT is needed only when de-rotation happens.
             if self.derotate and not gt_full_fn.exists():
                 raise FileNotFoundError(
-                    f"{seq_path}: derotation requires stamped_groundtruth.txt."
+                    f"{seq_path}: derotation requires camera_groundtruth.txt "
+                    "or stamped_groundtruth.txt."
                 )
 
             anchor_poses = np.atleast_2d(np.loadtxt(gt_poses_fn, dtype=np.float64, skiprows=1))
