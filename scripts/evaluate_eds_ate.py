@@ -63,7 +63,17 @@ def load_numeric_table(path: Path) -> np.ndarray:
 
 
 def infer_seconds_scale(timestamps: np.ndarray) -> float:
-    positive_diffs = np.diff(np.unique(np.asarray(timestamps, dtype=np.float64)))
+    timestamps = np.asarray(timestamps, dtype=np.float64)
+    max_abs = float(np.max(np.abs(timestamps))) if timestamps.size else 0.0
+
+    # Absolute Unix timestamps are ambiguous from their sample spacing alone:
+    # EDS ground truth uses seconds (~1e9), while events use microseconds (~1e15).
+    if max_abs >= 1e17:
+        return 1e-9
+    if max_abs >= 1e14:
+        return 1e-6
+
+    positive_diffs = np.diff(np.unique(timestamps))
     positive_diffs = positive_diffs[positive_diffs > 0]
     median_dt = float(np.median(positive_diffs)) if len(positive_diffs) else 0.0
     if median_dt > 1e7:
