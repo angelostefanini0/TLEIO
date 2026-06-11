@@ -95,6 +95,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Display the window even when --output is provided.",
     )
+    parser.add_argument(
+        "--auto-close",
+        action="store_true",
+        help="Close the live window after the final hold instead of waiting for user input.",
+    )
     return parser.parse_args()
 
 
@@ -521,13 +526,16 @@ def main() -> None:
     if args.output:
         print(f"Saved visualization: {args.output}")
     if show_live and args.output is None:
-        print("Close the figure or press Ctrl+C to exit.")
-        try:
-            while plt.fignum_exists(fig.number):
-                plt.pause(0.1)
-                time.sleep(0.05)
-        except KeyboardInterrupt:
-            pass
+        if args.auto_close:
+            plt.close(fig)
+        else:
+            print("Close the figure or press Ctrl+C to exit.")
+            try:
+                while plt.fignum_exists(fig.number):
+                    plt.pause(0.1)
+                    time.sleep(0.05)
+            except KeyboardInterrupt:
+                pass
 
 
 if __name__ == "__main__":
