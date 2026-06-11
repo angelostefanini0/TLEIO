@@ -47,3 +47,17 @@ var/
 wheels/
 *.egg-info/
 tartanairpy/*
+
+
+# Local datasets and generated experiment artifacts
+dataset_tartan_competition_for_filter/
+outputtestv*/
+plots/
+
+# External repositories checked out locally
+rpg_ultimate_slam_open/
+
+# Large local transfer archives
+*.tar
+*.tar.gz
+*.tgz
