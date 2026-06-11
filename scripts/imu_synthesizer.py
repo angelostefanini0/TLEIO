@@ -2,7 +2,7 @@
 
 Edit the USER CONFIGURATION section below, then run:
 
-    python scripts/imu_tartan_generation.py
+    python scripts/imu_synthesizer.py
 
 The script reads:
     data/tartanair/<TRAJECTORY_NAME>/stamped_groundtruth.txt

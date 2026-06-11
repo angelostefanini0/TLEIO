@@ -317,11 +317,17 @@ def voxel_to_points(
     return x[keep], y[keep], t[keep], value[keep], total
 
 
+def count_nonzero_voxel_pixels(voxel: torch.Tensor, eps: float) -> int:
+    voxel_np = voxel.detach().cpu().numpy()
+    return int(np.count_nonzero(np.abs(voxel_np) > eps))
+
+
 def configure_3d_axis(ax, title: str, width: int, height: int, duration_ms: float, elev: float, azim: float) -> None:
     ax.set_title(title)
     ax.set_xlabel("time [ms]")
     ax.set_ylabel("x [px]")
     ax.set_zlabel("y [px]")
+    ax.xaxis.labelpad = 18
     ax.set_xlim(0, duration_ms)
     ax.set_ylim(0, width)
     ax.set_zlim(height, 0)
@@ -338,49 +344,163 @@ def configure_2d_axis(ax, title: str, width: int, height: int) -> None:
     ax.grid(True, alpha=0.25)
 
 
-def make_plot(
-    raw_x: np.ndarray,
-    raw_y: np.ndarray,
-    raw_t_ms: np.ndarray,
-    raw_value: np.ndarray,
-    derot_x: np.ndarray,
-    derot_y: np.ndarray,
-    derot_t_ms: np.ndarray,
-    derot_value: np.ndarray,
+def make_raw_event_stream_plot(
+    x: np.ndarray,
+    y: np.ndarray,
+    t_ms: np.ndarray,
+    polarity: np.ndarray,
     width: int,
     height: int,
     duration_ms: float,
     title: str,
     view_elev: float,
     view_azim: float,
+    max_events: int,
 ) -> plt.Figure:
-    raw_colors = polarity_colors(raw_value)
-    derot_colors = polarity_colors(derot_value)
-    fig = plt.figure(figsize=(14, 10))
-    ax_raw_3d = fig.add_subplot(2, 2, 1, projection="3d")
-    ax_derot_3d = fig.add_subplot(2, 2, 2, projection="3d")
-    ax_raw_2d = fig.add_subplot(2, 2, 3)
-    ax_derot_2d = fig.add_subplot(2, 2, 4)
+    keep = subsample_indices(len(t_ms), max_events)
+    x_plot = x[keep]
+    y_plot = y[keep]
+    t_plot = t_ms[keep]
+    colors = polarity_colors(polarity[keep])
 
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(1, 1, 1, projection="3d")
     scatter_kwargs = {
         "s": 1.5,
         "alpha": 0.35,
         "linewidths": 0,
         "depthshade": False,
     }
-    ax_raw_3d.scatter(raw_t_ms, raw_x, raw_y, c=raw_colors, **scatter_kwargs)
-    ax_derot_3d.scatter(derot_t_ms, derot_x, derot_y, c=derot_colors, **scatter_kwargs)
-
-    configure_3d_axis(ax_raw_3d, "Raw events", width, height, duration_ms, view_elev, view_azim)
-    configure_3d_axis(ax_derot_3d, "De-rotated events", width, height, duration_ms, view_elev, view_azim)
-
-    ax_raw_2d.scatter(raw_x, raw_y, c=raw_colors, s=1.5, alpha=0.35, linewidths=0)
-    ax_derot_2d.scatter(derot_x, derot_y, c=derot_colors, s=1.5, alpha=0.35, linewidths=0)
-    configure_2d_axis(ax_raw_2d, "Raw x/y projection", width, height)
-    configure_2d_axis(ax_derot_2d, "De-rotated x/y projection", width, height)
-
+    ax.scatter(t_plot, x_plot, y_plot, c=colors, **scatter_kwargs)
+    configure_3d_axis(ax, "Raw sliced event stream", width, height, duration_ms, view_elev, view_azim)
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.set_zlabel("")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_zticks([])
+    ax.text2D(
+        0.02,
+        0.95,
+        f"events shown: {len(t_plot)}/{len(t_ms)}",
+        transform=ax.transAxes,
+        fontsize=10,
+    )
     fig.suptitle(title)
     fig.tight_layout()
+    return fig
+
+
+def _voxel_image_stride(height: int, width: int) -> int:
+    return max(1, int(np.ceil(max(height, width) / 400.0)))
+
+
+
+def _robust_voxel_scale(*voxels: np.ndarray) -> float:
+    values = [np.abs(voxel[np.abs(voxel) > 0.0]).reshape(-1) for voxel in voxels]
+    values = [value for value in values if len(value) > 0]
+    if not values:
+        return 1.0
+    scale = float(np.percentile(np.concatenate(values), 99.0))
+    return scale if scale > 0.0 else 1.0
+
+
+def _plot_voxel_bin_planes(
+    ax,
+    voxel_np: np.ndarray,
+    duration_ms: float,
+    max_abs: float,
+    title: str,
+    view_elev: float,
+    view_azim: float,
+) -> None:
+    num_bins, height, width = voxel_np.shape
+    stride = _voxel_image_stride(height, width)
+    y_grid, x_grid = np.mgrid[0:height:stride, 0:width:stride]
+    cmap = plt.get_cmap("coolwarm")
+    norm = plt.Normalize(vmin=-max_abs, vmax=max_abs)
+    bin_ms = duration_ms / num_bins
+
+    for bin_idx in range(num_bins):
+        plane = voxel_np[bin_idx, ::stride, ::stride]
+        rgba = cmap(norm(plane))
+        rgba[..., :3] = 0.78 * rgba[..., :3] + 0.22
+        signal = np.clip(np.abs(plane) / max_abs, 0.0, 1.0)
+        rgba[..., 3] = np.where(signal > 0.015, 0.35 + 0.65 * np.sqrt(signal), 0.0)
+
+        t_center = (bin_idx + 0.5) * bin_ms
+        t_plane = np.full_like(x_grid, t_center, dtype=np.float64)
+        ax.plot_surface(
+            t_plane,
+            x_grid,
+            y_grid,
+            facecolors=rgba,
+            rstride=1,
+            cstride=1,
+            linewidth=0,
+            antialiased=False,
+            shade=False,
+        )
+        ax.plot(
+            [t_center, t_center, t_center, t_center, t_center],
+            [0, width, width, 0, 0],
+            [0, 0, height, height, 0],
+            color="#444444",
+            linewidth=0.8,
+            alpha=0.65,
+        )
+
+    configure_3d_axis(ax, title, width, height, duration_ms, view_elev, view_azim)
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.set_zlabel("")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_zticks([])
+
+
+def make_voxel_bin_3d_plot(
+    raw_voxel: torch.Tensor,
+    derot_voxel: torch.Tensor,
+    duration_ms: float,
+    title: str,
+    view_elev: float,
+    view_azim: float,
+) -> plt.Figure:
+    raw_np = raw_voxel.detach().cpu().numpy()
+    derot_np = derot_voxel.detach().cpu().numpy()
+    if raw_np.shape != derot_np.shape:
+        raise ValueError(
+            f"Raw and de-rotated voxels must have the same shape, got {raw_np.shape} and {derot_np.shape}."
+        )
+
+    max_abs = _robust_voxel_scale(raw_np, derot_np)
+
+    fig = plt.figure(figsize=(15, 7))
+    ax_raw = fig.add_subplot(1, 2, 1, projection="3d")
+    ax_derot = fig.add_subplot(1, 2, 2, projection="3d")
+
+    _plot_voxel_bin_planes(
+        ax_raw,
+        raw_np,
+        duration_ms,
+        max_abs,
+        "Raw voxel bins",
+        view_elev,
+        view_azim,
+    )
+    _plot_voxel_bin_planes(
+        ax_derot,
+        derot_np,
+        duration_ms,
+        max_abs,
+        "De-rotated voxel bins",
+        view_elev,
+        view_azim,
+    )
+
+    fig.suptitle(title)
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.88, bottom=0.08, wspace=0.02)
     return fig
 
 
@@ -599,18 +719,8 @@ def main() -> None:
     derotation_voxel_s = perf_counter() - derot_voxel_start
     derotation_total_s = derotation_warp_s + derotation_voxel_s
 
-    raw_plot_x, raw_plot_y, raw_plot_t, raw_plot_value, raw_total = voxel_to_points(
-        raw_voxel,
-        duration_ms=duration_ms,
-        max_points=args.max_events,
-        eps=args.voxel_eps,
-    )
-    derot_plot_x, derot_plot_y, derot_plot_t, derot_plot_value, derot_total = voxel_to_points(
-        derot_voxel,
-        duration_ms=duration_ms,
-        max_points=args.max_events,
-        eps=args.voxel_eps,
-    )
+    raw_total = count_nonzero_voxel_pixels(raw_voxel, args.voxel_eps)
+    derot_total = count_nonzero_voxel_pixels(derot_voxel, args.voxel_eps)
 
     print(f"Sequence: {sequence_dir}")
     print(f"Window source: {window_source}")
@@ -634,8 +744,8 @@ def main() -> None:
         "Timing per loaded event: "
         f"derotation path {derotation_total_s * 1e6 / len(events['t']):.3f} us/event"
     )
-    print(f"Raw nonzero voxel pixels: {raw_total} (plotted {len(raw_plot_x)})")
-    print(f"De-rotated nonzero voxel pixels: {derot_total} (plotted {len(derot_plot_x)})")
+    print(f"Raw nonzero voxel pixels: {raw_total}")
+    print(f"De-rotated nonzero voxel pixels: {derot_total}")
     print(f"Downsampled size: {new_height}x{new_width}")
     print("First derotation-slice homography:")
     print(np.array2string(homographies[0], precision=6, suppress_small=True))
@@ -644,27 +754,27 @@ def main() -> None:
         f"{sequence_dir.name} | {duration_ms:.1f} ms | "
         f"{num_derotation_slices} derotation slices -> {args.num_bins} voxel bins"
     )
-    fig = make_plot(
-        raw_x=raw_plot_x,
-        raw_y=raw_plot_y,
-        raw_t_ms=raw_plot_t,
-        raw_value=raw_plot_value,
-        derot_x=derot_plot_x,
-        derot_y=derot_plot_y,
-        derot_t_ms=derot_plot_t,
-        derot_value=derot_plot_value,
+    raw_t_ms = (t_us.astype(np.float64) - float(start_us)) / 1000.0
+    fig = make_raw_event_stream_plot(
+        x=raw_x,
+        y=raw_y,
+        t_ms=raw_t_ms,
+        polarity=polarity,
         width=new_width,
         height=new_height,
         duration_ms=duration_ms,
-        title=title,
+        title=f"{title} | raw sliced event stream",
         view_elev=args.view_elev,
         view_azim=args.view_azim,
+        max_events=args.max_events,
     )
-    bin_fig = make_voxel_bin_plot(
+    bin_fig = make_voxel_bin_3d_plot(
         raw_voxel=raw_voxel,
         derot_voxel=derot_voxel,
         duration_ms=duration_ms,
-        title=f"{title} | individual voxel bins",
+        title=f"{title} | voxel bins as 3D planes",
+        view_elev=args.view_elev,
+        view_azim=args.view_azim,
     )
 
     if args.output is not None:

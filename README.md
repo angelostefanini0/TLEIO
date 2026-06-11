@@ -157,3 +157,13 @@ Run the `scripts/viz/test_trajectory_with_events.py` script with trajectory argu
 ```bash
 python scripts/viz/test_trajectory_with_events.py
 ```
+
+## 9. Running the filter
+Run the `src/main_filter.py` script to run the filter and save the results in the output directory 'outputs', alongside 3D trajectory, position and rotation comparison plots. Use '--h' for a complete overview of the parsers.
+```bash
+python src/main_filter.py \
+--dataset DATASET \
+--sequence SEQUENCE \
+--plot_transformer \    # To visualize the trajectory estimated by the network-
+--plot_projections \    # To save the 2D projections plots.
+```
