@@ -1,4 +1,4 @@
-"""Play raw TartanEvent windows beside a synchronized estimated trajectory."""
+"""for %F in (demo\ME*.txt demo\MH*.txt) do python scripts\viz\visualize_tartan_events_trajectory.py --events "data\tartanair\competition\Test\%~nF\events.h5" --events-meta "data\tartanair\processed_test\competition_Test_%~nF\events_meta.h5" --trajectory-estimate "%F" --gt "data\tartanair\processed_test\competition_Test_%~nF\stamped_groundtruth.txt" --window-ms 5 --fps 30 --max-events 500000 --final-hold-s 2 --auto-close"""
 
 import argparse
 from pathlib import Path
