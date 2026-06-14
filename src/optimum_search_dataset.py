@@ -28,8 +28,10 @@ if str(EVAL_SRC) not in sys.path:
 
 try:
     from main_filter import CONFIG, RunnerConfig, run_filter
+    from optimum_search import estimate_axis_scale_seed
 except ImportError:
     from .main_filter import CONFIG, RunnerConfig, run_filter
+    from .optimum_search import estimate_axis_scale_seed
 
 from trajectory import Trajectory
 
@@ -39,7 +41,9 @@ SEARCH_KEYS = (
     "meas_cov_scale", "initial_attitude_sigma_deg",
     "initial_velocity_sigma_mps", "initial_position_sigma_m", "initial_z_sigma_m",
     "initial_bg_sigma_rps", "initial_ba_sigma_mps2",
+    "network_scale_x", "network_scale_y", "network_scale_z",
 )
+SCALE_KEYS = ("network_scale_x", "network_scale_y", "network_scale_z")
 
 COARSE_LOG10_RANGES = {
     "sigma_na": (-3.0, -0.7), "sigma_ng": (-3.0, -0.7),
@@ -49,6 +53,8 @@ COARSE_LOG10_RANGES = {
     "initial_attitude_sigma_deg": (-1.0, 0.8), "initial_velocity_sigma_mps": (-1.2, 0.4),
     "initial_position_sigma_m": (-2.5, -0.3), "initial_z_sigma_m": (-2.5, -0.3),
     "initial_bg_sigma_rps": (-4.0, -1.5), "initial_ba_sigma_mps2": (-3.0, -0.3),
+    "network_scale_x": (-1.5, 0.3), "network_scale_y": (-1.5, 0.3),
+    "network_scale_z": (-1.5, 0.3),
 }
 
 REFINE_LOG10_HALF_WIDTH = {
@@ -57,10 +63,16 @@ REFINE_LOG10_HALF_WIDTH = {
     "meas_cov_scale": 0.35, "initial_attitude_sigma_deg": 0.5,
     "initial_velocity_sigma_mps": 0.5, "initial_position_sigma_m": 0.5, "initial_z_sigma_m": 0.5,
     "initial_bg_sigma_rps": 0.5, "initial_ba_sigma_mps2": 0.5,
+    "network_scale_x": 0.2, "network_scale_y": 0.2, "network_scale_z": 0.2,
 }
 
 
-def score_run(results: dict, config: RunnerConfig, optimize_for_pos_rmse: bool = False) -> dict[str, float]:
+def score_run(
+    results: dict,
+    config: RunnerConfig,
+    optimize_for_pos_rmse: bool = False,
+    ate_only: bool = False,
+) -> dict[str, float]:
     del config
 
     diagnostics = results["diagnostics"]
@@ -79,7 +91,9 @@ def score_run(results: dict, config: RunnerConfig, optimize_for_pos_rmse: bool =
         print(f"  -> Errore nel calcolo dell'ATE: {exc}")
         ate_rmse = 9999.0
 
-    if optimize_for_pos_rmse:
+    if ate_only:
+        score = ate_rmse
+    elif optimize_for_pos_rmse:
         score = pos_rmse + 0.05 * rot_rmse_deg + 0.001 * rejected
     else:
         score = ate_rmse + 0.05 * rot_rmse_deg + 0.001 * rejected
@@ -178,9 +192,36 @@ def sample_refined_params(rng: random.Random, center: dict[str, float]) -> dict[
     return refined
 
 
+def sample_scale_warmup_params(
+    rng: random.Random,
+    base_params: dict[str, float],
+    center: dict[str, float],
+    half_width: float = 0.45,
+) -> dict[str, float]:
+    candidate = dict(base_params)
+    for key in SCALE_KEYS:
+        low_bound, high_bound = COARSE_LOG10_RANGES[key]
+        center_log10 = math.log10(center[key])
+        low = max(low_bound, center_log10 - half_width)
+        high = min(high_bound, center_log10 + half_width)
+        candidate[key] = sample_log_uniform(rng, low, high)
+    return candidate
+
+
+def estimate_dataset_axis_scale_seed(base_configs: list[RunnerConfig]) -> dict[str, float]:
+    """Use the median per-sequence GT-derived XYZ scale as a robust shared seed."""
+    import numpy as np
+
+    sequence_seeds = [estimate_axis_scale_seed(config) for config in base_configs]
+    return {
+        key: float(np.median([seed[key] for seed in sequence_seeds]))
+        for key in SCALE_KEYS
+    }
+
+
 def _eval_sequence_worker(args_tuple: tuple) -> dict | None:
     """Worker function per valutare una singola sequenza in un processo separato."""
-    base_config, candidate, optimize_for_pos_rmse = args_tuple
+    base_config, candidate, optimize_for_pos_rmse, ate_only = args_tuple
     
     config = replace(
         base_config,
@@ -193,7 +234,12 @@ def _eval_sequence_worker(args_tuple: tuple) -> dict | None:
     )
     try:
         results = run_filter(config)
-        metrics = score_run(results, config, optimize_for_pos_rmse=optimize_for_pos_rmse)
+        metrics = score_run(
+            results,
+            config,
+            optimize_for_pos_rmse=optimize_for_pos_rmse,
+            ate_only=ate_only,
+        )
         return metrics
     except Exception as exc:
         print(f"  [Worker Error] Sequence {config.sequence} failed: {exc}")
@@ -204,6 +250,7 @@ def evaluate_candidate_on_dataset(
     base_configs: list[RunnerConfig],
     candidate: dict[str, float],
     optimize_for_pos_rmse: bool = False,
+    ate_only: bool = False,
     num_jobs: int = 4,
 ) -> dict | None:
     """Valuta lo stesso set di parametri su tutte le sequenze in parallelo e calcola la media."""
@@ -211,7 +258,10 @@ def evaluate_candidate_on_dataset(
     if num_sequences == 0:
         return None
 
-    args_list = [(cfg, candidate, optimize_for_pos_rmse) for cfg in base_configs]
+    args_list = [
+        (cfg, candidate, optimize_for_pos_rmse, ate_only)
+        for cfg in base_configs
+    ]
     results_list = []
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=num_jobs) as executor:
@@ -246,13 +296,18 @@ def evaluate_candidate_on_dataset(
 
 def print_trial(label: str, trial_index: int, evaluated: dict) -> None:
     metrics = evaluated["metrics"]
+    params = evaluated["params"]
     print(
         f"[{label} {trial_index:03d}] "
         f"MEAN_score={metrics['score']:.6f} "
         f"MEAN_ate={metrics['ate_rmse']:.6f} "
         f"MEAN_pos={metrics['position_rmse_m']:.6f} "
         f"MEAN_rot={metrics['rotation_rmse_deg']:.6f} "
-        f"MEAN_rej={metrics['num_updates_rejected']:.1f}"
+        f"MEAN_rej={metrics['num_updates_rejected']:.1f} "
+        "scale_xyz=["
+        f"{params['network_scale_x']:.5f},"
+        f"{params['network_scale_y']:.5f},"
+        f"{params['network_scale_z']:.5f}]"
     )
 
 
@@ -264,21 +319,58 @@ def maybe_update_best(best: dict | None, candidate: dict) -> tuple[dict | None, 
 
 def run_search(
     base_configs: list[RunnerConfig],
+    scale_trials: int,
     coarse_trials: int,
     refine_trials: int,
     seed: int,
     optimize_for_pos_rmse: bool = False,
+    ate_only: bool = False,
     num_jobs: int = 4,
 ) -> dict:
     rng = random.Random(seed)
     completed: list[dict] = []
     best: dict | None = None
 
+    analytic_scale_seed = estimate_dataset_axis_scale_seed(base_configs)
+    seeded_params = {
+        key: float(getattr(base_configs[0], key))
+        for key in SEARCH_KEYS
+    }
+    seeded_params.update(analytic_scale_seed)
+    seeded = evaluate_candidate_on_dataset(
+        base_configs,
+        seeded_params,
+        optimize_for_pos_rmse=optimize_for_pos_rmse,
+        ate_only=ate_only,
+        num_jobs=num_jobs,
+    )
+    if seeded is not None:
+        completed.append(seeded)
+        print_trial("seed", 0, seeded)
+        best, _ = maybe_update_best(best, seeded)
+
+    for idx in range(scale_trials):
+        evaluated = evaluate_candidate_on_dataset(
+            base_configs,
+            sample_scale_warmup_params(rng, seeded_params, analytic_scale_seed),
+            optimize_for_pos_rmse=optimize_for_pos_rmse,
+            ate_only=ate_only,
+            num_jobs=num_jobs,
+        )
+        if evaluated is None:
+            continue
+        completed.append(evaluated)
+        print_trial("scale", idx, evaluated)
+        best, improved = maybe_update_best(best, evaluated)
+        if improved:
+            print("  new best scale candidate")
+
     for idx in range(coarse_trials):
         evaluated = evaluate_candidate_on_dataset(
             base_configs,
             sample_coarse_params(rng),
             optimize_for_pos_rmse=optimize_for_pos_rmse,
+            ate_only=ate_only,
             num_jobs=num_jobs,
         )
         if evaluated is None:
@@ -298,6 +390,7 @@ def run_search(
             base_configs,
             sample_refined_params(rng, refine_center),
             optimize_for_pos_rmse=optimize_for_pos_rmse,
+            ate_only=ate_only,
             num_jobs=num_jobs,
         )
         if evaluated is None:
@@ -320,9 +413,18 @@ def run_search(
         "top_k": completed_sorted[:10],
         "completed_trials": len(completed),
         "seed": seed,
+        "scale_trials": scale_trials,
         "coarse_trials": coarse_trials,
         "refine_trials": refine_trials,
-        "objective": "position_rmse_m" if optimize_for_pos_rmse else "ate_rmse",
+        "objective": (
+            "ate_rmse_only"
+            if ate_only
+            else "position_rmse_m"
+            if optimize_for_pos_rmse
+            else "ate_rmse_with_stability_penalties"
+        ),
+        "protocol": "shared_dataset_supervised",
+        "analytic_scale_seed": analytic_scale_seed,
         "base_config": generic_base_config,
     }
 
@@ -340,9 +442,26 @@ def to_jsonable(value):
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Tune main_filter hyperparameters with deterministic random search.")
     parser.add_argument("--dataset", type=str, default=CONFIG.dataset)
-    parser.add_argument("--sequence", type=str, default=None, help="Sequence to tune. If omitted, tunes all sequences.")
+    parser.add_argument(
+        "--sequence",
+        type=str,
+        default=None,
+        help="Comma-separated sequences to tune. If omitted, tunes all sequences.",
+    )
     parser.add_argument("--gt", action="store_true", help="Use relative_motions.txt instead of regressed_relative_motions.txt.")
     parser.add_argument("--max-frames", type=int, default=None)
+    parser.add_argument(
+        "--relative-motions-file",
+        type=str,
+        default=None,
+        help="Raw prediction path; supports the {sequence} placeholder.",
+    )
+    parser.add_argument(
+        "--scale-trials",
+        type=int,
+        default=100,
+        help="Trials varying only the shared XYZ scales before the full search.",
+    )
     parser.add_argument("--coarse-trials", type=int, default=300)
     parser.add_argument("--refine-trials", type=int, default=400)
     parser.add_argument("--seed", type=int, default=1)
@@ -350,6 +469,11 @@ def parse_args() -> argparse.Namespace:
         "--optimize-for-pos-rmse",
         action="store_true",
         help="Optimize using position RMSE instead of ATE as the main score term.",
+    )
+    parser.add_argument(
+        "--ate-only",
+        action="store_true",
+        help="Rank candidates by mean RPG ATE RMSE only.",
     )
     parser.add_argument(
         "--output-dir",
@@ -378,6 +502,8 @@ def dataset_specific_overrides(dataset: str) -> dict:
 
 def main() -> None:
     args = parse_args()
+    if args.ate_only and args.optimize_for_pos_rmse:
+        raise ValueError("--ate-only and --optimize-for-pos-rmse are mutually exclusive.")
 
     processed_dir = CONFIG.data_root / args.dataset / "processed"
     if not processed_dir.exists():
@@ -385,7 +511,7 @@ def main() -> None:
         return
 
     if args.sequence:
-        sequences = [args.sequence]
+        sequences = [name.strip() for name in args.sequence.split(",") if name.strip()]
     else:
         sequences = [d.name for d in processed_dir.iterdir() if d.is_dir()]
 
@@ -408,6 +534,7 @@ def main() -> None:
             sequence=seq,
             use_gt=args.gt,
             max_frames=args.max_frames,
+            relative_motion_filename=args.relative_motions_file,
             interactive_plot=False,
             plot_transformer=False,
             plot_projections=False,
@@ -425,10 +552,12 @@ def main() -> None:
     try:
         summary = run_search(
             base_configs=base_configs,
+            scale_trials=args.scale_trials,
             coarse_trials=args.coarse_trials,
             refine_trials=args.refine_trials,
             seed=args.seed,
             optimize_for_pos_rmse=args.optimize_for_pos_rmse,
+            ate_only=args.ate_only,
             num_jobs=args.jobs,
         )
     except Exception as exc:
@@ -444,7 +573,11 @@ def main() -> None:
         f"ate={best['metrics']['ate_rmse']:.6f} "
         f"pos={best['metrics']['position_rmse_m']:.6f} "
         f"rot={best['metrics']['rotation_rmse_deg']:.6f} "
-        f"rej={best['metrics']['num_updates_rejected']:.1f}"
+        f"rej={best['metrics']['num_updates_rejected']:.1f} "
+        "scale_xyz=["
+        f"{best['params']['network_scale_x']:.6f}, "
+        f"{best['params']['network_scale_y']:.6f}, "
+        f"{best['params']['network_scale_z']:.6f}]"
     )
 
     dataset_output_file = args.output_dir / args.dataset / "best_dataset_filter_params.json"

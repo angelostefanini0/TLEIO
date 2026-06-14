@@ -80,8 +80,14 @@ class RunnerConfig:
     assumed_sigma_rel_y_t: float = 0.02194332115673975
     assumed_sigma_rel_z_t: float = 0.02194332115673975
     assumed_sigma_rel_r_deg: float = 2.0
+    # `network_scale` is retained for backward compatibility with old tuning
+    # JSON files. New searches optimize the three axis scales directly.
     network_scale: float = 1.0
+    network_scale_x: float = 1.0
+    network_scale_y: float = 1.0
+    network_scale_z: float = 1.0
     meas_cov_scale: float = 1.2649054158337365
+    relative_motion_filename: str | None = None
 
     # Optional extra synthetic noise added on top of measurements
     extra_measurement_noise_t: float = 0.0
@@ -132,11 +138,22 @@ def _load_anchor_poses(sequence_path: Path) -> tuple[np.ndarray, np.ndarray, np.
     return timestamps_us, positions, quaternions
 
 
-def _load_relative_motion_table(sequence_path: Path, use_gt: bool) -> np.ndarray:
+def _load_relative_motion_table(
+    sequence_path: Path,
+    use_gt: bool,
+    relative_motion_filename: str | None = None,
+) -> np.ndarray:
     """Load processed relative motions and skip any stale non-numeric header lines."""
     # Chooses file based on configuration
-    filename = "relative_motions.txt" if use_gt else f"{sequence_path.name}_scaled_rmse.txt"
-    rel_path = sequence_path / filename
+    if use_gt:
+        filename = "relative_motions.txt"
+    elif relative_motion_filename:
+        filename = relative_motion_filename.format(sequence=sequence_path.name)
+    else:
+        filename = f"{sequence_path.name}_scaled_rmse.txt"
+    rel_path = Path(filename)
+    if not rel_path.is_absolute():
+        rel_path = sequence_path / rel_path
     
     rows: list[list[float]] = []
     with rel_path.open("r", encoding="utf-8") as handle:
@@ -160,6 +177,26 @@ def _load_relative_motion_table(sequence_path: Path, use_gt: bool) -> np.ndarray
     if relative_motions.shape[0] < 4:
         raise ValueError(f"{rel_path} needs at least four rows to form one triplet update.")
     return relative_motions
+
+
+def _network_axis_scale(config: RunnerConfig) -> np.ndarray:
+    """Return the effective XYZ scale, including legacy global scaling."""
+    axis_scale = np.asarray(
+        [
+            config.network_scale_x,
+            config.network_scale_y,
+            config.network_scale_z,
+        ],
+        dtype=np.float64,
+    )
+    if axis_scale.shape != (3,) or not np.all(np.isfinite(axis_scale)):
+        raise ValueError(f"Invalid network XYZ scale: {axis_scale}")
+    if np.any(axis_scale <= 0.0) or not np.isfinite(config.network_scale) or config.network_scale <= 0.0:
+        raise ValueError(
+            "Network scales must be finite and strictly positive: "
+            f"global={config.network_scale}, xyz={axis_scale.tolist()}"
+        )
+    return float(config.network_scale) * axis_scale
 
 
 def _load_sequence_imu(sequence_path: Path) -> np.ndarray:
@@ -434,7 +471,8 @@ def _compute_transformer_trajectory(
     anchor_positions: np.ndarray,
     anchor_quaternions: np.ndarray,
     max_frames: int | None,
-    network_scale: float = 1.0
+    network_scale_xyz: np.ndarray | None = None,
+    relative_motion_filename: str | None = None,
 ) -> np.ndarray | None:
     """
     Computes the trajectory based solely on the Transformer's
@@ -443,9 +481,18 @@ def _compute_transformer_trajectory(
     """
     try:
         # Reload the Transformer's predictions 
-        regressed_table = _load_relative_motion_table(sequence_path, use_gt=False)
+        regressed_table = _load_relative_motion_table(
+            sequence_path,
+            use_gt=False,
+            relative_motion_filename=relative_motion_filename,
+        )
         
-        reg_dp = regressed_table[:, 2:5]*network_scale
+        scale = (
+            np.ones(3, dtype=np.float64)
+            if network_scale_xyz is None
+            else np.asarray(network_scale_xyz, dtype=np.float64)
+        )
+        reg_dp = regressed_table[:, 2:5] * scale
         
         # Apply truncation if requested
         if max_frames is not None:
@@ -532,7 +579,11 @@ def run_filter(config: RunnerConfig) -> dict:
     # Load foundational data: anchor ground truths and IMU inputs
     anchor_timestamps_us, anchor_positions, anchor_quaternions = _load_anchor_poses(sequence_path)
     # Pass `config.use_gt` to determine which table to load
-    relative_motion_table = _load_relative_motion_table(sequence_path, config.use_gt)
+    relative_motion_table = _load_relative_motion_table(
+        sequence_path,
+        config.use_gt,
+        config.relative_motion_filename,
+    )
     imu_table = _load_sequence_imu(sequence_path)
 
     # Extract EKF measurement bounds (times & translations) from the relative motion table
@@ -540,8 +591,12 @@ def run_filter(config: RunnerConfig) -> dict:
         relative_motion_table
     )
     # relative_sigmas=None
+    network_scale_xyz = np.ones(3, dtype=np.float64)
     if not config.use_gt:
-        relative_measurements = relative_measurements * config.network_scale
+        network_scale_xyz = _network_axis_scale(config)
+        relative_measurements = relative_measurements * network_scale_xyz
+        if relative_sigmas is not None:
+            relative_sigmas = relative_sigmas * np.abs(network_scale_xyz)
 
     # Ensure that anchor_poses timeline perfectly matches the relative_motions timeline
     anchor_timestamps_us, _, relative_measurements, relative_sigmas = _validate_anchor_alignment(
@@ -679,7 +734,8 @@ def run_filter(config: RunnerConfig) -> dict:
             anchor_positions,
             anchor_quaternions,
             config.max_frames,
-            config.network_scale
+            network_scale_xyz,
+            config.relative_motion_filename,
         )
 
     ate_transformer = None
@@ -782,6 +838,22 @@ def parse_args():
         action="store_true",
         help="Plots the network output shifted and aligned according to the ATE Umeyama transformation (yellow dashed)."
     )
+    parser.add_argument(
+        "--relative-motions-file",
+        type=str,
+        default=None,
+        help=(
+            "Prediction path relative to the processed sequence directory. "
+            "The {sequence} placeholder is expanded to the sequence name. "
+            "Defaults to <sequence>_scaled_rmse.txt for backward compatibility."
+        ),
+    )
+    parser.add_argument(
+        "--params-file",
+        type=Path,
+        default=None,
+        help="Optional best_filter_params.json to apply instead of the legacy hard-coded path.",
+    )
     return parser.parse_args()
 
 
@@ -799,7 +871,11 @@ def main() -> None:
         }
     json_params = {}
     # json_path = ROOT / "outputtestv7"/ args.sequence / "best_filter_params.json"
-    json_path = ROOT / "scaled_eds"/ args.sequence / "best_filter_params.json"
+    json_path = (
+        args.params_file
+        if args.params_file is not None
+        else ROOT / "scaled_eds" / args.sequence / "best_filter_params.json"
+    )
     
     if json_path.exists():
         with open(json_path, "r", encoding="utf-8") as f:
@@ -819,6 +895,7 @@ def main() -> None:
         plot_projections=args.plot_projections,
         plot_ate=args.plot_ate,
         plot_aa_transformer=args.plot_aa_transformer,
+        relative_motion_filename=args.relative_motions_file,
         **dataset_params,
         **json_params
     )
