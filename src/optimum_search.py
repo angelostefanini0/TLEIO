@@ -436,6 +436,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gt", action="store_true", help="Use relative_motions.txt instead of regressed_relative_motions.txt.")
     parser.add_argument("--max-frames", type=int, default=None)
     parser.add_argument(
+        "--oracle-scale-window",
+        type=int,
+        default=None,
+        help="Fit one oracle scalar from GT for every N transitions.",
+    )
+    parser.add_argument(
         "--relative-motions-file",
         type=str,
         default=None,
@@ -520,6 +526,7 @@ def main() -> None:
             processed_dir=processed_dir,
             use_gt=args.gt,
             max_frames=args.max_frames,
+            oracle_scale_window=args.oracle_scale_window,
             relative_motion_filename=args.relative_motions_file,
             interactive_plot=False,
             plot_transformer=False,

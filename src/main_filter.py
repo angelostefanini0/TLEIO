@@ -89,6 +89,7 @@ class RunnerConfig:
     network_scale_x: float = 1.0
     network_scale_y: float = 1.0
     network_scale_z: float = 1.0
+    oracle_scale_window: int | None = None
     meas_cov_scale: float = 1.2649054158337365
     relative_motion_filename: str | None = None
 
@@ -200,6 +201,51 @@ def _network_axis_scale(config: RunnerConfig) -> np.ndarray:
             f"global={config.network_scale}, xyz={axis_scale.tolist()}"
         )
     return float(config.network_scale) * axis_scale
+
+
+def _oracle_window_scales(
+    sequence_path: Path,
+    prediction_table: np.ndarray,
+    window_size: int,
+    axis_scale: np.ndarray,
+) -> np.ndarray:
+    """Fit one positive scalar per prediction window using matching GT translations."""
+    if window_size <= 0:
+        raise ValueError(f"oracle_scale_window must be positive, got {window_size}.")
+
+    gt = _load_relative_motion_table(sequence_path, use_gt=True)
+    gt_lookup = {
+        (int(row[0]), int(row[1])): row[2:5]
+        for row in gt
+    }
+    scales = np.ones(len(prediction_table), dtype=np.float64)
+
+    for start in range(0, len(prediction_table), window_size):
+        stop = min(start + window_size, len(prediction_table))
+        pred_block = prediction_table[start:stop, 2:5] * axis_scale
+        gt_block = []
+        valid_pred = []
+        for row, pred_xyz in zip(prediction_table[start:stop], pred_block):
+            target = gt_lookup.get((int(row[0]), int(row[1])))
+            if target is not None:
+                valid_pred.append(pred_xyz)
+                gt_block.append(target)
+        if not valid_pred:
+            raise ValueError(
+                f"No matching GT rows for oracle scale window [{start}, {stop})."
+            )
+
+        pred_xyz = np.asarray(valid_pred, dtype=np.float64)
+        gt_xyz = np.asarray(gt_block, dtype=np.float64)
+        denominator = float(np.sum(pred_xyz * pred_xyz))
+        scale = (
+            float(np.sum(pred_xyz * gt_xyz) / denominator)
+            if denominator > 1e-12
+            else 1.0
+        )
+        scales[start:stop] = np.clip(scale, 1e-4, 10.0)
+
+    return scales
 
 
 def _load_sequence_imu(sequence_path: Path) -> np.ndarray:
@@ -597,9 +643,22 @@ def run_filter(config: RunnerConfig) -> dict:
     network_scale_xyz = np.ones(3, dtype=np.float64)
     if not config.use_gt:
         network_scale_xyz = _network_axis_scale(config)
-        relative_measurements = relative_measurements * network_scale_xyz
+        measurement_scale = np.broadcast_to(
+            network_scale_xyz,
+            relative_measurements.shape,
+        ).copy()
+        if config.oracle_scale_window is not None:
+            window_scales = _oracle_window_scales(
+                sequence_path,
+                relative_motion_table,
+                config.oracle_scale_window,
+                network_scale_xyz,
+            )
+            measurement_scale *= window_scales[:, None]
+        relative_measurements = relative_measurements * measurement_scale
         if relative_sigmas is not None:
-            relative_sigmas = relative_sigmas * np.abs(network_scale_xyz)
+            relative_sigmas = relative_sigmas * np.abs(measurement_scale)
+        network_scale_xyz = measurement_scale
 
     # Ensure that anchor_poses timeline perfectly matches the relative_motions timeline
     anchor_timestamps_us, _, relative_measurements, relative_sigmas = _validate_anchor_alignment(
@@ -863,6 +922,12 @@ def parse_args():
         default=None,
         help="Optional best_filter_params.json to apply instead of the legacy hard-coded path.",
     )
+    parser.add_argument(
+        "--oracle-scale-window",
+        type=int,
+        default=None,
+        help="Fit one GT-derived scalar for every N relative-motion rows.",
+    )
     return parser.parse_args()
 
 
@@ -906,6 +971,7 @@ def main() -> None:
         plot_ate=args.plot_ate,
         plot_aa_transformer=args.plot_aa_transformer,
         relative_motion_filename=args.relative_motions_file,
+        oracle_scale_window=args.oracle_scale_window,
         **dataset_params,
         **json_params
     )
