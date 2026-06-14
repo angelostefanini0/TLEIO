@@ -43,9 +43,12 @@ class RunnerConfig:
     data_root: Path = ROOT / "data"
     dataset: str = "eds"
     sequence: str = "00_peanuts_dark"
+    processed_dir: Path | None = None
 
     @property
     def processed_root(self) -> Path:
+        if self.processed_dir is not None:
+            return self.processed_dir
         return self.data_root / self.dataset / "processed"
     
     @property
@@ -803,6 +806,12 @@ def parse_args():
         help="Dataset folder name to process (e.g., 'eds', 'tartanair')"
     )
     parser.add_argument(
+        "--processed-dir",
+        type=Path,
+        default=None,
+        help="Override the default data/<dataset>/processed directory.",
+    )
+    parser.add_argument(
         "--sequence",
         type=str,
         default=CONFIG.sequence, 
@@ -889,6 +898,7 @@ def main() -> None:
         use_gt=args.gt, 
         dataset=args.dataset,
         sequence=args.sequence,
+        processed_dir=args.processed_dir,
         plot_transformer=args.plot_transformer,
         plot_imu=args.plot_imu,
         interactive_plot=args.interactive_plot,

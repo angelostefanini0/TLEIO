@@ -73,8 +73,6 @@ def score_run(
     optimize_for_pos_rmse: bool = False,
     ate_only: bool = False,
 ) -> dict[str, float]:
-    del config
-
     diagnostics = results["diagnostics"]
     pos_rmse = float(diagnostics["position_rmse_m"])
     rot_rmse_deg = float(diagnostics["rotation_rmse_deg"])
@@ -84,6 +82,7 @@ def score_run(
         ate_rmse = compute_ate_from_results(
             dataset=results["dataset"],
             sequence=results["sequence"],
+            processed_root=config.processed_root,
             ground_truth_table=results["ground_truth"],
             estimate_table=results["trajectory"],
         )
@@ -149,12 +148,13 @@ def write_seconds_pose_table(src_path: Path, dst_path: Path) -> Path:
 def compute_ate_from_results(
     dataset: str,
     sequence: str,
+    processed_root: Path,
     ground_truth_table,
     estimate_table,
 ) -> float:
     import numpy as np
 
-    gt_path = ROOT / "data" / dataset / "processed" / sequence / "stamped_groundtruth.txt"
+    gt_path = processed_root / sequence / "stamped_groundtruth.txt"
     if not gt_path.exists():
         raise FileNotFoundError(f"Ground-truth file does not exist: {gt_path}")
 
@@ -443,6 +443,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Tune main_filter hyperparameters with deterministic random search.")
     parser.add_argument("--dataset", type=str, default=CONFIG.dataset)
     parser.add_argument(
+        "--processed-dir",
+        type=Path,
+        default=None,
+        help="Override the default data/<dataset>/processed directory.",
+    )
+    parser.add_argument(
         "--sequence",
         type=str,
         default=None,
@@ -505,7 +511,11 @@ def main() -> None:
     if args.ate_only and args.optimize_for_pos_rmse:
         raise ValueError("--ate-only and --optimize-for-pos-rmse are mutually exclusive.")
 
-    processed_dir = CONFIG.data_root / args.dataset / "processed"
+    processed_dir = (
+        args.processed_dir
+        if args.processed_dir is not None
+        else CONFIG.data_root / args.dataset / "processed"
+    )
     if not processed_dir.exists():
         print(f"Error: Dataset path {processed_dir} not found.")
         return
@@ -532,6 +542,7 @@ def main() -> None:
             CONFIG,
             dataset=args.dataset,
             sequence=seq,
+            processed_dir=processed_dir,
             use_gt=args.gt,
             max_frames=args.max_frames,
             relative_motion_filename=args.relative_motions_file,
