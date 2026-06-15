@@ -96,6 +96,7 @@ class RunnerConfig:
     network_scale_z: float = 1.0
     oracle_scale_window: int | None = None
     meas_cov_scale: float = 1.2649054158337365
+    use_prediction_covariance: bool = True
     relative_motion_filename: str | None = None
 
     # Optional extra synthetic noise added on top of measurements
@@ -768,7 +769,7 @@ def run_filter(config: RunnerConfig) -> dict:
         current_joint_covariance = joint_covariance.copy()
         # If relative sigmas from Transformer are available, inject them 
         # dynamically into the covariance diagonal.
-        if relative_sigmas is not None:
+        if relative_sigmas is not None and config.use_prediction_covariance:
             sigmas = relative_sigmas[anchor_idx - 4 : anchor_idx] # shape (2, 3)
             variances = (sigmas.flatten()) ** 2 
             np.fill_diagonal(current_joint_covariance[0:12, 0:12], variances)
