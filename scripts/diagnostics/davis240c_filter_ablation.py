@@ -15,6 +15,9 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 from src.main_filter import CONFIG, run_filter
 from src.optimum_search_deio_mpe import compute_deio_metrics

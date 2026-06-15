@@ -260,6 +260,7 @@ def tune_sequence(args: argparse.Namespace, sequence: str) -> dict:
         network_scale_z=1.0,
         oracle_scale_window=None,
         imu_axis_matrix=DAVIS_IMU_AXIS_MATRIX,
+        gravity_world_mps2=(0.0, 0.0, -9.80665),
         save_trajectory_file=False,
         save_diagnostic_plots=False,
     )
