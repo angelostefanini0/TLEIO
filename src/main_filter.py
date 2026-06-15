@@ -71,6 +71,11 @@ class RunnerConfig:
 
     # # IMU preprocessing
     imu_axis_multipliers: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    imu_axis_matrix: tuple[float, ...] = (
+        1.0, 0.0, 0.0,
+        0.0, 1.0, 0.0,
+        0.0, 0.0, 1.0,
+    )
 
     # IMU process noise
     sigma_na: float = 0.011065875226523246
@@ -410,6 +415,7 @@ def _build_anchor_imu_segments(
     imu_table: np.ndarray,
     anchor_timestamps_us: np.ndarray,
     axis_multipliers: tuple[float, float, float],
+    axis_matrix: tuple[float, ...],
 ) -> list[list[ImuMeasurement]]:
     """Precompute one exact propagation segment for each consecutive anchor pair."""
 
@@ -421,6 +427,15 @@ def _build_anchor_imu_segments(
     axis_multipliers_arr = np.asarray(axis_multipliers, dtype=np.float64)
     raw_gyro = raw_gyro * axis_multipliers_arr
     raw_accel = raw_accel * axis_multipliers_arr
+    axis_matrix_arr = np.asarray(axis_matrix, dtype=np.float64).reshape(3, 3)
+    if not np.allclose(
+        axis_matrix_arr @ axis_matrix_arr.T,
+        np.eye(3),
+        atol=1e-8,
+    ):
+        raise ValueError("imu_axis_matrix must be an orthonormal 3x3 matrix.")
+    raw_gyro = (axis_matrix_arr @ raw_gyro.T).T
+    raw_accel = (axis_matrix_arr @ raw_accel.T).T
     anchor_times_s = anchor_timestamps_us.astype(np.float64) * 1e-6
 
     if anchor_times_s[0] < raw_times_s[0] or anchor_times_s[-1] > raw_times_s[-1]:
@@ -684,6 +699,7 @@ def run_filter(config: RunnerConfig) -> dict:
         imu_table,
         anchor_timestamps_us,
         config.imu_axis_multipliers,
+        config.imu_axis_matrix,
     )
 
     # Determine absolute starting states from the first two available ground truth anchors
