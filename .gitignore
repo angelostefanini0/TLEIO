@@ -13,7 +13,8 @@ venv/
 data/*
 !data/.gitkeep
 results/
-outputs/main_filter/
+outputs/
+competition_Test_ME004
 checkpoints/
 *.h5
 *.log

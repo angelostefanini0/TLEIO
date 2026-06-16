@@ -80,7 +80,7 @@ class RunnerConfig:
     chi2_confidence: float = 0.95
     chi2_multiplier: float = 1.0
     enable_chi2_gating: bool = True
-    use_fej: bool = False
+    use_fej: bool = True
     use_block_update: bool = False
     covariance_repair_mode: str = "jitter"
     imu_noise_model: str = "discrete"
@@ -801,7 +801,13 @@ def parse_args():
     parser.add_argument(
         "--use_fej",
         action="store_true",
-        help="Use first-estimate clone poses for translation-update Jacobians.",
+        default=CONFIG.use_fej,
+        help="Use first-estimate clone poses for translation-update Jacobians. Enabled by default.",
+    )
+    parser.add_argument(
+        "--disable_fej",
+        action="store_true",
+        help="Disable first-estimate Jacobians for an ablation run.",
     )
     parser.add_argument(
         "--block_update",
@@ -852,7 +858,7 @@ def main() -> None:
         interactive_plot=args.interactive_plot,
         plot_projections=args.plot_projections,
         use_regressed_covariance=not args.fixed_covariance,
-        use_fej=args.use_fej,
+        use_fej=bool(args.use_fej and not args.disable_fej),
         use_block_update=args.block_update,
         enable_chi2_gating=not args.disable_chi2_gating,
         covariance_repair_mode=args.covariance_repair_mode,
