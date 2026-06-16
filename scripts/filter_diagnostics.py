@@ -345,6 +345,43 @@ def save_projections_plot(
     return path
 
 
+def save_consistency_diagnostics(
+    path: Path,
+    times_s: np.ndarray,
+    gt_positions: np.ndarray,
+    gt_quaternions_xyzw: np.ndarray,
+    estimated_positions: np.ndarray,
+    estimated_quaternions_xyzw: np.ndarray,
+) -> Path:
+    """Save approximate consistency diagnostics without claiming full NEES."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    position_errors = estimated_positions - gt_positions
+    position_error_norms = np.linalg.norm(position_errors, axis=1)
+    rotation_errors_deg = np.array(
+        [
+            rotation_error_deg(q_gt, q_est)
+            for q_gt, q_est in zip(gt_quaternions_xyzw, estimated_quaternions_xyzw)
+        ],
+        dtype=np.float64,
+    )
+    header = (
+        "timestamp_s px_error py_error pz_error position_error_norm_m "
+        "rotation_geodesic_error_deg approximate_nees_available"
+    )
+    table = np.column_stack(
+        [
+            times_s,
+            position_errors,
+            position_error_norms,
+            rotation_errors_deg,
+            np.zeros_like(times_s),
+        ]
+    )
+    np.savetxt(path, table, fmt="%.9f", header=header, comments="")
+    return path
+
+
 def show_interactive_3d_plot(
     estimated_trajectory: np.ndarray,
     ground_truth_trajectory: np.ndarray,
@@ -523,6 +560,16 @@ def compute_filter_diagnostics(
                     imu_positions=aligned_imu_positions,
                 )
             )
+        saved_files["consistency_diagnostics"] = str(
+            save_consistency_diagnostics(
+                output_dir / "consistency_diagnostics.csv",
+                est_times_s,
+                aligned_gt_positions,
+                aligned_gt_quaternions,
+                est_positions,
+                est_quaternions,
+            )
+        )
 
     return {
         "position_rmse_m": position_rmse_m,

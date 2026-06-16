@@ -13,6 +13,7 @@ from src.main_filter import (
     _sanitize_relative_sigmas,
     _save_update_diagnostics,
     _summarize_chi2_ratios,
+    run_filter,
 )
 from filter.measurement_triplet import make_default_joint_covariance
 
@@ -73,6 +74,29 @@ def test_regressed_sigmas_fill_12d_covariance_diagonal():
 
     assert used_regressed
     np.testing.assert_allclose(np.diag(covariance), sigmas[1:5].reshape(-1) ** 2)
+
+
+def test_axis_covariance_scale_changes_expected_diagonal_entries():
+    base = make_default_joint_covariance(0.5)
+    sigmas = np.ones((5, 3), dtype=float) * 0.1
+    covariance, used_regressed = _build_joint_covariance_for_window(
+        base,
+        sigmas,
+        0,
+        axis_scale=(1.0, 2.0, 3.0),
+    )
+
+    assert used_regressed
+    expected_edge_diag = np.array([0.1**2, 0.2**2, 0.3**2])
+    np.testing.assert_allclose(np.diag(covariance).reshape(4, 3), np.tile(expected_edge_diag, (4, 1)))
+
+
+def test_axis_covariance_scale_rejects_non_positive_values():
+    base = make_default_joint_covariance(0.5)
+    sigmas = np.ones((5, 3), dtype=float)
+
+    with pytest.raises(ValueError, match="finite and positive"):
+        _build_joint_covariance_for_window(base, sigmas, 0, axis_scale=(1.0, 0.0, 1.0))
 
 
 def test_negative_or_nan_sigmas_are_rejected():
@@ -153,6 +177,7 @@ def test_update_diagnostics_csv_is_written(tmp_path):
 
     text = path.read_text(encoding="utf-8")
     assert "anchor_idx,timestamp_s,accepted" in text
+    assert "edge0_chi2_ratio" in text
     assert "4,1.0,1" in text
 
 
@@ -162,3 +187,13 @@ def test_chi2_ratio_summary_matches_raw_values():
     assert summary["median_chi2_ratio"] == pytest.approx(2.0)
     assert summary["p95_chi2_ratio"] == pytest.approx(2.9)
     assert summary["max_chi2_ratio"] == pytest.approx(3.0)
+
+
+def test_midpoint_half_R_requires_paired_intervals():
+    config = RunnerConfig(
+        imu_interval_mode="sample_dt",
+        nominal_integration_method="midpoint_half_R",
+    )
+
+    with pytest.raises(ValueError, match="paired_samples"):
+        run_filter(config)

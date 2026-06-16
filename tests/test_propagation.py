@@ -181,6 +181,56 @@ def test_midpoint_matches_euler_for_constant_imu():
     np.testing.assert_allclose(ekf_midpoint.state.p, ekf_euler.state.p, atol=1e-10)
 
 
+def test_midpoint_half_R_matches_midpoint_for_zero_gyro():
+    intervals = [
+        ImuInterval(
+            t0=0.0,
+            t1=0.1,
+            accel0=np.array([1.0, 0.0, 9.80665]),
+            gyro0=np.zeros(3),
+            accel1=np.array([1.0, 0.0, 9.80665]),
+            gyro1=np.zeros(3),
+        )
+    ]
+    ekf_midpoint = ImuMSCKF(_args(nominal_integration_method="midpoint"))
+    ekf_half = ImuMSCKF(_args(nominal_integration_method="midpoint_half_R"))
+    for ekf in (ekf_midpoint, ekf_half):
+        ekf.g = np.array([0.0, 0.0, -9.80665])
+        ekf.initialize_with_state(0.0, np.eye(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3))
+
+    ekf_midpoint.propagate_intervals(intervals)
+    ekf_half.propagate_intervals(intervals)
+
+    np.testing.assert_allclose(ekf_half.state.v, ekf_midpoint.state.v, atol=1e-10)
+    np.testing.assert_allclose(ekf_half.state.p, ekf_midpoint.state.p, atol=1e-10)
+
+
+def test_midpoint_half_R_uses_half_step_rotation_for_acceleration():
+    intervals = [
+        ImuInterval(
+            t0=0.0,
+            t1=1.0,
+            accel0=np.array([1.0, 0.0, 0.0]),
+            gyro0=np.array([0.0, 0.0, np.pi]),
+            accel1=np.array([1.0, 0.0, 0.0]),
+            gyro1=np.array([0.0, 0.0, np.pi]),
+        )
+    ]
+    ekf_midpoint = ImuMSCKF(_args(nominal_integration_method="midpoint"))
+    ekf_half = ImuMSCKF(_args(nominal_integration_method="midpoint_half_R"))
+    for ekf in (ekf_midpoint, ekf_half):
+        ekf.g = np.zeros(3)
+        ekf.initialize_with_state(0.0, np.eye(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3))
+
+    ekf_midpoint.propagate_intervals(intervals)
+    ekf_half.propagate_intervals(intervals)
+
+    assert ekf_midpoint.state.v[0] == pytest.approx(1.0)
+    assert abs(ekf_midpoint.state.v[1]) < 1e-12
+    assert abs(ekf_half.state.v[0]) < 1e-12
+    assert ekf_half.state.v[1] == pytest.approx(1.0)
+
+
 def test_summed_covariance_matches_per_sample_for_short_constant_sequence():
     intervals = [
         ImuInterval(

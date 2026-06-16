@@ -291,3 +291,98 @@ def test_condition_number_diagnostics_are_returned():
     assert "condition_number_R" in info
     assert "condition_number_S" in info
     assert "whitening_applied" in info
+
+
+def test_edge_mahalanobis_returns_four_edges():
+    ekf = _setup_filter()
+    residual, H, R = build_triplet_update(
+        ekf.state,
+        {"relative_pose": _perfect_measurement(ekf)},
+        make_default_joint_covariance(0.05),
+    )
+
+    edge_results = ekf._compute_edge_mahalanobis(residual, H, ekf.state.P, R)
+
+    assert len(edge_results) == 4
+    assert [result["edge"] for result in edge_results] == [0, 1, 2, 3]
+
+
+def test_edge_chi2_threshold_uses_3d_dimension():
+    ekf = _setup_filter()
+    residual, H, R = build_triplet_update(
+        ekf.state,
+        {"relative_pose": _perfect_measurement(ekf)},
+        make_default_joint_covariance(0.05),
+    )
+
+    edge_results = ekf._compute_edge_mahalanobis(residual, H, ekf.state.P, R)
+
+    assert edge_results[0]["chi2_threshold"] == pytest.approx(7.8147279, rel=1e-6)
+
+
+def test_global_gate_behavior_unchanged_when_edge_diagnostics_enabled():
+    measurement = _perfect_measurement(_setup_filter()) + 10.0
+    ekf_off = _setup_filter(edge_robust_mode="off")
+    info = ekf_off.update(
+        {
+            "relative_pose": measurement,
+            "joint_covariance": np.eye(12) * 1e-4,
+        }
+    )
+
+    assert info["rejected"]
+    assert "edge_chi2_ratios" in info
+    assert len(info["edge_chi2_ratios"]) == 4
+
+
+def test_edge_reject_mode_rejects_single_bad_edge():
+    ekf = _setup_filter(enable_chi2_gating=False, edge_robust_mode="reject")
+    measurement = _perfect_measurement(ekf)
+    measurement[0] += np.array([10.0, 0.0, 0.0])
+
+    info = ekf.update(
+        {
+            "relative_pose": measurement,
+            "joint_covariance": np.eye(12) * 1e-4,
+        }
+    )
+
+    assert info["rejected"]
+    assert info["edge_rejected"]
+    assert 0 in info["failed_edge_indices"]
+
+
+def test_edge_inflation_increases_selected_covariance_block():
+    ekf = _setup_filter(
+        enable_chi2_gating=False,
+        edge_robust_mode="inflate",
+        edge_inflation_factor=10.0,
+    )
+    measurement = _perfect_measurement(ekf)
+    measurement[0] += np.array([10.0, 0.0, 0.0])
+
+    info = ekf.update(
+        {
+            "relative_pose": measurement,
+            "joint_covariance": np.eye(12) * 1e-4,
+        }
+    )
+
+    assert not info["rejected"]
+    assert info["num_inflated_edges"] >= 1
+    assert info["measurement_covariance"][0, 0] == pytest.approx(1e-3)
+
+
+def test_edge_robust_off_matches_current_update():
+    ekf_a = _setup_filter(enable_chi2_gating=False, edge_robust_mode="off")
+    ekf_b = _setup_filter(enable_chi2_gating=False)
+    measurement = _perfect_measurement(ekf_a) + 0.01
+
+    info_a = ekf_a.update(
+        {"relative_pose": measurement, "joint_covariance": make_default_joint_covariance(0.05)}
+    )
+    info_b = ekf_b.update(
+        {"relative_pose": measurement, "joint_covariance": make_default_joint_covariance(0.05)}
+    )
+
+    np.testing.assert_allclose(info_a["delta_x"], info_b["delta_x"], atol=1e-12)

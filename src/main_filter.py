@@ -75,6 +75,7 @@ class RunnerConfig:
     assumed_sigma_rel_t: float = 0.02194332115673975
     assumed_sigma_rel_r_deg: float = 2.0
     meas_cov_scale: float = 1.2649054158337365
+    meas_cov_axis_scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
     use_regressed_covariance: bool = True
     min_regressed_sigma_m: float = 1e-4
     max_regressed_sigma_m: float = 1.0
@@ -91,6 +92,9 @@ class RunnerConfig:
     update_solve_method: str = "innovation"
     gating_mode: str = "global"
     fej_scope: str = "clone_update"
+    edge_robust_mode: str = "off"
+    edge_inflation_factor: float = 100.0
+    edge_chi2_multiplier: float = 1.0
 
     # Optional extra synthetic noise added on top of measurements
     extra_measurement_noise_t: float = 0.0
@@ -263,16 +267,23 @@ def _build_joint_covariance_for_window(
     base_joint_covariance: np.ndarray,
     relative_sigmas: np.ndarray | None,
     start_idx: int,
+    axis_scale: tuple[float, float, float] = (1.0, 1.0, 1.0),
 ) -> tuple[np.ndarray, bool]:
     """Build the 12x12 measurement covariance for one four-edge update window."""
 
     covariance = np.asarray(base_joint_covariance, dtype=np.float64).copy()
+    axis_scale_arr = np.asarray(axis_scale, dtype=np.float64)
+    if axis_scale_arr.shape != (3,):
+        raise ValueError(f"Expected three axis covariance scale values, got shape {axis_scale_arr.shape}.")
+    if not np.isfinite(axis_scale_arr).all() or np.any(axis_scale_arr <= 0.0):
+        raise ValueError("Measurement covariance axis scale values must be finite and positive.")
     if relative_sigmas is None:
         return covariance, False
 
     sigmas = np.asarray(relative_sigmas[start_idx : start_idx + 4], dtype=np.float64)
     if sigmas.shape != (4, 3):
         raise ValueError(f"Expected four rows of 3D sigmas for update covariance, got {sigmas.shape}.")
+    sigmas = sigmas * axis_scale_arr[None, :]
     np.fill_diagonal(covariance, sigmas.reshape(-1) ** 2)
     return covariance, True
 
@@ -557,6 +568,9 @@ def _make_filter_args(config: RunnerConfig) -> SimpleNamespace:
         update_solve_method=str(config.update_solve_method),
         gating_mode=str(config.gating_mode),
         fej_scope=str(config.fej_scope),
+        edge_robust_mode=str(config.edge_robust_mode),
+        edge_inflation_factor=float(config.edge_inflation_factor),
+        edge_chi2_multiplier=float(config.edge_chi2_multiplier),
     )
 
 
@@ -619,6 +633,15 @@ def _save_update_diagnostics(path: Path, rows: list[dict]) -> Path:
         "condition_number_S",
         "whitening_applied",
         "whitening_repaired_R",
+        "edge_robust_mode",
+        "num_inflated_edges",
+        "inflated_edge_indices",
+        "edge_rejected",
+        "edge0_chi2_ratio",
+        "edge1_chi2_ratio",
+        "edge2_chi2_ratio",
+        "edge3_chi2_ratio",
+        "max_edge_chi2_ratio",
     ]
     for component_idx in range(12):
         fieldnames.append(f"residual_{component_idx}")
@@ -740,6 +763,15 @@ def run_filter(config: RunnerConfig) -> dict:
             raise ValueError("Summed covariance propagation requires --imu_interval_mode paired_samples.")
         if config.nominal_integration_method != "euler":
             raise ValueError("Midpoint nominal integration requires --imu_interval_mode paired_samples.")
+    axis_scale_arr = np.asarray(config.meas_cov_axis_scale, dtype=np.float64)
+    if axis_scale_arr.shape != (3,) or not np.isfinite(axis_scale_arr).all() or np.any(axis_scale_arr <= 0.0):
+        raise ValueError("meas_cov_axis_scale must contain three finite positive values.")
+    if config.edge_robust_mode not in {"off", "inflate", "reject"}:
+        raise ValueError(f"Unknown edge robust mode {config.edge_robust_mode!r}.")
+    if not np.isfinite(config.edge_inflation_factor) or config.edge_inflation_factor <= 0.0:
+        raise ValueError("edge_inflation_factor must be finite and positive.")
+    if not np.isfinite(config.edge_chi2_multiplier) or config.edge_chi2_multiplier <= 0.0:
+        raise ValueError("edge_chi2_multiplier must be finite and positive.")
 
     # Directory path for the given dataset sequence
     sequence_path = _sequence_path(config)
@@ -877,6 +909,7 @@ def run_filter(config: RunnerConfig) -> dict:
             joint_covariance,
             relative_sigmas,
             anchor_idx - 4,
+            axis_scale=config.meas_cov_axis_scale,
         )
         used_regressed_covariance = used_regressed_covariance or used_regressed_for_update
         # Measurement update
@@ -929,7 +962,15 @@ def run_filter(config: RunnerConfig) -> dict:
             "condition_number_S": float(update_info.get("condition_number_S", np.nan)),
             "whitening_applied": int(bool(update_info.get("whitening_applied", False))),
             "whitening_repaired_R": int(bool(update_info.get("whitening_repaired_R", False))),
+            "edge_robust_mode": str(update_info.get("edge_robust_mode", config.edge_robust_mode)),
+            "num_inflated_edges": int(update_info.get("num_inflated_edges", 0)),
+            "inflated_edge_indices": " ".join(str(idx) for idx in update_info.get("inflated_edge_indices", [])),
+            "edge_rejected": int(bool(update_info.get("edge_rejected", False))),
         }
+        edge_ratios = list(update_info.get("edge_chi2_ratios", [np.nan, np.nan, np.nan, np.nan]))
+        for edge_idx in range(4):
+            diagnostic_row[f"edge{edge_idx}_chi2_ratio"] = float(edge_ratios[edge_idx])
+        diagnostic_row["max_edge_chi2_ratio"] = float(np.nanmax(edge_ratios))
         for component_idx, value in enumerate(residual.reshape(-1)):
             diagnostic_row[f"residual_{component_idx}"] = float(value)
         for component_idx, value in enumerate(sigma_vector.reshape(-1)):
@@ -1058,6 +1099,20 @@ def parse_args():
         help="Ignore regressed sigma columns and use the fixed assumed translation covariance.",
     )
     parser.add_argument(
+        "--meas_cov_scale",
+        type=float,
+        default=CONFIG.meas_cov_scale,
+        help="Global multiplier applied to the 12D measurement covariance inside the EKF update.",
+    )
+    parser.add_argument(
+        "--meas_cov_axis_scale",
+        type=float,
+        nargs=3,
+        default=CONFIG.meas_cov_axis_scale,
+        metavar=("SX", "SY", "SZ"),
+        help="Per-axis sigma scale applied to regressed translation covariance before building each 12D window.",
+    )
+    parser.add_argument(
         "--use_fej",
         action="store_true",
         default=CONFIG.use_fej,
@@ -1104,7 +1159,7 @@ def parse_args():
     )
     parser.add_argument(
         "--nominal_integration_method",
-        choices=("euler", "midpoint"),
+        choices=("euler", "midpoint", "midpoint_half_R"),
         default=CONFIG.nominal_integration_method,
         help="Nominal IMU integration rule for paired-sample propagation.",
     )
@@ -1125,6 +1180,24 @@ def parse_args():
         choices=("clone_update",),
         default=CONFIG.fej_scope,
         help="FEJ scope. Full propagation FEJ is intentionally not enabled in this pass.",
+    )
+    parser.add_argument(
+        "--edge_robust_mode",
+        choices=("off", "inflate", "reject"),
+        default=CONFIG.edge_robust_mode,
+        help="Per-edge robust handling mode for the four 3D relative-translation residuals.",
+    )
+    parser.add_argument(
+        "--edge_inflation_factor",
+        type=float,
+        default=CONFIG.edge_inflation_factor,
+        help="Covariance multiplier for failed edges when edge robust mode is inflate.",
+    )
+    parser.add_argument(
+        "--edge_chi2_multiplier",
+        type=float,
+        default=CONFIG.edge_chi2_multiplier,
+        help="Additional multiplier for 3D per-edge chi-square thresholds.",
     )
     return parser.parse_args()
 
@@ -1153,6 +1226,8 @@ def main() -> None:
         interactive_plot=args.interactive_plot,
         plot_projections=args.plot_projections,
         use_regressed_covariance=not args.fixed_covariance,
+        meas_cov_scale=args.meas_cov_scale,
+        meas_cov_axis_scale=tuple(args.meas_cov_axis_scale),
         use_fej=bool(args.use_fej and not args.disable_fej),
         use_block_update=args.block_update,
         enable_chi2_gating=not args.disable_chi2_gating,
@@ -1164,6 +1239,9 @@ def main() -> None:
         update_solve_method=args.update_solve_method,
         gating_mode=args.gating_mode,
         fej_scope=args.fej_scope,
+        edge_robust_mode=args.edge_robust_mode,
+        edge_inflation_factor=args.edge_inflation_factor,
+        edge_chi2_multiplier=args.edge_chi2_multiplier,
         **dataset_params
     )
     # Execute EKF processing

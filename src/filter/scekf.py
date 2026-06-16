@@ -131,6 +131,9 @@ class ImuMSCKF:
         self.update_solve_method = getattr(args, "update_solve_method", "innovation")
         self.gating_mode = getattr(args, "gating_mode", "global")
         self.fej_scope = getattr(args, "fej_scope", "clone_update")
+        self.edge_robust_mode = getattr(args, "edge_robust_mode", "off")
+        self.edge_inflation_factor = getattr(args, "edge_inflation_factor", 100.0)
+        self.edge_chi2_multiplier = getattr(args, "edge_chi2_multiplier", 1.0)
         self.covariance_repair_mode = getattr(args, "covariance_repair_mode", "jitter")
         self.covariance_repair_epsilon = getattr(args, "covariance_repair_epsilon", 1e-9)
         # Initialization of P
@@ -253,7 +256,7 @@ class ImuMSCKF:
 
         if len(imu_intervals) == 0:
             return
-        if self.nominal_integration_method not in {"euler", "midpoint"}:
+        if self.nominal_integration_method not in {"euler", "midpoint", "midpoint_half_R"}:
             raise ValueError(f"Unknown nominal integration method {self.nominal_integration_method!r}.")
         if self.covariance_propagation_mode not in {"per_sample", "summed"}:
             raise ValueError(f"Unknown covariance propagation mode {self.covariance_propagation_mode!r}.")
@@ -267,7 +270,7 @@ class ImuMSCKF:
             if not np.isfinite(dt) or dt <= 0.0:
                 raise ValueError(f"IMU interval propagation received a non-positive dt: {dt}.")
 
-            if self.nominal_integration_method == "midpoint":
+            if self.nominal_integration_method in {"midpoint", "midpoint_half_R"}:
                 gyro_raw = 0.5 * (np.asarray(interval.gyro0, dtype=np.float64) + np.asarray(interval.gyro1, dtype=np.float64))
                 accel_raw = 0.5 * (np.asarray(interval.accel0, dtype=np.float64) + np.asarray(interval.accel1, dtype=np.float64))
             else:
@@ -286,11 +289,16 @@ class ImuMSCKF:
 
             if self.nominal_integration_method == "midpoint":
                 self.state.R = R_prev @ mat_exp(wm * dt)
+                specific_force_world = R_prev @ am + self.g
+            elif self.nominal_integration_method == "midpoint_half_R":
+                R_half = R_prev @ mat_exp(wm * dt * 0.5)
+                self.state.R = R_prev @ mat_exp(wm * dt)
+                specific_force_world = R_half @ am + self.g
             else:
                 self.state.R, self.state.oldomega4 = integrate_quaternion_3rd_order(
                     R_prev, wm, dt, self.state.oldomega4
                 )
-            specific_force_world = R_prev @ am + self.g
+                specific_force_world = R_prev @ am + self.g
             self.state.v = v_prev + specific_force_world * dt
             self.state.p = p_prev + v_prev * dt + 0.5 * specific_force_world * dt**2
 
@@ -460,6 +468,55 @@ class ImuMSCKF:
             "whitening_repaired_R": whitening_repaired_R,
         }
 
+    def _compute_edge_mahalanobis(self, residual, H, P, R):
+        """Compute four independent 3D chi-square statistics for the stacked edges."""
+
+        edge_results = []
+        threshold = float(
+            self.edge_chi2_multiplier
+            * self.chi2_multiplier
+            * chi2.ppf(self.chi2_confidence, 3)
+        )
+        for edge_idx in range(4):
+            edge_slice = slice(edge_idx * 3, edge_idx * 3 + 3)
+            residual_edge = residual[edge_slice]
+            H_edge = H[edge_slice, :]
+            R_edge = R[edge_slice, edge_slice]
+            S_edge = H_edge @ P @ H_edge.T + R_edge
+            mahalanobis_sq = float(residual_edge.T @ np.linalg.solve(S_edge, residual_edge))
+            ratio = mahalanobis_sq / threshold if threshold > 0.0 else np.inf
+            edge_results.append(
+                {
+                    "edge": edge_idx,
+                    "mahalanobis_sq": mahalanobis_sq,
+                    "chi2_threshold": threshold,
+                    "chi2_ratio": float(ratio),
+                    "failed": bool(mahalanobis_sq > threshold),
+                }
+            )
+        return edge_results
+
+    def _edge_diagnostics_dict(self, edge_results):
+        """Pack per-edge diagnostics into update return fields."""
+
+        return {
+            "edge_mahalanobis_sq": [float(result["mahalanobis_sq"]) for result in edge_results],
+            "edge_chi2_thresholds": [float(result["chi2_threshold"]) for result in edge_results],
+            "edge_chi2_ratios": [float(result["chi2_ratio"]) for result in edge_results],
+            "failed_edge_indices": [int(result["edge"]) for result in edge_results if result["failed"]],
+        }
+
+    def _inflate_bad_edge_covariances(self, R, failed_edge_indices):
+        """Inflate selected 3D edge covariance blocks."""
+
+        if self.edge_inflation_factor <= 0.0 or not np.isfinite(self.edge_inflation_factor):
+            raise ValueError("edge_inflation_factor must be finite and positive.")
+        R_inflated = np.asarray(R, dtype=np.float64).copy()
+        for edge_idx in failed_edge_indices:
+            edge_slice = slice(edge_idx * 3, edge_idx * 3 + 3)
+            R_inflated[edge_slice, edge_slice] *= self.edge_inflation_factor
+        return R_inflated
+
     def update(self, network_output):
         """Run the stacked TLEIO relative-pose EKF update on the three clones.
 
@@ -485,7 +542,21 @@ class ImuMSCKF:
         P = self.state.P
         # Inflate measurement noise according to Adaptive Covariance
         R_adaptive = self.adaptive_cov.get_adaptive_R(residual, H, P, R)
-        update_system = self._prepare_update_system(P, H, R_adaptive, residual)
+        if self.edge_robust_mode not in {"off", "inflate", "reject"}:
+            raise ValueError(f"Unknown edge robust mode {self.edge_robust_mode!r}.")
+        edge_results = self._compute_edge_mahalanobis(residual, H, P, R_adaptive)
+        edge_diagnostics = self._edge_diagnostics_dict(edge_results)
+        failed_edge_indices = edge_diagnostics["failed_edge_indices"]
+        edge_rejected = bool(self.edge_robust_mode == "reject" and failed_edge_indices)
+        num_inflated_edges = 0
+        R_for_update = R_adaptive
+        if self.edge_robust_mode == "inflate" and failed_edge_indices:
+            R_for_update = self._inflate_bad_edge_covariances(R_adaptive, failed_edge_indices)
+            num_inflated_edges = len(failed_edge_indices)
+            edge_results = self._compute_edge_mahalanobis(residual, H, P, R_for_update)
+            edge_diagnostics = self._edge_diagnostics_dict(edge_results)
+
+        update_system = self._prepare_update_system(P, H, R_for_update, residual)
         residual_update = update_system["residual"]
         H_update = update_system["jacobian"]
         R_update = update_system["measurement_covariance"]
@@ -497,13 +568,16 @@ class ImuMSCKF:
         residual_dim = int(residual_update.shape[0])
         mahalanobis_sq = float(residual_update.T @ np.linalg.solve(innovation_covariance, residual_update))
         chi2_threshold = self._chi2_threshold(residual_dim)
-        rejected = bool(self.enable_chi2_gating and mahalanobis_sq > chi2_threshold)
+        rejected = bool(
+            edge_rejected
+            or (self.enable_chi2_gating and mahalanobis_sq > chi2_threshold)
+        )
         condition_number_S = float(np.linalg.cond(innovation_covariance))
         if rejected:
             return {
                 "residual": residual,
                 "jacobian": H,
-                "measurement_covariance": R_adaptive,
+                "measurement_covariance": R_for_update,
                 "update_residual": residual_update,
                 "update_jacobian": H_update,
                 "update_measurement_covariance": R_update,
@@ -520,6 +594,11 @@ class ImuMSCKF:
                 "condition_number_S": condition_number_S,
                 "whitening_applied": update_system["whitening_applied"],
                 "whitening_repaired_R": update_system["whitening_repaired_R"],
+                "edge_robust_mode": self.edge_robust_mode,
+                "num_inflated_edges": int(num_inflated_edges),
+                "inflated_edge_indices": list(failed_edge_indices) if num_inflated_edges else [],
+                "edge_rejected": edge_rejected,
+                **edge_diagnostics,
             }
         # Error state
         delta_x = -K @ residual_update
@@ -538,7 +617,7 @@ class ImuMSCKF:
         return {
             "residual": residual,
             "jacobian": H,
-            "measurement_covariance": R_adaptive,
+            "measurement_covariance": R_for_update,
             "update_residual": residual_update,
             "update_jacobian": H_update,
             "update_measurement_covariance": R_update,
@@ -555,6 +634,11 @@ class ImuMSCKF:
             "condition_number_S": condition_number_S,
             "whitening_applied": update_system["whitening_applied"],
             "whitening_repaired_R": update_system["whitening_repaired_R"],
+            "edge_robust_mode": self.edge_robust_mode,
+            "num_inflated_edges": int(num_inflated_edges),
+            "inflated_edge_indices": list(failed_edge_indices) if num_inflated_edges else [],
+            "edge_rejected": edge_rejected,
+            **edge_diagnostics,
         }
 
     def _inject_error_state(self, delta_x):

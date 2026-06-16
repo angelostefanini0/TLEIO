@@ -647,3 +647,53 @@ Printed RMSE summary:
 1. ME004 is only one sequence; midpoint should not become default from this result alone.
 2. The current midpoint implementation uses average endpoint accel/gyro and previous attitude for velocity/position integration. This is intentionally simple and should be compared on more sequences before changing defaults.
 3. `qr` update mode is exposed but currently falls back to the innovation solve because TLEIO's 12D residual is not overdetermined relative to the state.
+
+## Third OpenVINS-Inspired Pass
+
+Implemented from `docs/tleio_openvins_3_plan.md`.
+
+Added:
+
+1. `scripts/compute_ate_metrics.py` for reproducible raw, SE3, and Sim3 ATE metrics.
+2. `scripts/filter_covariance_calibration.py` for offline covariance calibration from `update_diagnostics.csv`.
+3. `scripts/filter_ablation_openvins3.py` for ME004 covariance-scale grids.
+4. `--meas_cov_scale` and `--meas_cov_axis_scale SX SY SZ`.
+5. per-edge chi-square diagnostics in `update_diagnostics.csv`.
+6. `--edge_robust_mode {off,inflate,reject}` plus edge inflation controls.
+7. `--nominal_integration_method midpoint_half_R`.
+8. approximate consistency diagnostics saved as `consistency_diagnostics.csv`.
+
+Verification:
+
+```bash
+python -m pytest tests
+```
+
+Result:
+
+```text
+64 passed
+```
+
+ME004 summary:
+
+```text
+outputs/comparison_ME004/openvins_3/openvins_3_summary.csv
+```
+
+The OpenVINS-3 changes did not beat the OpenVINS-2 best command on ME004. The recommended command remains:
+
+```bash
+python src/main_filter.py \
+  --dataset tartanair \
+  --sequence competition_Test_ME004 \
+  --imu_interval_mode paired_samples \
+  --nominal_integration_method midpoint
+```
+
+Important findings:
+
+1. covariance scale grid did not beat the existing default `meas_cov_scale`.
+2. per-edge robust modes stayed inactive because ME004 max edge chi-square ratio was only about `0.269`.
+3. `midpoint_half_R` was worse than the simpler midpoint mode on ME004.
+4. the new tools are still useful for diagnosing and stress-testing less clean sequences.
