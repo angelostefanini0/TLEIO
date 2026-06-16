@@ -6,10 +6,13 @@ import pytest
 from src.main_filter import (
     RunnerConfig,
     _build_anchor_times_from_relative_motions,
+    _build_exact_imu_intervals,
     _build_exact_imu_segment,
     _build_joint_covariance_for_window,
     _load_relative_motion_table,
     _sanitize_relative_sigmas,
+    _save_update_diagnostics,
+    _summarize_chi2_ratios,
 )
 from filter.measurement_triplet import make_default_joint_covariance
 
@@ -105,3 +108,57 @@ def test_exact_imu_segment_rejects_zero_dt():
 
     with pytest.raises(ValueError, match="duplicate|non-increasing"):
         _build_exact_imu_segment(raw_times, raw_gyro, raw_accel, 0.25, 0.75)
+
+
+def test_exact_imu_intervals_include_requested_start_and_end():
+    raw_times = np.array([0.0, 0.5, 1.0])
+    raw_gyro = np.column_stack([raw_times, raw_times + 1.0, raw_times + 2.0])
+    raw_accel = np.column_stack([raw_times + 3.0, raw_times + 4.0, raw_times + 5.0])
+
+    intervals = _build_exact_imu_intervals(raw_times, raw_gyro, raw_accel, 0.25, 0.75)
+
+    assert intervals[0].t0 == pytest.approx(0.25)
+    assert intervals[-1].t1 == pytest.approx(0.75)
+    assert [interval.dt for interval in intervals] == pytest.approx([0.25, 0.25])
+    np.testing.assert_allclose(intervals[0].gyro0, [0.25, 1.25, 2.25])
+    np.testing.assert_allclose(intervals[-1].gyro1, [0.75, 1.75, 2.75])
+
+
+def test_exact_imu_intervals_reject_duplicate_raw_timestamps():
+    raw_times = np.array([0.0, 0.5, 0.5, 1.0])
+    raw_gyro = np.zeros((4, 3))
+    raw_accel = np.zeros((4, 3))
+
+    with pytest.raises(ValueError, match="strictly increasing"):
+        _build_exact_imu_intervals(raw_times, raw_gyro, raw_accel, 0.25, 0.75)
+
+
+def test_update_diagnostics_csv_is_written(tmp_path):
+    path = _save_update_diagnostics(
+        tmp_path / "update_diagnostics.csv",
+        [
+            {
+                "anchor_idx": 4,
+                "timestamp_s": 1.0,
+                "accepted": 1,
+                "rejected": 0,
+                "mahalanobis_sq": 2.0,
+                "chi2_threshold": 4.0,
+                "chi2_ratio": 0.5,
+                "residual_norm": 0.1,
+                "correction_norm": 0.2,
+            }
+        ],
+    )
+
+    text = path.read_text(encoding="utf-8")
+    assert "anchor_idx,timestamp_s,accepted" in text
+    assert "4,1.0,1" in text
+
+
+def test_chi2_ratio_summary_matches_raw_values():
+    summary = _summarize_chi2_ratios([1.0, 2.0, 3.0])
+
+    assert summary["median_chi2_ratio"] == pytest.approx(2.0)
+    assert summary["p95_chi2_ratio"] == pytest.approx(2.9)
+    assert summary["max_chi2_ratio"] == pytest.approx(3.0)

@@ -13,6 +13,7 @@ Thus, it is an asynchronous implementation.
 from __future__ import annotations
 
 import argparse
+import csv
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,7 +22,7 @@ import sys
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from filter.imu_buffer import ImuMeasurement
+from filter.imu_buffer import ImuInterval, ImuMeasurement
 from filter.measurement_triplet import make_default_joint_covariance
 from filter.scekf import ImuMSCKF
 
@@ -84,6 +85,12 @@ class RunnerConfig:
     use_block_update: bool = False
     covariance_repair_mode: str = "jitter"
     imu_noise_model: str = "discrete"
+    imu_interval_mode: str = "sample_dt"
+    covariance_propagation_mode: str = "per_sample"
+    nominal_integration_method: str = "euler"
+    update_solve_method: str = "innovation"
+    gating_mode: str = "global"
+    fej_scope: str = "clone_update"
 
     # Optional extra synthetic noise added on top of measurements
     extra_measurement_noise_t: float = 0.0
@@ -388,6 +395,68 @@ def _build_exact_imu_segment(
     return measurements
 
 
+def _build_exact_imu_intervals(
+    raw_times_s: np.ndarray,
+    raw_gyro: np.ndarray,
+    raw_accel: np.ndarray,
+    start_time_s: float,
+    end_time_s: float,
+) -> list[ImuInterval]:
+    """Build explicit IMU sample intervals that include exact start and end times."""
+
+    if end_time_s <= start_time_s:
+        return []
+
+    if start_time_s < raw_times_s[0] or end_time_s > raw_times_s[-1]:
+        raise ValueError("Requested IMU propagation interval falls outside the IMU time range.")
+    if not np.isfinite(raw_times_s).all() or not np.isfinite(raw_gyro).all() or not np.isfinite(raw_accel).all():
+        raise ValueError("IMU stream contains non-finite values.")
+    if np.any(np.diff(raw_times_s) <= 0.0):
+        raise ValueError("IMU timestamps must be strictly increasing.")
+
+    interior_mask = (raw_times_s > start_time_s) & (raw_times_s < end_time_s)
+    interval_times = np.concatenate(
+        [
+            np.array([float(start_time_s)], dtype=np.float64),
+            raw_times_s[interior_mask].astype(np.float64),
+            np.array([float(end_time_s)], dtype=np.float64),
+        ]
+    )
+    if not np.isfinite(interval_times).all():
+        raise ValueError("Exact IMU intervals contain non-finite timestamps.")
+    if np.any(np.diff(interval_times) <= 0.0):
+        raise ValueError("Exact IMU intervals contain duplicate or non-increasing timestamps.")
+
+    gyro_interp = np.column_stack(
+        [np.interp(interval_times, raw_times_s, raw_gyro[:, axis]) for axis in range(3)]
+    )
+    accel_interp = np.column_stack(
+        [np.interp(interval_times, raw_times_s, raw_accel[:, axis]) for axis in range(3)]
+    )
+    if not np.isfinite(gyro_interp).all() or not np.isfinite(accel_interp).all():
+        raise ValueError("Exact IMU interval interpolation produced non-finite values.")
+
+    intervals: list[ImuInterval] = []
+    for sample_idx in range(len(interval_times) - 1):
+        t0 = float(interval_times[sample_idx])
+        t1 = float(interval_times[sample_idx + 1])
+        dt = t1 - t0
+        if not np.isfinite(dt) or dt <= 0.0:
+            raise ValueError(f"Exact IMU interval produced non-positive dt: {dt}.")
+        intervals.append(
+            ImuInterval(
+                t0=t0,
+                t1=t1,
+                accel0=accel_interp[sample_idx].astype(np.float64),
+                gyro0=gyro_interp[sample_idx].astype(np.float64),
+                accel1=accel_interp[sample_idx + 1].astype(np.float64),
+                gyro1=gyro_interp[sample_idx + 1].astype(np.float64),
+            )
+        )
+
+    return intervals
+
+
 def _build_anchor_imu_segments(
     imu_table: np.ndarray,
     anchor_timestamps_us: np.ndarray,
@@ -424,6 +493,41 @@ def _build_anchor_imu_segments(
     return segments
 
 
+def _build_anchor_imu_intervals(
+    imu_table: np.ndarray,
+    anchor_timestamps_us: np.ndarray,
+    axis_multipliers: tuple[float, float, float],
+) -> list[list[ImuInterval]]:
+    """Precompute one explicit interval list for each consecutive anchor pair."""
+
+    time_scale = _infer_time_scale_to_seconds(imu_table[:, 0])
+    raw_times_s = imu_table[:, 0].astype(np.float64) * time_scale
+    if np.any(np.diff(raw_times_s) <= 0.0):
+        raise ValueError("IMU timestamps must be strictly increasing.")
+    raw_gyro = imu_table[:, 1:4].astype(np.float64)
+    raw_accel = imu_table[:, 4:7].astype(np.float64)
+    axis_multipliers_arr = np.asarray(axis_multipliers, dtype=np.float64)
+    raw_gyro = raw_gyro * axis_multipliers_arr
+    raw_accel = raw_accel * axis_multipliers_arr
+    anchor_times_s = anchor_timestamps_us.astype(np.float64) * 1e-6
+
+    if anchor_times_s[0] < raw_times_s[0] or anchor_times_s[-1] > raw_times_s[-1]:
+        raise ValueError("Anchor timestamps fall outside the IMU stream.")
+
+    segments: list[list[ImuInterval]] = []
+    for idx in range(len(anchor_times_s) - 1):
+        segments.append(
+            _build_exact_imu_intervals(
+                raw_times_s,
+                raw_gyro,
+                raw_accel,
+                anchor_times_s[idx],
+                anchor_times_s[idx + 1],
+            )
+        )
+    return segments
+
+
 def _make_filter_args(config: RunnerConfig) -> SimpleNamespace:
     """Create the args namespace consumed by `ImuMSCKF`."""
 
@@ -448,6 +552,11 @@ def _make_filter_args(config: RunnerConfig) -> SimpleNamespace:
         use_block_update=bool(config.use_block_update),
         covariance_repair_mode=str(config.covariance_repair_mode),
         imu_noise_model=str(config.imu_noise_model),
+        covariance_propagation_mode=str(config.covariance_propagation_mode),
+        nominal_integration_method=str(config.nominal_integration_method),
+        update_solve_method=str(config.update_solve_method),
+        gating_mode=str(config.gating_mode),
+        fej_scope=str(config.fej_scope),
     )
 
 
@@ -486,6 +595,77 @@ def _save_trajectory(path: Path, trajectory_table: np.ndarray) -> Path:
     header = "timestamp_s px py pz qx qy qz qw"
     np.savetxt(path, trajectory_table, fmt="%.9f", header=header, comments="")
     return path
+
+
+def _save_update_diagnostics(path: Path, rows: list[dict]) -> Path:
+    """Save per-update innovation and covariance diagnostics."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "anchor_idx",
+        "timestamp_s",
+        "accepted",
+        "rejected",
+        "mahalanobis_sq",
+        "chi2_threshold",
+        "chi2_ratio",
+        "residual_norm",
+        "correction_norm",
+        "sigma_min",
+        "sigma_max",
+        "sigma_mean",
+        "update_solve_method",
+        "condition_number_R",
+        "condition_number_S",
+        "whitening_applied",
+        "whitening_repaired_R",
+    ]
+    for component_idx in range(12):
+        fieldnames.append(f"residual_{component_idx}")
+    for component_idx in range(12):
+        fieldnames.append(f"sigma_{component_idx}")
+
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: row.get(field, "") for field in fieldnames})
+    return path
+
+
+def _propagate_anchor_segment(
+    ekf: ImuMSCKF,
+    sample_segment: list[ImuMeasurement],
+    interval_segment: list[ImuInterval] | None,
+    config: RunnerConfig,
+) -> None:
+    """Dispatch propagation through the selected IMU input representation."""
+
+    if config.imu_interval_mode == "sample_dt":
+        ekf.propagate(sample_segment)
+    elif config.imu_interval_mode == "paired_samples":
+        if interval_segment is None:
+            raise ValueError("Paired-sample propagation requires precomputed IMU intervals.")
+        ekf.propagate_intervals(interval_segment)
+    else:
+        raise ValueError(f"Unknown IMU interval mode {config.imu_interval_mode!r}.")
+
+
+def _summarize_chi2_ratios(chi2_ratios: list[float]) -> dict[str, float | None]:
+    """Summarize normalized innovation gating ratios."""
+
+    if not chi2_ratios:
+        return {
+            "median_chi2_ratio": None,
+            "p95_chi2_ratio": None,
+            "max_chi2_ratio": None,
+        }
+    values = np.asarray(chi2_ratios, dtype=np.float64)
+    return {
+        "median_chi2_ratio": float(np.median(values)),
+        "p95_chi2_ratio": float(np.percentile(values, 95)),
+        "max_chi2_ratio": float(np.max(values)),
+    }
 
 
 def _build_ground_truth_trajectory(
@@ -555,6 +735,12 @@ def _compute_transformer_trajectory(
 def run_filter(config: RunnerConfig) -> dict:
     """Run the relative-motion EKF on one processed sequence."""
 
+    if config.imu_interval_mode != "paired_samples":
+        if config.covariance_propagation_mode != "per_sample":
+            raise ValueError("Summed covariance propagation requires --imu_interval_mode paired_samples.")
+        if config.nominal_integration_method != "euler":
+            raise ValueError("Midpoint nominal integration requires --imu_interval_mode paired_samples.")
+
     # Directory path for the given dataset sequence
     sequence_path = _sequence_path(config)
 
@@ -595,6 +781,13 @@ def run_filter(config: RunnerConfig) -> dict:
         anchor_timestamps_us,
         config.imu_axis_multipliers,
     )
+    anchor_imu_intervals = None
+    if config.imu_interval_mode == "paired_samples":
+        anchor_imu_intervals = _build_anchor_imu_intervals(
+            imu_table,
+            anchor_timestamps_us,
+            config.imu_axis_multipliers,
+        )
 
     # Determine absolute starting states from the first two available ground truth anchors
     anchor_times_s = anchor_timestamps_us.astype(np.float64) * 1e-6
@@ -625,6 +818,7 @@ def run_filter(config: RunnerConfig) -> dict:
     delta_norms: list[float] = []
     mahalanobis_values: list[float] = []
     chi2_ratios: list[float] = []
+    update_diagnostic_rows: list[dict] = []
     rejected_updates = 0
     accepted_updates = 0
     used_regressed_covariance = False
@@ -632,23 +826,43 @@ def run_filter(config: RunnerConfig) -> dict:
     ekf.augment_clone()
     # Propagate EKF state forward using IMU segment 0 and augment clone (Initialization)
     for anchor_idx in range(1, 4):
-        ekf.propagate(anchor_imu_segments[anchor_idx - 1])
+        _propagate_anchor_segment(
+            ekf,
+            anchor_imu_segments[anchor_idx - 1],
+            anchor_imu_intervals[anchor_idx - 1] if anchor_imu_intervals is not None else None,
+            config,
+        )
         ekf.augment_clone()
         trajectory_rows.append(_state_to_row(anchor_times_s[anchor_idx], ekf.state))
 
         if config.plot_imu:
-            imu_ekf.propagate(anchor_imu_segments[anchor_idx - 1])
+            _propagate_anchor_segment(
+                imu_ekf,
+                anchor_imu_segments[anchor_idx - 1],
+                anchor_imu_intervals[anchor_idx - 1] if anchor_imu_intervals is not None else None,
+                config,
+            )
             imu_trajectory_rows.append(_state_to_row(anchor_times_s[anchor_idx], imu_ekf.state))
 
     # MAIN FILTER LOOP (Triplets)
     # Iterating starting from anchor 2 ensures we have a triplet window available
     for anchor_idx in range(4, len(anchor_times_s)):
         # Prediction Step (IMU Integration)
-        ekf.propagate(anchor_imu_segments[anchor_idx - 1])
+        _propagate_anchor_segment(
+            ekf,
+            anchor_imu_segments[anchor_idx - 1],
+            anchor_imu_intervals[anchor_idx - 1] if anchor_imu_intervals is not None else None,
+            config,
+        )
         ekf.augment_clone()
 
         if config.plot_imu:
-            imu_ekf.propagate(anchor_imu_segments[anchor_idx - 1])
+            _propagate_anchor_segment(
+                imu_ekf,
+                anchor_imu_segments[anchor_idx - 1],
+                anchor_imu_intervals[anchor_idx - 1] if anchor_imu_intervals is not None else None,
+                config,
+            )
             imu_trajectory_rows.append(_state_to_row(anchor_times_s[anchor_idx], imu_ekf.state))
 
         # Measurement Extraction
@@ -685,6 +899,42 @@ def run_filter(config: RunnerConfig) -> dict:
             threshold = float(update_info["chi2_threshold"])
             if threshold > 0.0 and np.isfinite(threshold):
                 chi2_ratios.append(mahalanobis / threshold)
+        residual = np.asarray(update_info["residual"], dtype=np.float64)
+        sigma_vector = np.sqrt(np.clip(np.diag(current_joint_covariance), 0.0, np.inf))
+        chi2_threshold = float(update_info["chi2_threshold"])
+        chi2_ratio = (
+            float(update_info["mahalanobis_sq"]) / chi2_threshold
+            if chi2_threshold > 0.0 and np.isfinite(chi2_threshold)
+            else np.nan
+        )
+        diagnostic_row = {
+            "anchor_idx": int(anchor_idx),
+            "timestamp_s": float(anchor_times_s[anchor_idx]),
+            "accepted": int(not update_info.get("rejected", False)),
+            "rejected": int(update_info.get("rejected", False)),
+            "mahalanobis_sq": float(update_info["mahalanobis_sq"]),
+            "chi2_threshold": chi2_threshold,
+            "chi2_ratio": chi2_ratio,
+            "residual_norm": float(np.linalg.norm(residual)),
+            "correction_norm": (
+                float(np.linalg.norm(update_info["delta_x"]))
+                if update_info.get("delta_x") is not None
+                else np.nan
+            ),
+            "sigma_min": float(np.min(sigma_vector)),
+            "sigma_max": float(np.max(sigma_vector)),
+            "sigma_mean": float(np.mean(sigma_vector)),
+            "update_solve_method": str(update_info.get("update_solve_method", config.update_solve_method)),
+            "condition_number_R": float(update_info.get("condition_number_R", np.nan)),
+            "condition_number_S": float(update_info.get("condition_number_S", np.nan)),
+            "whitening_applied": int(bool(update_info.get("whitening_applied", False))),
+            "whitening_repaired_R": int(bool(update_info.get("whitening_repaired_R", False))),
+        }
+        for component_idx, value in enumerate(residual.reshape(-1)):
+            diagnostic_row[f"residual_{component_idx}"] = float(value)
+        for component_idx, value in enumerate(sigma_vector.reshape(-1)):
+            diagnostic_row[f"sigma_{component_idx}"] = float(value)
+        update_diagnostic_rows.append(diagnostic_row)
         # Log current state after correction
         trajectory_rows.append(_state_to_row(anchor_times_s[anchor_idx], ekf.state))
         # Drop the oldest historical clone from the sliding window
@@ -696,6 +946,10 @@ def run_filter(config: RunnerConfig) -> dict:
     saved_path = _save_trajectory(
         sequence_out_dir / f"stamped_traj_estimate.txt",
         trajectory_table,
+    )
+    update_diagnostics_path = _save_update_diagnostics(
+        sequence_out_dir / "update_diagnostics.csv",
+        update_diagnostic_rows,
     )
     ground_truth_trajectory = _build_ground_truth_trajectory(
         anchor_timestamps_us,
@@ -726,6 +980,8 @@ def run_filter(config: RunnerConfig) -> dict:
         plot_projections=config.plot_projections,
     )
 
+    chi2_summary = _summarize_chi2_ratios(chi2_ratios)
+
     return {
         "dataset": config.dataset,
         "sequence": config.sequence,
@@ -738,7 +994,9 @@ def run_filter(config: RunnerConfig) -> dict:
         "mean_mahalanobis_sq": float(np.mean(mahalanobis_values)) if mahalanobis_values else None,
         "max_mahalanobis_sq": float(np.max(mahalanobis_values)) if mahalanobis_values else None,
         "mean_chi2_ratio": float(np.mean(chi2_ratios)) if chi2_ratios else None,
-        "max_chi2_ratio": float(np.max(chi2_ratios)) if chi2_ratios else None,
+        "median_chi2_ratio": chi2_summary["median_chi2_ratio"],
+        "p95_chi2_ratio": chi2_summary["p95_chi2_ratio"],
+        "max_chi2_ratio": chi2_summary["max_chi2_ratio"],
         "used_regressed_covariance": bool(used_regressed_covariance),
         "use_fej": bool(config.use_fej),
         "use_block_update": bool(config.use_block_update),
@@ -750,6 +1008,7 @@ def run_filter(config: RunnerConfig) -> dict:
         "regressed": regressed_trajectory,
         "imu_only": imu_trajectory,
         "saved_file": str(saved_path),
+        "update_diagnostics_file": str(update_diagnostics_path),
         "diagnostics": diagnostics,
     }
 
@@ -831,6 +1090,42 @@ def parse_args():
         default=CONFIG.imu_noise_model,
         help="Interpretation of IMU noise parameters for covariance propagation.",
     )
+    parser.add_argument(
+        "--imu_interval_mode",
+        choices=("sample_dt", "paired_samples"),
+        default=CONFIG.imu_interval_mode,
+        help="Select the original sample-dt propagation or explicit paired IMU intervals.",
+    )
+    parser.add_argument(
+        "--covariance_propagation_mode",
+        choices=("per_sample", "summed"),
+        default=CONFIG.covariance_propagation_mode,
+        help="Apply IMU covariance each interval or accumulate one summed transition/noise pair.",
+    )
+    parser.add_argument(
+        "--nominal_integration_method",
+        choices=("euler", "midpoint"),
+        default=CONFIG.nominal_integration_method,
+        help="Nominal IMU integration rule for paired-sample propagation.",
+    )
+    parser.add_argument(
+        "--update_solve_method",
+        choices=("innovation", "whitened", "qr"),
+        default=CONFIG.update_solve_method,
+        help="Measurement update conditioning method.",
+    )
+    parser.add_argument(
+        "--gating_mode",
+        choices=("global",),
+        default=CONFIG.gating_mode,
+        help="Chi-square gating mode. Only global 12D gating is implemented in this pass.",
+    )
+    parser.add_argument(
+        "--fej_scope",
+        choices=("clone_update",),
+        default=CONFIG.fej_scope,
+        help="FEJ scope. Full propagation FEJ is intentionally not enabled in this pass.",
+    )
     return parser.parse_args()
 
 
@@ -863,6 +1158,12 @@ def main() -> None:
         enable_chi2_gating=not args.disable_chi2_gating,
         covariance_repair_mode=args.covariance_repair_mode,
         imu_noise_model=args.imu_noise_model,
+        imu_interval_mode=args.imu_interval_mode,
+        covariance_propagation_mode=args.covariance_propagation_mode,
+        nominal_integration_method=args.nominal_integration_method,
+        update_solve_method=args.update_solve_method,
+        gating_mode=args.gating_mode,
+        fej_scope=args.fej_scope,
         **dataset_params
     )
     # Execute EKF processing

@@ -22,6 +22,24 @@ class ImuMeasurement:
     gyro: np.ndarray
 
 
+@dataclass(frozen=True)
+class ImuInterval:
+    """Represent one propagation interval bounded by two IMU samples."""
+
+    t0: float
+    t1: float
+    accel0: np.ndarray
+    gyro0: np.ndarray
+    accel1: np.ndarray
+    gyro1: np.ndarray
+
+    @property
+    def dt(self) -> float:
+        """Return interval duration in seconds."""
+
+        return self.t1 - self.t0
+
+
 class ImuBuffer:
     """Store time-ordered IMU measurements for both network and EKF consumers."""
 

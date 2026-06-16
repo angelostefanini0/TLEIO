@@ -508,3 +508,142 @@ The quantities to compare are:
 6. mean correction norm
 7. covariance repair events
 
+## Second OpenVINS-Inspired Pass
+
+Implemented from `docs/tleio_openvins_2_plan.md`.
+
+### Files Changed
+
+1. `src/filter/imu_buffer.py`
+   - added `ImuInterval`, an explicit pairwise IMU interval with `t0`, `t1`, endpoint accel/gyro samples, and a computed `dt`.
+2. `src/main_filter.py`
+   - added exact interval construction beside the existing exact sample-dt segment construction.
+   - added runner flags for interval propagation, summed covariance propagation, midpoint nominal integration, and conditioned update solves.
+   - added per-update innovation and covariance diagnostics saved to `update_diagnostics.csv`.
+3. `src/filter/scekf.py`
+   - added explicit state-layout helpers and assertions.
+   - added `propagate_intervals()` for OpenVINS-style pairwise IMU propagation.
+   - split one-step covariance propagation into reusable `(Phi_i, Q_i)` helpers.
+   - added summed transition/noise application over the current IMU block and clone cross-covariances.
+   - added optional whitened measurement update conditioning.
+4. Tests:
+   - expanded `tests/test_main_filter_inputs.py`, `tests/test_propagation.py`, and `tests/test_scekf_update.py`.
+   - added `tests/test_state_layout.py`.
+
+### New Config Fields And CLI Flags
+
+Current defaults remain conservative and reproduce the previous best behavior:
+
+```text
+imu_interval_mode = "sample_dt"
+covariance_propagation_mode = "per_sample"
+nominal_integration_method = "euler"
+update_solve_method = "innovation"
+gating_mode = "global"
+fej_scope = "clone_update"
+```
+
+New CLI flags:
+
+```bash
+--imu_interval_mode {sample_dt,paired_samples}
+--covariance_propagation_mode {per_sample,summed}
+--nominal_integration_method {euler,midpoint}
+--update_solve_method {innovation,whitened,qr}
+--gating_mode {global}
+--fej_scope {clone_update}
+```
+
+`summed` covariance propagation and `midpoint` nominal integration require `--imu_interval_mode paired_samples`; the runner raises a `ValueError` if those options are requested with the old sample-dt path.
+
+### OpenVINS Mechanisms Transferred
+
+1. Pairwise IMU propagation intervals, inspired by OpenVINS IMU reading selection and interval propagation.
+2. Summed IMU transition/noise accumulation:
+
+   ```text
+   Phi = Phi_i @ Phi
+   Q = Phi_i @ Q @ Phi_i.T + Q_i
+   ```
+
+   followed by one full covariance application to the current IMU block and its clone cross-covariances.
+3. Optional midpoint nominal integration over paired IMU endpoints.
+4. Whitened measurement update conditioning before computing the Kalman gain.
+5. Explicit state-layout and FEJ clone-list consistency checks, similar in spirit to OpenVINS' strict state/covariance bookkeeping.
+
+### Diagnostics Added
+
+Each `main_filter.py` run now writes:
+
+```text
+outputs/main_filter/<dataset>/<sequence>/update_diagnostics.csv
+```
+
+The CSV includes:
+
+1. update timestamp and anchor index.
+2. accepted/rejected flag.
+3. Mahalanobis squared value, chi-square threshold, and ratio.
+4. residual norm and correction norm.
+5. min/max/mean measurement sigma.
+6. update solve method and condition numbers for `R` and `S`.
+7. whitening flags.
+8. all 12 residual components and all 12 sigma components.
+
+### Tests
+
+Verification command:
+
+```bash
+python -m pytest tests
+```
+
+Result after this pass:
+
+```text
+46 passed
+```
+
+### ME004 Smoke Ablations
+
+Saved under:
+
+```text
+outputs/comparison_ME004/openvins_2/
+```
+
+Each run folder contains:
+
+1. `stamped_traj_estimate.txt`
+2. `update_diagnostics.csv`
+3. trajectory and rotation plots
+4. `run.log`
+
+Summary file:
+
+```text
+outputs/comparison_ME004/openvins_2/openvins_2_summary.csv
+```
+
+Printed RMSE summary:
+
+| run | position RMSE m | rotation RMSE deg | rejected updates | note |
+| --- | ---: | ---: | ---: | --- |
+| default | 9.571767 | 3.383130 | 0 | previous best defaults |
+| paired only | 9.571767 | 3.383130 | 0 | equivalent to default |
+| paired + summed | 9.571767 | 3.383130 | 0 | equivalent to default on ME004 |
+| paired + midpoint | 9.406739 | 3.396047 | 0 | slightly better position, slightly worse rotation |
+| whitened | 9.571767 | 3.383130 | 0 | equivalent to default in this well-conditioned run |
+| whitened + paired + summed | 9.571767 | 3.383130 | 0 | equivalent to default |
+
+### Known Non-Improvements
+
+1. Whitening is numerically safer for ill-conditioned measurement covariance, but it is algebraically equivalent to the innovation solve in the current well-conditioned ME004 run.
+2. Summed covariance propagation is algebraically equivalent to per-interval covariance application for the current linearized one-step model, so no ME004 change is expected unless numerical conditioning becomes an issue.
+3. Full propagation FEJ and per-edge gating were deliberately not implemented as behavior-changing defaults. The plan allowed them only if diagnostics showed a need; ME004 diagnostics still show no rejected updates and very low chi-square ratios.
+
+### Remaining Risks
+
+1. ME004 is only one sequence; midpoint should not become default from this result alone.
+2. The current midpoint implementation uses average endpoint accel/gyro and previous attitude for velocity/position integration. This is intentionally simple and should be compared on more sequences before changing defaults.
+3. `qr` update mode is exposed but currently falls back to the innovation solve because TLEIO's 12D residual is not overdetermined relative to the state.

@@ -54,6 +54,50 @@ class State:
 
         return len(self.clone_Rs)
 
+    @staticmethod
+    def clone_slice(clone_index):
+        """Return the covariance slice for one clone in the global error state."""
+
+        if clone_index < 0:
+            raise ValueError(f"Clone index must be non-negative, got {clone_index}.")
+        start = ImuMSCKF.IMU_STATE_DIM + ImuMSCKF.CLONE_STATE_DIM * clone_index
+        return slice(start, start + ImuMSCKF.CLONE_STATE_DIM)
+
+    def expected_covariance_dim(self):
+        """Return the covariance dimension implied by the current clone count."""
+
+        return ImuMSCKF.IMU_STATE_DIM + ImuMSCKF.CLONE_STATE_DIM * self.get_clone_count()
+
+    def clone_count_from_covariance(self):
+        """Infer clone count from covariance shape."""
+
+        extra_dim = self.P.shape[0] - ImuMSCKF.IMU_STATE_DIM
+        if extra_dim < 0 or extra_dim % ImuMSCKF.CLONE_STATE_DIM != 0:
+            raise ValueError(f"Covariance shape {self.P.shape} is incompatible with the state layout.")
+        return extra_dim // ImuMSCKF.CLONE_STATE_DIM
+
+    def assert_covariance_shape_matches_clones(self):
+        """Validate covariance size against active clone lists."""
+
+        expected_dim = self.expected_covariance_dim()
+        if self.P.shape != (expected_dim, expected_dim):
+            raise ValueError(
+                f"Covariance shape {self.P.shape} does not match {self.get_clone_count()} clones "
+                f"(expected {(expected_dim, expected_dim)})."
+            )
+        if self.clone_count_from_covariance() != self.get_clone_count():
+            raise ValueError("Covariance-implied clone count does not match clone list length.")
+
+    def assert_clone_fej_consistency(self):
+        """Validate that current and first-estimate clone lists stay aligned."""
+
+        if len(self.clone_Rs) != len(self.clone_Rs_fej):
+            raise ValueError("Current clone rotations and FEJ clone rotations have different lengths.")
+        if len(self.clone_ps) != len(self.clone_ps_fej):
+            raise ValueError("Current clone positions and FEJ clone positions have different lengths.")
+        if len(self.clone_Rs) != len(self.clone_ps):
+            raise ValueError("Clone rotation and position lists have different lengths.")
+
 
 class ImuMSCKF:
     """Run IMU propagation and the TLEIO relative-pose update on cloned poses."""
@@ -82,6 +126,11 @@ class ImuMSCKF:
         self.enable_chi2_gating = getattr(args, "enable_chi2_gating", True)
         self.use_fej = getattr(args, "use_fej", False)
         self.use_block_update = getattr(args, "use_block_update", False)
+        self.covariance_propagation_mode = getattr(args, "covariance_propagation_mode", "per_sample")
+        self.nominal_integration_method = getattr(args, "nominal_integration_method", "euler")
+        self.update_solve_method = getattr(args, "update_solve_method", "innovation")
+        self.gating_mode = getattr(args, "gating_mode", "global")
+        self.fej_scope = getattr(args, "fej_scope", "clone_update")
         self.covariance_repair_mode = getattr(args, "covariance_repair_mode", "jitter")
         self.covariance_repair_epsilon = getattr(args, "covariance_repair_epsilon", 1e-9)
         # Initialization of P
@@ -134,6 +183,8 @@ class ImuMSCKF:
         else:
             self.state.P = P.copy()
         self.state.P = self._repair_covariance(self.state.P, "initialize")
+        self.state.assert_clone_fej_consistency()
+        self.state.assert_covariance_shape_matches_clones()
 
     def _repair_covariance(self, P, checkpoint):
         """Apply the configured covariance repair policy and store diagnostics."""
@@ -191,6 +242,99 @@ class ImuMSCKF:
 
         self.t = imu_data[-1].timestamp
 
+    def propagate_intervals(self, imu_intervals):
+        """Propagate over explicit IMU sample intervals.
+
+        This is the OpenVINS-style interval path. With the default Euler
+        nominal integration and per-sample covariance propagation it is designed
+        to match the original `propagate()` path closely while making the
+        interval boundaries explicit.
+        """
+
+        if len(imu_intervals) == 0:
+            return
+        if self.nominal_integration_method not in {"euler", "midpoint"}:
+            raise ValueError(f"Unknown nominal integration method {self.nominal_integration_method!r}.")
+        if self.covariance_propagation_mode not in {"per_sample", "summed"}:
+            raise ValueError(f"Unknown covariance propagation mode {self.covariance_propagation_mode!r}.")
+
+        if self.covariance_propagation_mode == "summed":
+            phi_summed = np.eye(self.IMU_STATE_DIM)
+            q_summed = np.zeros((self.IMU_STATE_DIM, self.IMU_STATE_DIM), dtype=np.float64)
+
+        for interval in imu_intervals:
+            dt = float(interval.dt)
+            if not np.isfinite(dt) or dt <= 0.0:
+                raise ValueError(f"IMU interval propagation received a non-positive dt: {dt}.")
+
+            if self.nominal_integration_method == "midpoint":
+                gyro_raw = 0.5 * (np.asarray(interval.gyro0, dtype=np.float64) + np.asarray(interval.gyro1, dtype=np.float64))
+                accel_raw = 0.5 * (np.asarray(interval.accel0, dtype=np.float64) + np.asarray(interval.accel1, dtype=np.float64))
+            else:
+                gyro_raw = np.asarray(interval.gyro1, dtype=np.float64)
+                accel_raw = np.asarray(interval.accel1, dtype=np.float64)
+
+            if not np.isfinite(gyro_raw).all() or not np.isfinite(accel_raw).all():
+                raise ValueError("IMU interval contains non-finite accel or gyro values.")
+
+            wm = gyro_raw - self.state.bg
+            am = accel_raw - self.state.ba
+
+            R_prev = self.state.R.copy()
+            v_prev = self.state.v.copy()
+            p_prev = self.state.p.copy()
+
+            if self.nominal_integration_method == "midpoint":
+                self.state.R = R_prev @ mat_exp(wm * dt)
+            else:
+                self.state.R, self.state.oldomega4 = integrate_quaternion_3rd_order(
+                    R_prev, wm, dt, self.state.oldomega4
+                )
+            specific_force_world = R_prev @ am + self.g
+            self.state.v = v_prev + specific_force_world * dt
+            self.state.p = p_prev + v_prev * dt + 0.5 * specific_force_world * dt**2
+
+            if self.covariance_propagation_mode == "summed":
+                phi_i, q_i = propagate_covariance_components(
+                    R_prev,
+                    wm,
+                    am,
+                    dt,
+                    self.sigma_ng,
+                    self.sigma_na,
+                    self.sigma_nbg,
+                    self.sigma_nba,
+                    imu_noise_model=self.imu_noise_model,
+                )
+                q_summed = phi_i @ q_summed @ phi_i.T + q_i
+                q_summed = 0.5 * (q_summed + q_summed.T)
+                phi_summed = phi_i @ phi_summed
+            else:
+                self.state.P = propagate_covariance(
+                    self.state.P,
+                    R_prev,
+                    wm,
+                    am,
+                    dt,
+                    self.sigma_ng,
+                    self.sigma_na,
+                    self.sigma_nbg,
+                    self.sigma_nba,
+                    imu_noise_model=self.imu_noise_model,
+                    repair_mode=None,
+                )
+                self.state.P = self._repair_covariance(self.state.P, "propagate_interval")
+
+        if self.covariance_propagation_mode == "summed":
+            self.state.P = apply_summed_imu_covariance(
+                self.state.P,
+                phi_summed,
+                q_summed,
+            )
+            self.state.P = self._repair_covariance(self.state.P, "propagate_interval_summed")
+
+        self.t = float(imu_intervals[-1].t1)
+
     def augment_clone(self):
         """Append the current pose as a stochastic clone and expand covariance."""
 
@@ -216,6 +360,8 @@ class ImuMSCKF:
         P_new[n_old:, n_old:] = clone_jacobian @ P_old @ clone_jacobian.T
         # Enforce symmetry
         self.state.P = self._repair_covariance(P_new, "augment_clone")
+        self.state.assert_clone_fej_consistency()
+        self.state.assert_covariance_shape_matches_clones()
 
 
     def marginalize_oldest_clone(self):
@@ -230,14 +376,15 @@ class ImuMSCKF:
         self.state.clone_ps_fej.pop(0)
 
         n_clones_after = self.state.get_clone_count()
-        # Indices to keep: IMU state (0-14) + remaining clones (skipping the dropped one at index 15-20)
-        keep = list(range(self.IMU_STATE_DIM)) + list(
-            range(self.IMU_STATE_DIM + self.CLONE_STATE_DIM, self.IMU_STATE_DIM + self.CLONE_STATE_DIM + self.CLONE_STATE_DIM * n_clones_after)
-        )
+        keep = list(range(self.IMU_STATE_DIM))
+        for clone_idx in range(1, n_clones_after + 1):
+            keep.extend(range(self.state.clone_slice(clone_idx).start, self.state.clone_slice(clone_idx).stop))
 
         P = self.state.P
         P_kept = P[np.ix_(keep, keep)]
         self.state.P = self._repair_covariance(P_kept, "marginalize_oldest_clone")
+        self.state.assert_clone_fej_consistency()
+        self.state.assert_covariance_shape_matches_clones()
 
     def _chi2_threshold(self, residual_dim):
         """Return the configured chi-square threshold for a residual dimension."""
@@ -269,6 +416,50 @@ class ImuMSCKF:
         K = np.linalg.solve(innovation_covariance.T, PHt.T).T
         return K, innovation_covariance, touched_columns
 
+    def _prepare_update_system(self, P, H, R, residual):
+        """Return the possibly conditioned residual/Jacobian/noise update system."""
+
+        solve_method = self.update_solve_method
+        if solve_method == "qr":
+            # Current TLEIO updates are 12D and the state is larger, so QR
+            # compression has no rows to remove. Keep the explicit mode for
+            # ablations while preserving the innovation update math.
+            solve_method = "innovation"
+        if solve_method not in {"innovation", "whitened"}:
+            raise ValueError(f"Unknown update solve method {self.update_solve_method!r}.")
+
+        condition_number_R = float(np.linalg.cond(R))
+        if solve_method == "innovation":
+            return {
+                "residual": residual,
+                "jacobian": H,
+                "measurement_covariance": R,
+                "condition_number_R": condition_number_R,
+                "whitening_applied": False,
+                "whitening_repaired_R": False,
+            }
+
+        R_for_whitening = 0.5 * (R + R.T)
+        whitening_repaired_R = False
+        try:
+            L = np.linalg.cholesky(R_for_whitening)
+        except np.linalg.LinAlgError:
+            R_for_whitening = self._repair_covariance(R_for_whitening, "measurement_covariance_whitening")
+            whitening_repaired_R = True
+            L = np.linalg.cholesky(R_for_whitening)
+
+        residual_w = np.linalg.solve(L, residual)
+        H_w = np.linalg.solve(L, H)
+        R_w = np.eye(R.shape[0])
+        return {
+            "residual": residual_w,
+            "jacobian": H_w,
+            "measurement_covariance": R_w,
+            "condition_number_R": condition_number_R,
+            "whitening_applied": True,
+            "whitening_repaired_R": whitening_repaired_R,
+        }
+
     def update(self, network_output):
         """Run the stacked TLEIO relative-pose EKF update on the three clones.
 
@@ -294,20 +485,28 @@ class ImuMSCKF:
         P = self.state.P
         # Inflate measurement noise according to Adaptive Covariance
         R_adaptive = self.adaptive_cov.get_adaptive_R(residual, H, P, R)
+        update_system = self._prepare_update_system(P, H, R_adaptive, residual)
+        residual_update = update_system["residual"]
+        H_update = update_system["jacobian"]
+        R_update = update_system["measurement_covariance"]
         if self.use_block_update:
-            K, innovation_covariance, touched_columns = self._compute_block_kalman_gain(P, H, R_adaptive)
+            K, innovation_covariance, touched_columns = self._compute_block_kalman_gain(P, H_update, R_update)
         else:
-            K, innovation_covariance, touched_columns = self._compute_dense_kalman_gain(P, H, R_adaptive)
+            K, innovation_covariance, touched_columns = self._compute_dense_kalman_gain(P, H_update, R_update)
         # Mahalanobis distance check
-        residual_dim = int(residual.shape[0])
-        mahalanobis_sq = float(residual.T @ np.linalg.solve(innovation_covariance, residual))
+        residual_dim = int(residual_update.shape[0])
+        mahalanobis_sq = float(residual_update.T @ np.linalg.solve(innovation_covariance, residual_update))
         chi2_threshold = self._chi2_threshold(residual_dim)
         rejected = bool(self.enable_chi2_gating and mahalanobis_sq > chi2_threshold)
+        condition_number_S = float(np.linalg.cond(innovation_covariance))
         if rejected:
             return {
                 "residual": residual,
                 "jacobian": H,
                 "measurement_covariance": R_adaptive,
+                "update_residual": residual_update,
+                "update_jacobian": H_update,
+                "update_measurement_covariance": R_update,
                 "innovation_covariance": innovation_covariance,
                 "kalman_gain": None,
                 "delta_x": None,
@@ -316,22 +515,33 @@ class ImuMSCKF:
                 "chi2_threshold": chi2_threshold,
                 "residual_dim": residual_dim,
                 "touched_columns": touched_columns,
+                "update_solve_method": self.update_solve_method,
+                "condition_number_R": update_system["condition_number_R"],
+                "condition_number_S": condition_number_S,
+                "whitening_applied": update_system["whitening_applied"],
+                "whitening_repaired_R": update_system["whitening_repaired_R"],
             }
         # Error state
-        delta_x = -K @ residual
+        delta_x = -K @ residual_update
         # Apply correction
         self._inject_error_state(delta_x)
         self._sync_current_pose_with_latest_clone()
+        self.state.assert_clone_fej_consistency()
+        self.state.assert_covariance_shape_matches_clones()
         # Covariance update in Joseph form
         identity = np.eye(P.shape[0])
-        joseph_left = identity - K @ H
-        P_updated = joseph_left @ P @ joseph_left.T + K @ R_adaptive @ K.T
+        joseph_left = identity - K @ H_update
+        P_updated = joseph_left @ P @ joseph_left.T + K @ R_update @ K.T
         self.state.P = self._repair_covariance(P_updated, "update")
+        self.state.assert_covariance_shape_matches_clones()
 
         return {
             "residual": residual,
             "jacobian": H,
             "measurement_covariance": R_adaptive,
+            "update_residual": residual_update,
+            "update_jacobian": H_update,
+            "update_measurement_covariance": R_update,
             "innovation_covariance": innovation_covariance,
             "kalman_gain": K,
             "delta_x": delta_x,
@@ -340,6 +550,11 @@ class ImuMSCKF:
             "chi2_threshold": chi2_threshold,
             "residual_dim": residual_dim,
             "touched_columns": touched_columns,
+            "update_solve_method": self.update_solve_method,
+            "condition_number_R": update_system["condition_number_R"],
+            "condition_number_S": condition_number_S,
+            "whitening_applied": update_system["whitening_applied"],
+            "whitening_repaired_R": update_system["whitening_repaired_R"],
         }
 
     def _inject_error_state(self, delta_x):
@@ -359,7 +574,8 @@ class ImuMSCKF:
         self.state.ba = self.state.ba + delta_x[12:15]
         # Update cloned states
         for clone_idx in range(self.state.get_clone_count()):
-            offset = self.IMU_STATE_DIM + self.CLONE_STATE_DIM * clone_idx
+            clone_slice = self.state.clone_slice(clone_idx)
+            offset = clone_slice.start
             self.state.clone_Rs[clone_idx] = (
                 self.state.clone_Rs[clone_idx] @ mat_exp(delta_x[offset : offset + 3])
                 )
@@ -465,14 +681,33 @@ def propagate_rvt_and_jac(R, v, p, bg, ba, wm_raw, am_raw, dt, g):
 def propagate_covariance(P, R, wm, am, dt, sg, sa, sbg, sba, imu_noise_model="discrete", repair_mode="jitter"):
     """Propagate the current-plus-clones covariance through one IMU interval."""
 
+    Phi_imu, Q_d = propagate_covariance_components(
+        R,
+        wm,
+        am,
+        dt,
+        sg,
+        sa,
+        sbg,
+        sba,
+        imu_noise_model=imu_noise_model,
+    )
+    P_new = apply_summed_imu_covariance(P, Phi_imu, Q_d)
+
+    if repair_mode is None:
+        return 0.5 * (P_new + P_new.T)
+    P_repaired, _ = repair_covariance(P_new, mode=repair_mode, name="propagate_covariance")
+    return P_repaired
+
+
+def propagate_covariance_components(R, wm, am, dt, sg, sa, sbg, sba, imu_noise_model="discrete"):
+    """Return the IMU-state transition and discrete process noise for one interval."""
+
     if imu_noise_model not in {"discrete", "continuous"}:
         raise ValueError(f"Unknown IMU noise model {imu_noise_model!r}.")
     if not np.isfinite(dt) or dt <= 0.0:
         raise ValueError(f"Covariance propagation requires positive dt, got {dt}.")
 
-    n = P.shape[0]
-    n_imu = 15
-    # State transition matrix
     _, _, _, Phi_imu = propagate_rvt_and_jac(
         R,
         np.zeros(3),
@@ -512,17 +747,31 @@ def propagate_covariance(P, R, wm, am, dt, sg, sa, sbg, sba, imu_noise_model="di
         G[9:12, 6:9] = np.eye(3)
         G[12:15, 9:12] = np.eye(3)
         Q_d = G @ Q_c @ G.T
-    # Full transition matrix
+
+    Q_d = 0.5 * (Q_d + Q_d.T)
+    return Phi_imu, Q_d
+
+
+def apply_summed_imu_covariance(P, Phi_imu, Q_imu):
+    """Apply an accumulated IMU transition/noise pair to the full covariance."""
+
+    P = np.asarray(P, dtype=np.float64)
+    Phi_imu = np.asarray(Phi_imu, dtype=np.float64)
+    Q_imu = np.asarray(Q_imu, dtype=np.float64)
+    n_imu = 15
+    if P.ndim != 2 or P.shape[0] != P.shape[1] or P.shape[0] < n_imu:
+        raise ValueError(f"Expected a square covariance with at least {n_imu} rows, got {P.shape}.")
+    if Phi_imu.shape != (n_imu, n_imu):
+        raise ValueError(f"Expected Phi_imu shape {(n_imu, n_imu)}, got {Phi_imu.shape}.")
+    if Q_imu.shape != (n_imu, n_imu):
+        raise ValueError(f"Expected Q_imu shape {(n_imu, n_imu)}, got {Q_imu.shape}.")
+
+    n = P.shape[0]
     Phi = np.eye(n)
     Phi[:n_imu, :n_imu] = Phi_imu
-    # Propagate covariance
     P_new = Phi @ P @ Phi.T
-    P_new[:n_imu, :n_imu] += Q_d
-
-    if repair_mode is None:
-        return 0.5 * (P_new + P_new.T)
-    P_repaired, _ = repair_covariance(P_new, mode=repair_mode, name="propagate_covariance")
-    return P_repaired
+    P_new[:n_imu, :n_imu] += Q_imu
+    return 0.5 * (P_new + P_new.T)
 
 
 

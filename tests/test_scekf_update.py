@@ -225,3 +225,69 @@ def test_block_update_matches_dense_update_for_triplet_jacobian():
     assert touched.min() >= 15
     np.testing.assert_allclose(S_block, S_dense, atol=1e-10)
     np.testing.assert_allclose(K_block, K_dense, atol=1e-10)
+
+
+def test_whitened_update_matches_innovation_update_for_identity_R():
+    ekf_innovation = _setup_filter(enable_chi2_gating=False, update_solve_method="innovation")
+    ekf_whitened = _setup_filter(enable_chi2_gating=False, update_solve_method="whitened")
+    measurement = _perfect_measurement(ekf_innovation) + 0.01
+    covariance = np.eye(12)
+
+    info_innovation = ekf_innovation.update(
+        {"relative_pose": measurement, "joint_covariance": covariance}
+    )
+    info_whitened = ekf_whitened.update(
+        {"relative_pose": measurement, "joint_covariance": covariance}
+    )
+
+    np.testing.assert_allclose(info_whitened["delta_x"], info_innovation["delta_x"], atol=1e-10)
+    assert info_whitened["whitening_applied"]
+
+
+def test_whitened_update_matches_innovation_update_for_diagonal_R():
+    ekf_innovation = _setup_filter(enable_chi2_gating=False, update_solve_method="innovation")
+    ekf_whitened = _setup_filter(enable_chi2_gating=False, update_solve_method="whitened")
+    measurement = _perfect_measurement(ekf_innovation) + 0.01
+    covariance = np.diag(np.linspace(0.01, 0.2, 12))
+
+    info_innovation = ekf_innovation.update(
+        {"relative_pose": measurement, "joint_covariance": covariance}
+    )
+    info_whitened = ekf_whitened.update(
+        {"relative_pose": measurement, "joint_covariance": covariance}
+    )
+
+    np.testing.assert_allclose(info_whitened["delta_x"], info_innovation["delta_x"], atol=1e-10)
+    np.testing.assert_allclose(
+        info_whitened["mahalanobis_sq"],
+        info_innovation["mahalanobis_sq"],
+        atol=1e-10,
+    )
+
+
+def test_whitened_update_handles_extreme_regressed_sigmas():
+    ekf = _setup_filter(enable_chi2_gating=False, update_solve_method="whitened")
+    measurement = _perfect_measurement(ekf) + 1e-4
+    sigmas = np.geomspace(1e-4, 1.0, 12)
+    covariance = np.diag(sigmas**2)
+
+    info = ekf.update({"relative_pose": measurement, "joint_covariance": covariance})
+
+    assert not info["rejected"]
+    assert np.isfinite(info["delta_x"]).all()
+    assert np.isfinite(info["condition_number_R"])
+    assert np.isfinite(info["condition_number_S"])
+
+
+def test_condition_number_diagnostics_are_returned():
+    ekf = _setup_filter(update_solve_method="whitened")
+    info = ekf.update(
+        {
+            "relative_pose": _perfect_measurement(ekf),
+            "joint_covariance": make_default_joint_covariance(0.05),
+        }
+    )
+
+    assert "condition_number_R" in info
+    assert "condition_number_S" in info
+    assert "whitening_applied" in info
