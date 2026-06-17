@@ -46,6 +46,8 @@ class PrecomputedVoxelClipDataset(Dataset):
         self.cum_lengths = []
         self._voxels = []
         self.preprocessing_args = {}
+        self.height = None
+        self.width = None
         self.train_std = None
         self.train_mean = None
         self.eps = 1e-7
@@ -79,6 +81,14 @@ class PrecomputedVoxelClipDataset(Dataset):
             elif voxel_shape[1] != self.num_bins:
                 raise ValueError(
                     f"{voxels_file}: expected {self.num_bins} bins, got {voxel_shape[1]}"
+                )
+            if self.height is None:
+                self.height = int(voxel_shape[2])
+                self.width = int(voxel_shape[3])
+            elif voxel_shape[2] != self.height or voxel_shape[3] != self.width:
+                raise ValueError(
+                    f"{voxels_file}: inconsistent voxel spatial shape "
+                    f"{voxel_shape[2:4]}, expected {(self.height, self.width)}"
                 )
 
             metadata_file = seq_path / "metadata.json"
@@ -126,6 +136,9 @@ class PrecomputedVoxelClipDataset(Dataset):
             self.cum_lengths.append(total)
 
         self.preprocessing_args.setdefault("num_bins", self.num_bins)
+        if self.height is not None and self.width is not None:
+            self.preprocessing_args["input_height"] = self.height
+            self.preprocessing_args["input_width"] = self.width
         for key, value in self.preprocessing_args.items():
             setattr(self, key, value)
 

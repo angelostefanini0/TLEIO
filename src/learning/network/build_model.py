@@ -104,12 +104,22 @@ def compute_token_info(img_size, patch_size, clip_len):
 def build_model(args, model_params):
     is_main_process = args.get("is_main_process", True)
     device = torch.device(args.get("device", "cuda" if torch.cuda.is_available() else "cpu"))
-    img_size = MultiEventVoxelClipDataset.get_downsampled_size(
-        original_height=480,
-        original_width=640,
-        downsampling_factor=args["downsampling_factor"],
-        patch_size=model_params["patch_size"],
-    )
+    if args.get("input_height") is not None and args.get("input_width") is not None:
+        img_size = (int(args["input_height"]), int(args["input_width"]))
+        if img_size[0] % model_params["patch_size"] != 0 or img_size[1] % model_params["patch_size"] != 0:
+            raise ValueError(
+                "Precomputed voxel spatial size must be divisible by patch size. "
+                f"img_size={img_size}, patch_size={model_params['patch_size']}."
+            )
+        input_source = "precomputed_voxel_shape"
+    else:
+        img_size = MultiEventVoxelClipDataset.get_downsampled_size(
+            original_height=480,
+            original_width=640,
+            downsampling_factor=args["downsampling_factor"],
+            patch_size=model_params["patch_size"],
+        )
+        input_source = "downsampling_factor"
     grid_h, grid_w, spatial_tokens, transformer_tokens = compute_token_info(
         img_size=img_size,
         patch_size=model_params["patch_size"],
@@ -120,6 +130,7 @@ def build_model(args, model_params):
         print(
             "Token info | "
             f"downsampling={args['downsampling_factor']} | "
+            f"input_source={input_source} | "
             f"img_size={img_size[0]}x{img_size[1]} | "
             f"patch_grid={grid_h}x{grid_w} | "
             f"spatial_tokens/frame={spatial_tokens} | "

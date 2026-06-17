@@ -204,6 +204,8 @@ def apply_precomputed_voxel_args(args, dataset):
         "denoise_same_polarity_only",
         "derotate",
         "derotation_slices",
+        "input_height",
+        "input_width",
     ):
         value = getattr(dataset, key, None)
         if value is not None:
