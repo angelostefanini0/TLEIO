@@ -32,35 +32,67 @@ Edit the corresponding YAML file when you want a reusable launch setup without t
 For a normal run, the short commands below are enough as long as the matching YAML file contains the paths and options you want. Use CLI arguments only for one-off overrides.
 
 ## 2. Data Download
-### 2.1 EDS 
 
-Download the eds dataset sequence from the Event Camera Dataset (EDS):
+We provide example download scripts to download the synthetic data that has been used to train the network (TartanAir and TartanEvent), and real event-camera data from Event-aided Direct Sparse (EDS) Odometry paper. The download scripts are configured through `cfg/download_*.yaml` and can also be overridden from the CLI.
+
+### 2.1 EDS
+
+Download sequences from the Event Camera Dataset (EDS):
+
+- EDS project page: <https://rpg.ifi.uzh.ch/eds.html>
+- EDS download root used by the script: <https://download.ifi.uzh.ch/rpg/eds/dataset>
 
 ```bash
 python scripts/download/download_eds.py
 ```
 
-### 2.2 TartanAir + TartanEvent
+By default, the script uses `cfg/download_eds.yaml`. To select sequences without editing the YAML:
 
-Run the `download_tartanair.py` script to download sequences from one or more TartanEvent/TartanAir environments. TartanAir is downloaded from HuggingFace and TartanEvent is taken from UZH RPG resources found in the RAMPVO github repo. HuggingFace uses the same environment names as TartanEvent, so each environment is passed once with `--env`.
+```bash
+python scripts/download/download_eds.py --seq 0,1,2,3
+```
+
+### 2.2 TartanAir + TartanEvent Training Data
+
+The training downloader combines TartanEvent event streams with the matching TartanAir pose metadata. TartanEvent archives are downloaded from the RAMP-VO data resources, while TartanAir archives are downloaded from Hugging Face using the official TartanAir file list.
+
+- TartanAir dataset website: <https://theairlab.org/tartanair-dataset/>
+- TartanAir Hugging Face dataset used by the script: <https://huggingface.co/datasets/theairlabcmu/tartanair>
+- TartanAir training file list used by the script to check for available sequences: <https://raw.githubusercontent.com/castacks/tartanair_tools/master/download_training_zipfiles.txt>
+- RAMP-VO paper: <https://arxiv.org/abs/2309.09947>
+- RAMP-VO/TartanEvent data root used by the script: <https://download.ifi.uzh.ch/rpg/web/data/iros24_rampvo/datasets/>
+
+Run the training downloader with the defaults in `cfg/download_tartanair.yaml`:
 
 ```bash
 python scripts/download/download_tartanair.py
 ```
 
-Multiple environments can be downloaded and merged in one run:
+To download specific training environments:
 
 ```bash
 python scripts/download/download_tartanair.py \
---env office carwelding endofworld \
+  --env office carwelding endofworld \
+  --difficulty easy hard
+```
+The scripts also support partial downloads of ground-truth/camera data or event data only. 
+
+### 2.3 TartanAir + TartanEvent Competition Data
+
+Competition data is handled separately to keep the training downloader simple. The script downloads the TartanEvent competition event archive from the RAMP-VO data root and the TartanAir monocular test release from the Google Drive link used by the original download script.
+
+```bash
+python scripts/download/download_tartanair_competition.py
 ```
 
-If the IMU data is failing to download then only the events will be in the folder, so later run 
+To download only one side of the competition data:
+
 ```bash
-python scripts/download/download_tartanair.py \
---skip-event
+python scripts/download/download_tartanair_competition.py --skip-air
+python scripts/download/download_tartanair_competition.py --skip-event
 ```
-If the first partial download of events lives in a different folder than the one specified in the second one, then the second command should add `--merge-root /path/to/that/partial/folder`.
+
+The default output root is `data/tartanair/competition`.
 
 ## 3. EDS Data pre-processing
 
