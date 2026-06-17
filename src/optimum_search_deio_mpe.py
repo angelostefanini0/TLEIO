@@ -130,14 +130,20 @@ def compute_deio_metrics(
     estimate: np.ndarray,
     align_first_seconds: float,
     max_diff_s: float,
+    align_first_poses: int | None = None,
 ) -> dict[str, float]:
     timestamps, gt_pos, est_pos = associate_positions(
         ground_truth,
         estimate,
         max_diff_s=max_diff_s,
     )
-    elapsed = timestamps - timestamps[0]
-    fit_mask = elapsed <= align_first_seconds
+    if align_first_poses is not None:
+        n_to_align = min(int(align_first_poses), len(timestamps))
+        fit_mask = np.zeros(len(timestamps), dtype=bool)
+        fit_mask[:n_to_align] = True
+    else:
+        elapsed = timestamps - timestamps[0]
+        fit_mask = elapsed <= align_first_seconds
     aligned, scale = align_sim3(est_pos, gt_pos, fit_mask)
     errors = np.linalg.norm(aligned - gt_pos, axis=1)
 
@@ -182,6 +188,7 @@ def evaluate(
     params: dict[str, float],
     align_first_seconds: float,
     max_diff_s: float,
+    align_first_poses: int | None = None,
 ) -> dict | None:
     config = replace(
         base_config,
@@ -201,6 +208,7 @@ def evaluate(
             results["trajectory"],
             align_first_seconds=align_first_seconds,
             max_diff_s=max_diff_s,
+            align_first_poses=align_first_poses,
         )
     except Exception as exc:
         print(f"  trial failed: {type(exc).__name__}: {exc}")
@@ -274,6 +282,7 @@ def tune_sequence(args: argparse.Namespace, sequence: str) -> dict:
         default_params,
         args.align_first_seconds,
         args.max_diff_seconds,
+        args.align_first_poses,
     )
     if best is not None:
         print_trial("default", 0, best)
@@ -284,6 +293,7 @@ def tune_sequence(args: argparse.Namespace, sequence: str) -> dict:
             sample_coarse(rng),
             args.align_first_seconds,
             args.max_diff_seconds,
+            args.align_first_poses,
         )
         if trial is not None:
             print_trial("coarse", idx, trial)
@@ -302,6 +312,7 @@ def tune_sequence(args: argparse.Namespace, sequence: str) -> dict:
             sample_refined(rng, center),
             args.align_first_seconds,
             args.max_diff_seconds,
+            args.align_first_poses,
         )
         if trial is not None:
             print_trial("refine", idx, trial)
@@ -321,6 +332,7 @@ def tune_sequence(args: argparse.Namespace, sequence: str) -> dict:
             "alignment": "sim3",
             "correct_scale": True,
             "align_first_seconds": args.align_first_seconds,
+            "align_first_poses": args.align_first_poses,
             "max_timestamp_difference_seconds": args.max_diff_seconds,
             "mpe_definition": "100 * mean translation APE / full GT path length",
         },
@@ -413,6 +425,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--coarse-trials", type=int, default=800)
     parser.add_argument("--refine-trials", type=int, default=1200)
     parser.add_argument("--align-first-seconds", type=float, default=5.0)
+    parser.add_argument(
+        "--align-first-poses",
+        type=int,
+        default=None,
+        help="If set, align with the first N timestamp-associated poses instead of first seconds.",
+    )
     parser.add_argument("--max-diff-seconds", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument(
