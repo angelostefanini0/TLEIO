@@ -20,6 +20,73 @@ def normalize_checkpoint_state_dict(state_dict):
     return state_dict
 
 
+def resolve_checkpoint_path(args, checkpoint_name):
+    checkpoint_path = os.fspath(checkpoint_name)
+    if os.path.isabs(checkpoint_path) or os.path.exists(checkpoint_path):
+        return checkpoint_path
+    return os.path.join(args["checkpoint_path"], checkpoint_path)
+
+
+def load_model_weights(model, checkpoint_file, device, strict=True):
+    checkpoint = torch.load(
+        checkpoint_file,
+        map_location=device,
+        weights_only=False,
+    )
+    state_dict = normalize_checkpoint_state_dict(checkpoint["model_state_dict"])
+    return checkpoint, model.load_state_dict(state_dict, strict=strict)
+
+
+def freeze_for_finetuning(model, trainable):
+    if trainable == "all":
+        return
+    if trainable != "head":
+        raise ValueError(f"Unsupported finetune_trainable value: {trainable}")
+
+    for param in model.parameters():
+        param.requires_grad = False
+    for param in model.head.parameters():
+        param.requires_grad = True
+
+
+def filter_incompatible_state_dict(model, state_dict):
+    model_state = model.state_dict()
+    filtered = {}
+    skipped = []
+    for key, value in state_dict.items():
+        if key not in model_state:
+            skipped.append(key)
+            continue
+        if model_state[key].shape != value.shape:
+            skipped.append(key)
+            continue
+        filtered[key] = value
+    return filtered, skipped
+
+
+def load_finetune_weights(model, checkpoint_file, device, reset_head=False):
+    checkpoint = torch.load(
+        checkpoint_file,
+        map_location=device,
+        weights_only=False,
+    )
+    state_dict = normalize_checkpoint_state_dict(checkpoint["model_state_dict"])
+    if reset_head:
+        state_dict = {
+            key: value for key, value in state_dict.items()
+            if not key.startswith("head.")
+        }
+        filtered_state_dict, skipped = filter_incompatible_state_dict(model, state_dict)
+        skipped.extend(["head.weight", "head.bias"])
+        load_result = model.load_state_dict(filtered_state_dict, strict=False)
+        model.reset_classifier(model.num_classes)
+        return checkpoint, load_result, skipped
+
+    filtered_state_dict, skipped = filter_incompatible_state_dict(model, state_dict)
+    load_result = model.load_state_dict(filtered_state_dict, strict=False)
+    return checkpoint, load_result, skipped
+
+
 def compute_token_info(img_size, patch_size, clip_len):
     if isinstance(patch_size, tuple):
         patch_h, patch_w = patch_size
@@ -90,15 +157,37 @@ def build_model(args, model_params):
     # load checkpoint
     args["epoch_init"] = 1
     args["best_val"] = np.inf
+    if args["checkpoint"] is not None and args.get("finetune_checkpoint") is not None:
+        raise ValueError("Use either --checkpoint to resume or --finetune_checkpoint to initialize, not both.")
+
     if args["checkpoint"] is not None:
-        checkpoint = torch.load(
-            os.path.join(args["checkpoint_path"], args["checkpoint"]),
-            map_location=device,
-            weights_only=False,
+        checkpoint_file = resolve_checkpoint_path(args, args["checkpoint"])
+        checkpoint, _ = load_model_weights(
+            model,
+            checkpoint_file,
+            device,
+            strict=True,
         )
         args["epoch_init"] = checkpoint["epoch"] + 1
         args["best_val"] = checkpoint["best_val"]
-        model.load_state_dict(normalize_checkpoint_state_dict(checkpoint['model_state_dict']))
+    elif args.get("finetune_checkpoint") is not None:
+        checkpoint_file = resolve_checkpoint_path(args, args["finetune_checkpoint"])
+        _, load_result, skipped = load_finetune_weights(
+            model,
+            checkpoint_file,
+            device,
+            reset_head=args.get("finetune_reset_head", False),
+        )
+        freeze_for_finetuning(model, args.get("finetune_trainable", "all"))
+        if is_main_process:
+            print(f"Loaded finetune weights from: {checkpoint_file}")
+            if skipped:
+                print(f"Skipped incompatible finetune tensors: {skipped}")
+            if load_result.missing_keys:
+                print(f"Missing finetune keys: {load_result.missing_keys}")
+            if load_result.unexpected_keys:
+                print(f"Unexpected finetune keys: {load_result.unexpected_keys}")
+            print(f"Finetune trainable scope: {args.get('finetune_trainable', 'all')}")
 
     model.to(device)
 

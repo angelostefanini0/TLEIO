@@ -30,6 +30,9 @@ profile_timing: false
 profile_warmup_batches: 10
 checkpoint_path: checkpoints
 checkpoint:
+finetune_checkpoint:
+finetune_trainable: all
+finetune_reset_head: false
 embed_dim: 384
 patch_size: 16
 attention_type: divided_space_time

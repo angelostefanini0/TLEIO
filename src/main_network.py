@@ -109,6 +109,13 @@ def parse_args():
                         help="path to save checkpoint")
     parser.add_argument("--checkpoint", type=str, default=None,
                         help="checkpoint file to resume from")
+    parser.add_argument("--finetune_checkpoint", type=str, default=None,
+                        help="checkpoint file to initialize weights from without resuming optimizer/epoch")
+    parser.add_argument("--finetune_trainable", type=str, default="all",
+                        choices=["all", "head"],
+                        help="which parameters remain trainable when finetuning")
+    parser.add_argument("--finetune_reset_head", type=str2bool, default=False,
+                        help="reinitialize the prediction head after loading finetune weights")
 
     # model params
     parser.add_argument("--embed_dim", type=int, default=384)
