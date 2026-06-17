@@ -12,7 +12,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 plt.rcParams.update({
-    'font.family': 'Arial',
     'axes.titlesize': 18,
     'legend.fontsize': 18
 })
