@@ -10,7 +10,7 @@ EKF residual.
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from src.filter.measurement import build_update, make_default_joint_covariance
+from .measurement import build_update, make_default_joint_covariance
 from filter.utils.math_utils import hat, mat_exp,Jr_exp, enforce_symmetry_and_pos_def
 
 
