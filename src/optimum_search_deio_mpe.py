@@ -35,6 +35,9 @@ FILTER_SEARCH_KEYS = (
     "initial_z_sigma_m",
     "initial_bg_sigma_rps",
     "initial_ba_sigma_mps2",
+)
+
+NETWORK_SCALE_SEARCH_KEYS = (
     "network_scale_x",
     "network_scale_y",
     "network_scale_z",
@@ -170,16 +173,26 @@ def sample_log_uniform(rng: random.Random, low: float, high: float) -> float:
     return 10.0 ** rng.uniform(low, high)
 
 
-def sample_coarse(rng: random.Random) -> dict[str, float]:
+def search_keys(include_network_scale: bool) -> tuple[str, ...]:
+    if include_network_scale:
+        return FILTER_SEARCH_KEYS + NETWORK_SCALE_SEARCH_KEYS
+    return FILTER_SEARCH_KEYS
+
+
+def sample_coarse(rng: random.Random, keys: tuple[str, ...]) -> dict[str, float]:
     return {
         key: sample_log_uniform(rng, *COARSE_LOG10_RANGES[key])
-        for key in FILTER_SEARCH_KEYS
+        for key in keys
     }
 
 
-def sample_refined(rng: random.Random, center: dict[str, float]) -> dict[str, float]:
+def sample_refined(
+    rng: random.Random,
+    center: dict[str, float],
+    keys: tuple[str, ...],
+) -> dict[str, float]:
     result = {}
-    for key in FILTER_SEARCH_KEYS:
+    for key in keys:
         center_log = math.log10(center[key])
         width = REFINE_LOG10_HALF_WIDTH[key]
         result[key] = sample_log_uniform(rng, center_log - width, center_log + width)
@@ -237,9 +250,9 @@ def print_trial(stage: str, index: int, trial: dict) -> None:
         f"path={metrics['path_length_m']:.3f} m "
         f"align_scale={metrics['alignment_scale']:.6f} "
         f"net_scale=["
-        f"{params['network_scale_x']:.5f},"
-        f"{params['network_scale_y']:.5f},"
-        f"{params['network_scale_z']:.5f}]"
+        f"{params.get('network_scale_x', 1.0):.5f},"
+        f"{params.get('network_scale_y', 1.0):.5f},"
+        f"{params.get('network_scale_z', 1.0):.5f}]"
     )
 
 
@@ -264,6 +277,7 @@ def save_best_trajectory(
 
 def tune_sequence(args: argparse.Namespace, sequence: str) -> dict:
     rng = random.Random(args.seed)
+    keys = search_keys(args.search_network_scale)
     base_config = replace(
         CONFIG,
         dataset="davis240c",
@@ -283,7 +297,7 @@ def tune_sequence(args: argparse.Namespace, sequence: str) -> dict:
 
     default_params = {
         key: float(getattr(base_config, key))
-        for key in FILTER_SEARCH_KEYS
+        for key in keys
     }
     best = evaluate(
         base_config,
@@ -298,7 +312,7 @@ def tune_sequence(args: argparse.Namespace, sequence: str) -> dict:
     for idx in range(args.coarse_trials):
         trial = evaluate(
             base_config,
-            sample_coarse(rng),
+            sample_coarse(rng, keys),
             args.align_first_seconds,
             args.max_diff_seconds,
             args.align_first_poses,
@@ -317,7 +331,7 @@ def tune_sequence(args: argparse.Namespace, sequence: str) -> dict:
     for idx in range(args.refine_trials):
         trial = evaluate(
             base_config,
-            sample_refined(rng, center),
+            sample_refined(rng, center, keys),
             args.align_first_seconds,
             args.max_diff_seconds,
             args.align_first_poses,
@@ -344,6 +358,7 @@ def tune_sequence(args: argparse.Namespace, sequence: str) -> dict:
             "max_timestamp_difference_seconds": args.max_diff_seconds,
             "mpe_definition": "100 * mean translation APE / full GT path length",
             "ranking": "minimum mpe_percent only",
+            "search_network_scale": args.search_network_scale,
         },
         "prediction_file": args.relative_motions_file.format(sequence=sequence),
         "best": best,
@@ -374,6 +389,7 @@ def write_csv(output_dir: Path, summaries: list[dict]) -> Path:
         "mpe_percent",
         "alignment_scale",
         *FILTER_SEARCH_KEYS,
+        *NETWORK_SCALE_SEARCH_KEYS,
     ]
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
@@ -382,10 +398,14 @@ def write_csv(output_dir: Path, summaries: list[dict]) -> Path:
             best = summary["best"]
             metrics = best["metrics"]
             params = best["params"]
+            base_config = summary.get("base_config", {})
             writer.writerow({
                 "sequence": summary["sequence"],
                 **{key: metrics[key] for key in fields if key in metrics},
-                **{key: params[key] for key in FILTER_SEARCH_KEYS},
+                **{
+                    key: params.get(key, base_config.get(key, ""))
+                    for key in (*FILTER_SEARCH_KEYS, *NETWORK_SCALE_SEARCH_KEYS)
+                },
             })
     return csv_path
 
@@ -445,6 +465,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-diff-seconds", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument(
+        "--search-network-scale",
+        action="store_true",
+        help=(
+            "Also tune network_scale_x/y/z. Off by default because DEIO Sim3 "
+            "evaluation already corrects global scale."
+        ),
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
