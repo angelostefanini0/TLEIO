@@ -3,7 +3,7 @@
 1. load one processed sequence (`anchor_poses.txt`, `relative_motions.txt`, `imu.csv`);
 2. initialize the EKF from the first two anchor poses;
 3. propagate the IMU exactly from anchor to anchor;
-4. update the EKF with overlapping triplets of relative translations from the transformer;
+4. update the EKF with overlapping clips of relative translations from the transformer;
 5. marginalize a single oldest clone after each attempted update.
 
 The transformer's output is assumed to already be available on disk.
@@ -22,7 +22,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from filter.imu_buffer import ImuMeasurement
-from filter.measurement_triplet import make_default_joint_covariance
+from filter.measurement import make_default_joint_covariance
 from filter.scekf import ImuMSCKF
 
 
@@ -150,7 +150,7 @@ def _load_relative_motion_table(sequence_path: Path, use_gt: bool) -> np.ndarray
             "t0 t1 px py pz [qx qy qz qw]."
         )
     if relative_motions.shape[0] < 4:
-        raise ValueError(f"{rel_path} needs at least four rows to form one triplet update.")
+        raise ValueError(f"{rel_path} needs at least four rows to form one update.")
     return relative_motions
 
 
@@ -254,7 +254,7 @@ def _truncate_sequence(
         return anchor_timestamps_us, anchor_positions, anchor_quaternions, relative_measurements, relative_sigmas
 
     if max_frames < 5:
-        raise ValueError("`max_frames` must be at least 5 to run triplet updates.")
+        raise ValueError("`max_frames` must be at least 5 to run measurement updates.")
     # Truncate all related arrays
     anchor_timestamps_us = anchor_timestamps_us[:max_frames]
     anchor_positions = anchor_positions[:max_frames]
@@ -499,7 +499,7 @@ def run_filter(config: RunnerConfig) -> dict:
     )
 
     if len(anchor_timestamps_us) < 3:
-        raise ValueError("Need at least three anchors to run the triplet EKF update.")
+        raise ValueError("Need at least five anchors to run the EKF update.")
 
     # Slice the IMU data stream to exactly match the durations between anchors
     anchor_imu_segments = _build_anchor_imu_segments(
@@ -548,8 +548,8 @@ def run_filter(config: RunnerConfig) -> dict:
             imu_ekf.propagate(anchor_imu_segments[anchor_idx - 1])
             imu_trajectory_rows.append(_state_to_row(anchor_times_s[anchor_idx], imu_ekf.state))
 
-    # MAIN FILTER LOOP (Triplets)
-    # Iterating starting from anchor 2 ensures we have a triplet window available
+    # MAIN FILTER LOOP
+    # Iterating starting from anchor 4 ensures we have a window available
     for anchor_idx in range(4, len(anchor_times_s)):
         # Prediction Step (IMU Integration)
         ekf.propagate(anchor_imu_segments[anchor_idx - 1])
