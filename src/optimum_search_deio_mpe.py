@@ -35,6 +35,9 @@ FILTER_SEARCH_KEYS = (
     "initial_z_sigma_m",
     "initial_bg_sigma_rps",
     "initial_ba_sigma_mps2",
+    "network_scale_x",
+    "network_scale_y",
+    "network_scale_z",
 )
 
 # processing_davis240c.py uses R_world_model = R_world_davis @ R_davis_model.
@@ -226,12 +229,17 @@ def update_best(best: dict | None, candidate: dict | None) -> dict | None:
 
 def print_trial(stage: str, index: int, trial: dict) -> None:
     metrics = trial["metrics"]
+    params = trial["params"]
     print(
         f"[{stage} {index:04d}] "
         f"MPE={metrics['mpe_percent']:.6f}% "
         f"ATE={metrics['ate_rmse_m']:.6f} m "
         f"path={metrics['path_length_m']:.3f} m "
-        f"align_scale={metrics['alignment_scale']:.6f}"
+        f"align_scale={metrics['alignment_scale']:.6f} "
+        f"net_scale=["
+        f"{params['network_scale_x']:.5f},"
+        f"{params['network_scale_y']:.5f},"
+        f"{params['network_scale_z']:.5f}]"
     )
 
 
@@ -335,6 +343,7 @@ def tune_sequence(args: argparse.Namespace, sequence: str) -> dict:
             "align_first_poses": args.align_first_poses,
             "max_timestamp_difference_seconds": args.max_diff_seconds,
             "mpe_definition": "100 * mean translation APE / full GT path length",
+            "ranking": "minimum mpe_percent only",
         },
         "prediction_file": args.relative_motions_file.format(sequence=sequence),
         "best": best,
@@ -428,8 +437,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--align-first-poses",
         type=int,
-        default=None,
-        help="If set, align with the first N timestamp-associated poses instead of first seconds.",
+        default=1000,
+        help=(
+            "Align with the first N timestamp-associated poses instead of first seconds. "
+            "Default 1000 matches the DEIO DAVIS240C evaluation script."
+        ),
     )
     parser.add_argument("--max-diff-seconds", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=7)
