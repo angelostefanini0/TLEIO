@@ -42,9 +42,12 @@ class RunnerConfig:
     data_root: Path = ROOT / "data"
     dataset: str = "eds"
     sequence: str = "00_peanuts_dark"
+    processed_root_override: Path | None = None
 
     @property
     def processed_root(self) -> Path:
+        if self.processed_root_override is not None:
+            return Path(self.processed_root_override)
         return self.data_root / self.dataset / "processed"
     
     @property
@@ -665,6 +668,12 @@ def parse_args():
         help="Sequence folder name to process (e.g., '00_peanuts_dark', '01_peanuts_light', '03_rocket_earth_dark')"
     )
     parser.add_argument(
+        "--processed-root",
+        type=Path,
+        default=CONFIG.processed_root_override,
+        help="Optional processed dataset root containing sequence folders. Defaults to data/<dataset>/processed.",
+    )
+    parser.add_argument(
         "--plot_transformer",
         action="store_true",
         help="Plots the regressed trajectory from the Transformer."
@@ -706,6 +715,7 @@ def main() -> None:
         use_gt=args.gt, 
         dataset=args.dataset,
         sequence=args.sequence,
+        processed_root_override=args.processed_root,
         plot_transformer=args.plot_transformer,
         plot_imu=args.plot_imu,
         interactive_plot=args.interactive_plot,
