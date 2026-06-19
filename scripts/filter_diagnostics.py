@@ -141,6 +141,8 @@ def save_trajectory_comparison_plot(
 
     path.parent.mkdir(parents=True, exist_ok=True)
     t_rel = gt_times_s - gt_times_s[0]
+    axis_label_fontsize = 18
+    time_label_fontsize = 18
     if plot_only_network_tleio:
         if ate_positions is not None:
             min_len = min(len(t_rel), len(gt_positions), len(ate_positions))
@@ -185,11 +187,10 @@ def save_trajectory_comparison_plot(
             handles.append(tleio_line)
             if line_handles is None:
                 line_handles = handles
-            axes[axis_idx].set_title(f"{label.upper()} Position", fontsize=16, pad=7)
-            axes[axis_idx].set_ylabel(f"{label} [m]", fontsize=12)
+            axes[axis_idx].set_ylabel(f"{label.upper()} [m]", fontsize=axis_label_fontsize, fontweight="bold")
             axes[axis_idx].grid(True, color="#9a9a9a", alpha=0.38, linewidth=0.8)
             axes[axis_idx].tick_params(axis="both", labelsize=10)
-        axes[-1].set_xlabel("time [s]")
+        axes[-1].set_xlabel("Time [s]", fontsize=time_label_fontsize, fontweight="bold")
         fig.suptitle(f"EventsFormer and TLEIO ({sequence_name})", fontsize=18, y=0.99)
         if line_handles is not None:
             axes[0].legend(handles=line_handles, loc="upper left", ncol=len(line_handles), frameon=True, fontsize=14)
@@ -232,11 +233,10 @@ def save_trajectory_comparison_plot(
                 handles.append(imu_line)
             if line_handles is None:
                 line_handles = handles
-            axes[axis_idx].set_title(f"{label.upper()} Position", fontsize=16, pad=7)
-            axes[axis_idx].set_ylabel(f"{label} [m]", fontsize=12)
+            axes[axis_idx].set_ylabel(f"{label.upper()} [m]", fontsize=axis_label_fontsize, fontweight="bold")
             axes[axis_idx].grid(True, color="#9a9a9a", alpha=0.38, linewidth=0.8)
             axes[axis_idx].tick_params(axis="both", labelsize=10)
-        axes[-1].set_xlabel("time [s]")
+        axes[-1].set_xlabel("Time [s]", fontsize=time_label_fontsize, fontweight="bold")
         fig.suptitle(f"Network and IMU Baselines ({sequence_name})", fontsize=18, y=0.99)
         if line_handles is not None:
             axes[0].legend(handles=line_handles, loc="upper left", ncol=len(line_handles), frameon=True, fontsize=14)
@@ -275,11 +275,10 @@ def save_trajectory_comparison_plot(
             )
             if line_handles is None:
                 line_handles = [gt_line, tleio_line]
-            axes[axis_idx].set_title(f"{label.upper()} Position", fontsize=16, pad=7)
-            axes[axis_idx].set_ylabel(f"{label} [m]", fontsize=12)
+            axes[axis_idx].set_ylabel(f"{label.upper()} [m]", fontsize=axis_label_fontsize, fontweight="bold")
             axes[axis_idx].grid(True, color="#9a9a9a", alpha=0.38, linewidth=0.8)
             axes[axis_idx].tick_params(axis="both", labelsize=10)
-        axes[-1].set_xlabel("time [s]")
+        axes[-1].set_xlabel("Time [s]", fontsize=time_label_fontsize, fontweight="bold")
         fig.suptitle(f"Position Axes ({sequence_name})", fontsize=18, y=0.99)
         if line_handles is not None:
             axes[0].legend(
@@ -313,9 +312,8 @@ def save_trajectory_comparison_plot(
         if aa_regressed_trajectory is not None:
             axis.plot(t_rel, aa_regressed_trajectory[:, axis_idx], label=f"EventsFormer ATE Aligned {label}", color="y", linestyle="--")
 
-        axis.set_title(f"{label.upper()} Position")
-        axis.set_xlabel("time [s]")
-        axis.set_ylabel(f"{label} [m]")
+        axis.set_xlabel("Time [s]", fontsize=time_label_fontsize, fontweight="bold")
+        axis.set_ylabel(f"{label.upper()} [m]", fontsize=axis_label_fontsize, fontweight="bold")
         axis.grid(True)
         axis.legend()
 
@@ -577,6 +575,7 @@ def save_projections_plot(
 ) -> Path:
 
     path.parent.mkdir(parents=True, exist_ok=True)
+    projection_label_fontsize = 18
     if plot_only_ate_aligned and ate_positions is not None:
         min_len = min(len(gt_positions), len(ate_positions))
         gt_positions = gt_positions[:min_len]
@@ -630,8 +629,8 @@ def save_projections_plot(
         ax.scatter(gt_positions[-1, idx1], gt_positions[-1, idx2], color="red", marker="x", s=40, zorder=5)
 
         ax.set_title(title)
-        ax.set_xlabel(f"{label1} [m]")
-        ax.set_ylabel(f"{label2} [m]")
+        ax.set_xlabel(f"{label1} [m]", fontsize=projection_label_fontsize, fontweight="bold")
+        ax.set_ylabel(f"{label2} [m]", fontsize=projection_label_fontsize, fontweight="bold")
         ax.grid(True)
         ax.legend()
         ax.axis('equal')

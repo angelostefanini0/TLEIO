@@ -83,6 +83,7 @@ class ImuMSCKF:
         self.initial_z_sigma_m = getattr(args, "initial_z_sigma_m", 0.01)
         self.initial_bg_sigma_rps = getattr(args, "initial_bg_sigma_rps", 0.004)
         self.initial_ba_sigma_mps2 = getattr(args, "initial_ba_sigma_mps2", 0.04)
+        self.use_adaptive_covariance = getattr(args, "adaptive_covariance", True)
 
         self.g = np.array([0.0, 0.0, -9.80665])
         self.state = State()
@@ -230,8 +231,8 @@ class ImuMSCKF:
         )
 
         P = self.state.P
-        # Inflate measurement noise according to Adaptive Covariance
-        R_adaptive = self.adaptive_cov.get_adaptive_R(residual, H, P, R)
+        # Optionally inflate measurement noise according to Adaptive Covariance.
+        R_adaptive = self.adaptive_cov.get_adaptive_R(residual, H, P, R) if self.use_adaptive_covariance else R
         innovation_covariance = H @ P @ H.T + R_adaptive
         # Mahalanobis distance check
         mahalanobis_sq = residual.T @ np.linalg.solve(innovation_covariance, residual)
@@ -463,4 +464,3 @@ def integrate_quaternion_3rd_order(R, wm, dt, oldomega4):
     R_next = Rotation.from_quat(q_next_xyzw).as_matrix()
     
     return R_next, omega4
-

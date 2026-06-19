@@ -58,6 +58,82 @@ def interpolate_positions(reference: np.ndarray, query_times_s: np.ndarray) -> n
     return np.column_stack([np.interp(query_times_s, ref_t, ref_p[:, axis]) for axis in range(3)])
 
 
+def load_anchor_poses(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    table = load_trajectory(path)
+    return table[:, 0], table[:, 1:4], table[:, 4:8]
+
+
+def load_relative_motion_table(path: Path) -> np.ndarray:
+    rows: list[list[float]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            parts = line.strip().split()
+            if not parts:
+                continue
+            try:
+                rows.append([float(value) for value in parts])
+            except ValueError:
+                continue
+    table = np.asarray(rows, dtype=np.float64)
+    if table.ndim != 2 or table.shape[1] < 5:
+        raise ValueError(f"{path} has shape {table.shape}, expected at least N x 5.")
+    return table
+
+
+def quat_to_matrix_xyzw(quat: np.ndarray) -> np.ndarray:
+    x, y, z, w = quat / np.linalg.norm(quat)
+    xx, yy, zz = x * x, y * y, z * z
+    xy, xz, yz = x * y, x * z, y * z
+    wx, wy, wz = w * x, w * y, w * z
+    return np.array(
+        [
+            [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy)],
+            [2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
+            [2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy)],
+        ],
+        dtype=np.float64,
+    )
+
+
+def compute_net_only_trajectory(sequence: str, gt_root: Path, net_root: Path | None) -> np.ndarray | None:
+    sequence_dir = gt_root / sequence
+    anchor_path = sequence_dir / "anchor_poses.txt"
+    if not anchor_path.exists():
+        anchor_path = sequence_dir / "stamped_groundtruth.txt"
+    if net_root is not None:
+        rel_path = net_root / f"{sequence}.txt"
+    else:
+        candidates = [
+            sequence_dir / f"{sequence}.txt",
+            ROOT / "data" / "tartanair" / "processed" / sequence / f"{sequence}.txt",
+        ]
+        rel_path = next((path for path in candidates if path.exists()), candidates[0])
+    if not anchor_path.exists() or not rel_path.exists():
+        print(f"skip net-only for {sequence}: missing {anchor_path if not anchor_path.exists() else rel_path}")
+        return None
+
+    anchor_times_s, anchor_positions, anchor_quats = load_anchor_poses(anchor_path)
+    rel_table = load_relative_motion_table(rel_path)
+    rel_dp = rel_table[:, 2:5]
+    limit = min(len(rel_dp), len(anchor_times_s) - 1)
+    if limit <= 0:
+        return None
+
+    positions = [anchor_positions[0].astype(np.float64)]
+    quats = [anchor_quats[0].astype(np.float64)]
+    for idx in range(limit):
+        positions.append(positions[-1] + quat_to_matrix_xyzw(quats[-1]) @ rel_dp[idx])
+        quats.append(anchor_quats[idx + 1].astype(np.float64))
+
+    return np.column_stack(
+        [
+            anchor_times_s[: limit + 1],
+            np.asarray(positions, dtype=np.float64),
+            np.asarray(quats, dtype=np.float64),
+        ]
+    )
+
+
 def rpg_ate_aligned_positions(ground_truth: np.ndarray, estimate: np.ndarray) -> np.ndarray:
     from trajectory import Trajectory
 
@@ -79,10 +155,10 @@ def short_sequence_name(sequence: str) -> str:
 
 
 def configure_style(font_scale: float, line_width: float) -> None:
-    title_size = 9.0 * font_scale
-    label_size = 9.8 * font_scale
-    tick_size = 7.8 * font_scale
-    legend_size = 8.8 * font_scale
+    title_size = 9.8 * font_scale
+    label_size = 10.8 * font_scale
+    tick_size = 8.4 * font_scale
+    legend_size = 9.8 * font_scale
     plt.rcParams.update(
         {
             "font.family": "serif",
@@ -93,8 +169,8 @@ def configure_style(font_scale: float, line_width: float) -> None:
             "xtick.labelsize": tick_size,
             "ytick.labelsize": tick_size,
             "legend.fontsize": legend_size,
-            "axes.linewidth": 0.8,
-            "grid.linewidth": 0.45,
+            "axes.linewidth": 0.9,
+            "grid.linewidth": 0.5,
             "lines.linewidth": line_width,
             "savefig.bbox": "tight",
             "savefig.pad_inches": 0.025,
@@ -104,16 +180,19 @@ def configure_style(font_scale: float, line_width: float) -> None:
     )
 
 
-def set_equal_xy(ax, gt_xy: np.ndarray, est_xy: np.ndarray) -> None:
-    values = np.vstack([gt_xy, est_xy])
-    x_min, y_min = np.min(values, axis=0)
-    x_max, y_max = np.max(values, axis=0)
-    x_mid = 0.5 * (x_min + x_max)
-    y_mid = 0.5 * (y_min + y_max)
-    radius = 0.55 * max(x_max - x_min, y_max - y_min, 1e-6)
-    ax.set_xlim(x_mid - radius, x_mid + radius)
-    ax.set_ylim(y_mid - radius, y_mid + radius)
-    ax.set_aspect("equal", adjustable="box")
+def set_equal_3d(ax, *position_sets: np.ndarray) -> None:
+    values = np.vstack([positions for positions in position_sets if positions is not None])
+    mins = np.min(values, axis=0)
+    maxs = np.max(values, axis=0)
+    mids = 0.5 * (mins + maxs)
+    radius = 0.55 * max(float(np.max(maxs - mins)), 1e-6)
+    ax.set_xlim(mids[0] - radius, mids[0] + radius)
+    ax.set_ylim(mids[1] - radius, mids[1] + radius)
+    ax.set_zlim(mids[2] - radius, mids[2] + radius)
+    try:
+        ax.set_box_aspect((1, 1, 1))
+    except AttributeError:
+        pass
 
 
 def plot_sequence(
@@ -124,6 +203,7 @@ def plot_sequence(
     ate_aligned: bool,
     dpi: int,
     line_width: float,
+    net_table: np.ndarray | None = None,
 ) -> None:
     est_times = est_table[:, 0]
     gt_positions = interpolate_positions(gt_table, est_times)
@@ -135,6 +215,21 @@ def plot_sequence(
         est_positions = est_positions[:min_len]
     else:
         est_positions = est_table[:, 1:4]
+
+    net_positions = None
+    if net_table is not None:
+        if ate_aligned:
+            net_positions = rpg_ate_aligned_positions(gt_table, net_table)
+            net_times = net_table[:, 0]
+            min_len = min(len(net_times), len(net_positions))
+            net_times = net_times[:min_len]
+            net_positions = net_positions[:min_len]
+        else:
+            net_times = net_table[:, 0]
+            net_positions = net_table[:, 1:4]
+        net_positions = np.column_stack(
+            [np.interp(est_times, net_times, net_positions[:, axis]) for axis in range(3)]
+        )
 
     t_rel = est_times - est_times[0]
 
@@ -152,7 +247,7 @@ def plot_sequence(
         wspace=0.205,
     )
     axes = [fig.add_subplot(gs[row, 0]) for row in range(3)]
-    xy_ax = fig.add_subplot(gs[:, 1])
+    traj3d_ax = fig.add_subplot(gs[:, 1], projection="3d")
 
     colors = {"gt": "tab:blue", "tleio": "tab:green"}
     labels = ("X", "Y", "Z")
@@ -171,7 +266,14 @@ def plot_sequence(
             linewidth=line_width,
             label="TLEIO",
         )
-        axes[axis_idx].set_title(f"{label} Position", pad=2)
+        if net_positions is not None:
+            axes[axis_idx].plot(
+                t_rel,
+                net_positions[:, axis_idx],
+                color="tab:red",
+                linewidth=line_width,
+                label="EventsFormer",
+            )
         axes[axis_idx].set_ylabel(f"{label} [m]", fontweight="bold", labelpad=3)
         axes[axis_idx].grid(True)
         axes[axis_idx].margins(x=0.01)
@@ -182,16 +284,50 @@ def plot_sequence(
             axes[axis_idx].set_xlabel("Time [s]", fontweight="bold", labelpad=4)
 
     fig.align_ylabels(axes)
-    xy_ax.plot(gt_positions[:, 0], gt_positions[:, 1], color=colors["gt"], linewidth=line_width, label="Ground Truth")
-    xy_ax.plot(est_positions[:, 0], est_positions[:, 1], color=colors["tleio"], linewidth=line_width, label="TLEIO")
-    xy_ax.scatter(gt_positions[-1, 0], gt_positions[-1, 1], color="red", marker="x", s=28, linewidths=1.4, zorder=5)
-    xy_ax.set_title(f"XY Projection ({short_sequence_name(sequence)})", pad=3)
-    xy_ax.set_xlabel("X [m]", fontweight="bold", labelpad=4)
-    xy_ax.set_ylabel("Y [m]", fontweight="bold", labelpad=4)
-    xy_ax.grid(True)
-    xy_ax.tick_params(axis="both", pad=2.0, width=0.8)
-    set_equal_xy(xy_ax, gt_positions[:, :2], est_positions[:, :2])
-    xy_ax.legend(loc="upper right", frameon=True, borderpad=0.35, handlelength=2.0)
+    traj3d_ax.plot(
+        gt_positions[:, 0],
+        gt_positions[:, 1],
+        gt_positions[:, 2],
+        color=colors["gt"],
+        linewidth=line_width,
+        label="Ground Truth",
+    )
+    traj3d_ax.plot(
+        est_positions[:, 0],
+        est_positions[:, 1],
+        est_positions[:, 2],
+        color=colors["tleio"],
+        linewidth=line_width,
+        label="TLEIO",
+    )
+    if net_positions is not None:
+        traj3d_ax.plot(
+            net_positions[:, 0],
+            net_positions[:, 1],
+            net_positions[:, 2],
+            color="tab:red",
+            linewidth=line_width,
+            label="EventsFormer",
+        )
+    traj3d_ax.scatter(
+        gt_positions[-1, 0],
+        gt_positions[-1, 1],
+        gt_positions[-1, 2],
+        color="red",
+        marker="x",
+        s=28,
+        linewidths=1.4,
+        zorder=5,
+    )
+    traj3d_ax.set_title(f"3D Trajectory ({short_sequence_name(sequence)})", pad=3)
+    traj3d_ax.set_xlabel("X [m]", fontweight="bold", labelpad=4)
+    traj3d_ax.set_ylabel("Y [m]", fontweight="bold", labelpad=4)
+    traj3d_ax.set_zlabel("Z [m]", fontweight="bold", labelpad=4)
+    traj3d_ax.grid(True)
+    traj3d_ax.tick_params(axis="both", pad=2.0, width=0.8)
+    set_equal_3d(traj3d_ax, gt_positions, est_positions, net_positions)
+    traj3d_ax.view_init(elev=28, azim=-62)
+    traj3d_ax.legend(loc="upper right", frameon=True, framealpha=0.92, borderpad=0.45, handlelength=2.2)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=dpi)
@@ -225,8 +361,11 @@ def main() -> None:
     parser.add_argument("--dpi", type=int, default=300)
     parser.add_argument("--format", choices=("png", "pdf", "svg"), default="png")
     parser.add_argument("--no-ate", action="store_true", help="Plot raw TLEIO instead of RPG ATE-aligned TLEIO.")
+    parser.add_argument("--net-root", type=Path, default=None, help="Optional root with <sequence>.txt net predictions.")
+    parser.add_argument("--plot-net-only", action="store_true", help="Overlay net-only trajectory in red.")
+    parser.add_argument("--no-net-only", action="store_true", help="Disable the default net-only red overlay.")
     parser.add_argument("--font-scale", type=float, default=1.0, help="Scale all plot fonts.")
-    parser.add_argument("--line-width", type=float, default=1.8, help="Trajectory line width.")
+    parser.add_argument("--line-width", type=float, default=2.1, help="Trajectory line width.")
     args = parser.parse_args()
 
     configure_style(args.font_scale, args.line_width)
@@ -246,6 +385,11 @@ def main() -> None:
             continue
 
         out_path = out_root / sequence / f"{sequence}{args.suffix}.{args.format}"
+        net_table = (
+            compute_net_only_trajectory(sequence, args.gt_root, args.net_root)
+            if args.plot_net_only or not args.no_net_only
+            else None
+        )
         plot_sequence(
             sequence=sequence,
             gt_table=load_trajectory(gt_path),
@@ -254,6 +398,7 @@ def main() -> None:
             ate_aligned=not args.no_ate,
             dpi=args.dpi,
             line_width=args.line_width,
+            net_table=net_table,
         )
         print(f"saved {out_path}")
 

@@ -1,0 +1,100 @@
+experiments_ate_metrics:
+  TLIO:
+    description: "TLIO Ronin ATE Sim3 [m]"
+    results:
+      ME000: 3.915
+      ME001: 7.962
+      ME002: 3.193
+      ME003: 5.831
+      ME004: 5.344
+      ME005: 2.192
+      ME006: 4.935
+      ME007: 2.616
+      MH000: 10.848
+      MH001: 2.376
+      MH002: 3.101
+      MH003: 3.074
+      MH004: 2.141
+      MH005: 2.714
+      MH006: 3.362
+      MH007: 4.160
+
+  Eventsformer_no_vggt:
+    description: "Eventsformer without vggt (TLEIO ATE Sim3 [m] from table 1)"
+    results:
+      ME000: 4.329
+      ME001: 1.818
+      ME002: 3.977
+      ME003: 5.389
+      ME004: 3.946
+      ME005: 1.784
+      ME006: 4.696
+      ME007: 2.338
+      MH000: 4.069
+      MH001: 2.127
+      MH002: 4.128
+      MH003: 2.170
+      MH004: 2.036
+      MH005: 2.366
+      MH006: 1.883
+      MH007: 3.444
+
+  Eventsformer_vggt:
+    description: "Eventsformer with vggt (V7 ATE)"
+    results:
+      ME000: 3.5913
+      ME001: 2.7744
+      ME002: 3.4298
+      ME003: 4.3372
+      ME004: 2.4225
+      ME005: 2.6090
+      ME006: 2.9120
+      ME007: 1.2759
+      MH000: 4.0477
+      MH001: 1.7551
+      MH002: 4.5339
+      MH003: 1.8162
+      MH004: 1.8216
+      MH005: 3.4524
+      MH006: 2.0499
+      MH007: 3.4678
+
+  TLEIO:
+    description: "TLEIO full model"
+    results:
+      ME000: 2.13
+      ME001: 1.20
+      ME002: 1.45
+      ME003: 1.37
+      ME004: 1.37
+      ME005: 1.19
+      ME006: 0.48
+      ME007: 0.72
+      MH000: 2.65
+      MH001: 0.14
+      MH002: 1.16
+      MH003: 0.22
+      MH004: 0.60
+      MH005: 0.48
+      MH006: 1.15
+      MH007: 1.44
+
+  TLEIO_no_cov:
+    description: "TLEIO without covariance (V7 NOCOV)"
+    results:
+      ME000: 2.216127
+      ME001: 1.571009
+      ME002: 1.340590
+      ME003: 1.974953
+      ME004: 1.569339
+      ME005: 1.431087
+      ME006: 1.048662
+      ME007: 0.888658
+      MH000: 2.769894
+      MH001: 0.398785
+      MH002: 2.119496
+      MH003: 0.216452
+      MH004: 1.346663
+      MH005: 0.767626
+      MH006: 1.132565
+      MH007: 1.887184

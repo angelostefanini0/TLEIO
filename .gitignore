@@ -23,6 +23,7 @@ checkpoints/
 *.log
 *.zip
 *.tar
+*.tgz
 
 
 thirdparty/*
@@ -54,3 +55,10 @@ tartanairpy/*
 dataset_tartan_competition_for_filter/
 outputtestv7/
 vggt_massive_v6_1_tartan_test/
+tleio_filter_repro_bundle.tgz
+rpg_ultimate_slam_open/
+DEMO/
+figures/tartanair_ate_cdf_rampvo_style/
+figures/tartanair_ate_cdf_rampvo_style*/
+figures/tartanair_ate_cdf/
+figures/tartanair_ate_cdf_clean/

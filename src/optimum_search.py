@@ -302,6 +302,11 @@ def parse_args() -> argparse.Namespace:
         help="Optimize using position RMSE instead of ATE as the main score term.",
     )
     parser.add_argument(
+        "--disable-adaptive-covariance",
+        action="store_true",
+        help="Disable residual-based adaptive covariance inflation during tuning.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("outputs") / "tuning",
@@ -354,6 +359,7 @@ def main() -> None:
             sequence=seq,
             use_gt=args.gt,
             max_frames=args.max_frames,
+            adaptive_covariance=not args.disable_adaptive_covariance,
             interactive_plot=False,
             plot_transformer=False,
             plot_projections=False,

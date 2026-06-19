@@ -65,6 +65,7 @@ class RunnerConfig:
     plot_only_network_tleio: bool = False
     save_trajectory_file: bool = True
     save_diagnostic_plots: bool = True
+    adaptive_covariance: bool = True
 
     # Optional sequence truncation
     max_frames: int | None = None
@@ -375,6 +376,7 @@ def _make_filter_args(config: RunnerConfig) -> SimpleNamespace:
         initial_z_sigma_m=float(config.initial_z_sigma_m),
         initial_bg_sigma_rps=float(config.initial_bg_sigma_rps),
         initial_ba_sigma_mps2=float(config.initial_ba_sigma_mps2),
+        adaptive_covariance=bool(config.adaptive_covariance),
     )
 
 
@@ -798,6 +800,11 @@ def parse_args():
         action="store_true",
         help="In saved position plots, show only ground truth, EventsFormer, and TLEIO."
     )
+    parser.add_argument(
+        "--disable-adaptive-covariance",
+        action="store_true",
+        help="Disable residual-based adaptive covariance inflation in the EKF update."
+    )
     return parser.parse_args()
 
 
@@ -837,6 +844,7 @@ def main() -> None:
         plot_only_ate_aligned=args.plot_only_ate_aligned,
         plot_only_network_imu=args.plot_only_network_imu,
         plot_only_network_tleio=args.plot_only_network_tleio,
+        adaptive_covariance=not args.disable_adaptive_covariance,
         **dataset_params,
         **json_params
     )
