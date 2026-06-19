@@ -79,10 +79,10 @@ def short_sequence_name(sequence: str) -> str:
 
 
 def configure_style(font_scale: float, line_width: float) -> None:
-    title_size = 11.0 * font_scale
-    label_size = 14.0 * font_scale
-    tick_size = 10.5 * font_scale
-    legend_size = 12.0 * font_scale
+    title_size = 11.5 * font_scale
+    label_size = 13.0 * font_scale
+    tick_size = 10.0 * font_scale
+    legend_size = 11.0 * font_scale
     plt.rcParams.update(
         {
             "font.family": "DejaVu Sans",
@@ -141,13 +141,13 @@ def plot_sequence(
         3,
         2,
         figure=fig,
-        width_ratios=(1.62, 1.0),
-        left=0.075,
+        width_ratios=(1.58, 1.0),
+        left=0.064,
         right=0.985,
-        bottom=0.130,
-        top=0.925,
-        hspace=0.34,
-        wspace=0.260,
+        bottom=0.125,
+        top=0.945,
+        hspace=0.40,
+        wspace=0.185,
     )
     axes = [fig.add_subplot(gs[row, 0]) for row in range(3)]
     xy_ax = fig.add_subplot(gs[:, 1])
@@ -171,7 +171,7 @@ def plot_sequence(
         )
         axes[axis_idx].set_title(f"{label} Position", pad=2)
         axes[axis_idx].set_ylabel(f"{label} [m]", fontweight="bold", labelpad=6)
-        axes[axis_idx].yaxis.set_label_coords(-0.080, 0.5)
+        axes[axis_idx].yaxis.set_label_coords(-0.066, 0.5)
         axes[axis_idx].grid(True, alpha=0.32)
         axes[axis_idx].margins(x=0.01)
         axes[axis_idx].tick_params(axis="both", pad=3.0, width=0.9)
@@ -180,14 +180,22 @@ def plot_sequence(
         else:
             axes[axis_idx].set_xlabel("Time [s]", fontweight="bold", labelpad=5)
 
-    axes[-1].xaxis.set_label_coords(0.5, -0.225)
+    axes[0].legend(
+        loc="upper left",
+        ncol=2,
+        frameon=True,
+        borderpad=0.35,
+        handlelength=2.1,
+        columnspacing=1.4,
+    )
+    axes[-1].xaxis.set_label_coords(0.5, -0.185)
     xy_ax.plot(gt_positions[:, 0], gt_positions[:, 1], color=colors["gt"], linewidth=line_width, label="Ground Truth")
     xy_ax.plot(est_positions[:, 0], est_positions[:, 1], color=colors["tleio"], linewidth=line_width, label="TLEIO")
     xy_ax.scatter(gt_positions[-1, 0], gt_positions[-1, 1], color="red", marker="x", s=28, linewidths=1.4, zorder=5)
     xy_ax.set_title(f"XY Projection ({short_sequence_name(sequence)})", pad=3)
     xy_ax.set_xlabel("X [m]", fontweight="bold", labelpad=6)
     xy_ax.set_ylabel("Y [m]", fontweight="bold", labelpad=6)
-    xy_ax.yaxis.set_label_coords(-0.120, 0.5)
+    xy_ax.yaxis.set_label_coords(-0.095, 0.5)
     xy_ax.grid(True, alpha=0.32)
     xy_ax.tick_params(axis="both", pad=3.0, width=0.9)
     set_equal_xy(xy_ax, gt_positions[:, :2], est_positions[:, :2])
