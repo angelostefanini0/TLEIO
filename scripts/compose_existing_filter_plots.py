@@ -88,6 +88,22 @@ def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFo
     return ImageFont.load_default()
 
 
+def draw_centered(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str, font, fill=(0, 0, 0, 255)) -> None:
+    bbox = draw.textbbox((0, 0), text, font=font)
+    width = bbox[2] - bbox[0]
+    height = bbox[3] - bbox[1]
+    draw.text((xy[0] - width // 2, xy[1] - height // 2), text, font=font, fill=fill)
+
+
+def draw_rotated_centered(image: Image.Image, center: tuple[int, int], text: str, font) -> None:
+    bbox = ImageDraw.Draw(Image.new("RGBA", (1, 1))).textbbox((0, 0), text, font=font)
+    label = Image.new("RGBA", (bbox[2] - bbox[0] + 12, bbox[3] - bbox[1] + 12), (255, 255, 255, 0))
+    label_draw = ImageDraw.Draw(label)
+    label_draw.text((6 - bbox[0], 6 - bbox[1]), text, font=font, fill=(0, 0, 0, 255))
+    rotated = label.rotate(90, expand=True, resample=Image.Resampling.BICUBIC)
+    image.alpha_composite(rotated, (center[0] - rotated.width // 2, center[1] - rotated.height // 2))
+
+
 def rel_box(image: Image.Image, box: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
     x0, y0, x1, y1 = box
     return (
@@ -98,6 +114,10 @@ def rel_box(image: Image.Image, box: tuple[float, float, float, float]) -> tuple
     )
 
 
+def rel_point(image: Image.Image, point: tuple[float, float]) -> tuple[int, int]:
+    return (round(point[0] * image.width), round(point[1] * image.height))
+
+
 def adjust_trajectory_panel_text(image: Image.Image, label_scale: float) -> Image.Image:
     image = image.copy()
     draw = ImageDraw.Draw(image)
@@ -106,19 +126,25 @@ def adjust_trajectory_panel_text(image: Image.Image, label_scale: float) -> Imag
     # Remove the top legend only. Keep subplot titles, ticks, grids, and curves.
     draw.rectangle(rel_box(image, (0.35, 0.000, 0.66, 0.055)), fill=white)
 
+    label_font = load_font(max(18, round(image.height * 0.021 * label_scale)), bold=True)
+    time_font = load_font(max(18, round(image.height * 0.019 * label_scale)), bold=True)
+
+    # Enlarge y-axis labels without touching tick labels or plotted curves.
+    for box in (
+        (0.000, 0.150, 0.045, 0.305),
+        (0.000, 0.470, 0.045, 0.625),
+        (0.000, 0.795, 0.045, 0.950),
+    ):
+        draw.rectangle(rel_box(image, box), fill=white)
+
+    draw_rotated_centered(image, rel_point(image, (0.021, 0.228)), "X [m]", label_font)
+    draw_rotated_centered(image, rel_point(image, (0.021, 0.548)), "Y [m]", label_font)
+    draw_rotated_centered(image, rel_point(image, (0.021, 0.870)), "Z [m]", label_font)
+
     # Enlarge only the bottom time label.
     draw.rectangle(rel_box(image, (0.46, 0.960, 0.56, 1.000)), fill=white)
-    font = load_font(max(18, round(image.height * 0.018 * label_scale)), bold=True)
     text = "Time [s]"
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_w = bbox[2] - bbox[0]
-    text_h = bbox[3] - bbox[1]
-    draw.text(
-        (image.width // 2 - text_w // 2, round(image.height * 0.982) - text_h // 2),
-        text,
-        fill=(0, 0, 0, 255),
-        font=font,
-    )
+    draw_centered(draw, (image.width // 2, round(image.height * 0.982)), text, time_font)
     return image
 
 
