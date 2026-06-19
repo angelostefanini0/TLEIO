@@ -86,6 +86,29 @@ python eyecatcher/create_tartanair_office_eyecatcher.py \
   --view-azim -105
 ```
 
+To create an eye-catcher directly from an RGB frame, with the camera path up to
+that point reprojected into the image, run:
+
+```bash
+python eyecatcher/create_reprojected_trajectory_eyecatcher.py
+```
+
+The script automatically chooses a sufficiently late frame that keeps a large
+fraction of its trajectory history in view. It checks the frame's depth image
+so trajectory sections hidden by scene geometry do not count as visible and are
+not drawn. Pass `--frame N` to override the selection. The result is written to
+`eyecatcher/output/office_reprojected_trajectory.png`.
+
+To browse every frame interactively before choosing one, run:
+
+```bash
+python eyecatcher/play_reprojected_trajectory.py
+```
+
+Press space to pause, use the left/right arrows (or `A`/`D`) to step through
+frames, press `S` to save the current candidate, and press `Q` to quit. The
+current frame number is shown in the upper-left corner.
+
 For the preview image, the script crops the point cloud around the trajectory
 and trims isolated outliers by default. The current eye-catcher was generated
 with:
