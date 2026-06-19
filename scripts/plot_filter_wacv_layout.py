@@ -79,10 +79,10 @@ def short_sequence_name(sequence: str) -> str:
 
 
 def configure_style(font_scale: float, line_width: float) -> None:
-    title_size = 10.5 * font_scale
-    label_size = 11.5 * font_scale
-    tick_size = 9.0 * font_scale
-    legend_size = 10.0 * font_scale
+    title_size = 8.5 * font_scale
+    label_size = 10.5 * font_scale
+    tick_size = 7.5 * font_scale
+    legend_size = 8.8 * font_scale
     plt.rcParams.update(
         {
             "font.family": "DejaVu Sans",
@@ -136,18 +136,18 @@ def plot_sequence(
 
     t_rel = est_times - est_times[0]
 
-    fig = plt.figure(figsize=(12.0, 4.55))
+    fig = plt.figure(figsize=(9.0, 3.5))
     gs = GridSpec(
         3,
         2,
         figure=fig,
-        width_ratios=(1.58, 1.0),
-        left=0.070,
-        right=0.985,
-        bottom=0.120,
-        top=0.940,
-        hspace=0.34,
-        wspace=0.205,
+        width_ratios=(1.55, 1.0),
+        left=0.060,
+        right=0.995,
+        bottom=0.115,
+        top=0.945,
+        hspace=0.30,
+        wspace=0.175,
     )
     axes = [fig.add_subplot(gs[row, 0]) for row in range(3)]
     xy_ax = fig.add_subplot(gs[:, 1])
@@ -173,20 +173,12 @@ def plot_sequence(
         axes[axis_idx].set_ylabel(f"{label} [m]", fontweight="bold", labelpad=4)
         axes[axis_idx].grid(True)
         axes[axis_idx].margins(x=0.01)
-        axes[axis_idx].tick_params(axis="both", pad=2.5, width=0.8)
+        axes[axis_idx].tick_params(axis="both", pad=2.0, width=0.8)
         if axis_idx < 2:
             axes[axis_idx].tick_params(labelbottom=False)
         else:
-            axes[axis_idx].set_xlabel("Time [s]", fontweight="bold", labelpad=4)
+            axes[axis_idx].set_xlabel("Time [s]", fontweight="bold", labelpad=3)
 
-    axes[0].legend(
-        loc="upper left",
-        ncol=2,
-        frameon=True,
-        borderpad=0.35,
-        handlelength=2.1,
-        columnspacing=1.4,
-    )
     fig.align_ylabels(axes)
     xy_ax.plot(gt_positions[:, 0], gt_positions[:, 1], color=colors["gt"], linewidth=line_width, label="Ground Truth")
     xy_ax.plot(est_positions[:, 0], est_positions[:, 1], color=colors["tleio"], linewidth=line_width, label="TLEIO")
@@ -195,9 +187,9 @@ def plot_sequence(
     xy_ax.set_xlabel("X [m]", fontweight="bold", labelpad=4)
     xy_ax.set_ylabel("Y [m]", fontweight="bold", labelpad=4)
     xy_ax.grid(True)
-    xy_ax.tick_params(axis="both", pad=2.5, width=0.8)
+    xy_ax.tick_params(axis="both", pad=2.0, width=0.8)
     set_equal_xy(xy_ax, gt_positions[:, :2], est_positions[:, :2])
-    xy_ax.legend(loc="upper right", frameon=True, borderpad=0.45, handlelength=2.0)
+    xy_ax.legend(loc="upper right", frameon=True, borderpad=0.35, handlelength=2.0)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=dpi)
