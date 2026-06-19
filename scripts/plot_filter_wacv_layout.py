@@ -79,10 +79,10 @@ def short_sequence_name(sequence: str) -> str:
 
 
 def configure_style(font_scale: float, line_width: float) -> None:
-    title_size = 10.5 * font_scale
-    label_size = 9.5 * font_scale
-    tick_size = 7.8 * font_scale
-    legend_size = 9.5 * font_scale
+    title_size = 9.2 * font_scale
+    label_size = 11.0 * font_scale
+    tick_size = 8.4 * font_scale
+    legend_size = 10.0 * font_scale
     plt.rcParams.update(
         {
             "font.family": "DejaVu Sans",
@@ -169,7 +169,8 @@ def plot_sequence(
             linewidth=line_width,
             label="TLEIO",
         )
-        axes[axis_idx].set_ylabel(f"{label} [m]", labelpad=5)
+        axes[axis_idx].set_title(f"{label} Position", pad=2)
+        axes[axis_idx].set_ylabel(f"{label} [m]", fontweight="bold", labelpad=6)
         axes[axis_idx].grid(True, alpha=0.32)
         axes[axis_idx].margins(x=0.01)
         axes[axis_idx].tick_params(axis="both", pad=2.5, width=0.8)
@@ -182,8 +183,8 @@ def plot_sequence(
     xy_ax.plot(est_positions[:, 0], est_positions[:, 1], color=colors["tleio"], linewidth=line_width, label="TLEIO")
     xy_ax.scatter(gt_positions[-1, 0], gt_positions[-1, 1], color="red", marker="x", s=28, linewidths=1.4, zorder=5)
     xy_ax.set_title(f"XY Projection ({short_sequence_name(sequence)})", pad=3)
-    xy_ax.set_xlabel("X [m]", labelpad=5)
-    xy_ax.set_ylabel("Y [m]", labelpad=5)
+    xy_ax.set_xlabel("X [m]", fontweight="bold", labelpad=6)
+    xy_ax.set_ylabel("Y [m]", fontweight="bold", labelpad=6)
     xy_ax.grid(True, alpha=0.32)
     xy_ax.tick_params(axis="both", pad=2.5, width=0.8)
     set_equal_xy(xy_ax, gt_positions[:, :2], est_positions[:, :2])
