@@ -156,9 +156,9 @@ def short_sequence_name(sequence: str) -> str:
 
 def configure_style(font_scale: float, line_width: float) -> None:
     title_size = 9.8 * font_scale
-    label_size = 10.8 * font_scale
+    label_size = 12.0 * font_scale
     tick_size = 8.4 * font_scale
-    legend_size = 9.8 * font_scale
+    legend_size = 11.2 * font_scale
     plt.rcParams.update(
         {
             "font.family": "serif",
@@ -173,7 +173,7 @@ def configure_style(font_scale: float, line_width: float) -> None:
             "grid.linewidth": 0.5,
             "lines.linewidth": line_width,
             "savefig.bbox": "tight",
-            "savefig.pad_inches": 0.025,
+            "savefig.pad_inches": 0.22,
             "pdf.fonttype": 42,
             "ps.fonttype": 42,
         }
@@ -185,11 +185,13 @@ def set_equal_3d(ax, *position_sets: np.ndarray) -> None:
     mins = np.min(values, axis=0)
     maxs = np.max(values, axis=0)
     mids = 0.5 * (mins + maxs)
-    radius = 0.55 * max(float(np.max(maxs - mins)), 1e-6)
+    radius = 0.50 * max(float(np.max(maxs - mins)), 1e-6)
     ax.set_xlim(mids[0] - radius, mids[0] + radius)
     ax.set_ylim(mids[1] - radius, mids[1] + radius)
     ax.set_zlim(mids[2] - radius, mids[2] + radius)
     try:
+        ax.set_box_aspect((1, 1, 1), zoom=1.22)
+    except TypeError:
         ax.set_box_aspect((1, 1, 1))
     except AttributeError:
         pass
@@ -233,18 +235,18 @@ def plot_sequence(
 
     t_rel = est_times - est_times[0]
 
-    fig = plt.figure(figsize=(9.9, 3.85))
+    fig = plt.figure(figsize=(14.4, 4.15))
     gs = GridSpec(
         3,
         2,
         figure=fig,
-        width_ratios=(1.58, 1.0),
-        left=0.066,
-        right=0.990,
+        width_ratios=(1.95, 1.28),
+        left=0.052,
+        right=0.965,
         bottom=0.125,
         top=0.930,
         hspace=0.34,
-        wspace=0.205,
+        wspace=0.055,
     )
     axes = [fig.add_subplot(gs[row, 0]) for row in range(3)]
     traj3d_ax = fig.add_subplot(gs[:, 1], projection="3d")
@@ -257,6 +259,7 @@ def plot_sequence(
             gt_positions[:, axis_idx],
             color=colors["gt"],
             linewidth=line_width,
+            linestyle="--",
             label="Ground Truth",
         )
         axes[axis_idx].plot(
@@ -290,6 +293,7 @@ def plot_sequence(
         gt_positions[:, 2],
         color=colors["gt"],
         linewidth=line_width,
+        linestyle="--",
         label="Ground Truth",
     )
     traj3d_ax.plot(
@@ -315,19 +319,34 @@ def plot_sequence(
         gt_positions[-1, 2],
         color="red",
         marker="x",
-        s=28,
-        linewidths=1.4,
+        s=64,
+        linewidths=1.7,
         zorder=5,
     )
-    traj3d_ax.set_title(f"3D Trajectory ({short_sequence_name(sequence)})", pad=3)
-    traj3d_ax.set_xlabel("X [m]", fontweight="bold", labelpad=4)
-    traj3d_ax.set_ylabel("Y [m]", fontweight="bold", labelpad=4)
-    traj3d_ax.set_zlabel("Z [m]", fontweight="bold", labelpad=4)
+    axis_label_size = plt.rcParams["axes.labelsize"]
+    tick_label_size = plt.rcParams["xtick.labelsize"]
+    legend_size = plt.rcParams["legend.fontsize"]
+    traj3d_ax.set_xlabel("X [m]", fontweight="bold", fontsize=axis_label_size, labelpad=0)
+    traj3d_ax.set_ylabel("Y [m]", fontweight="bold", fontsize=axis_label_size, labelpad=0)
+    traj3d_ax.set_zlabel("")
     traj3d_ax.grid(True)
-    traj3d_ax.tick_params(axis="both", pad=2.0, width=0.8)
+    traj3d_ax.tick_params(axis="both", pad=1.5, width=0.8, labelsize=tick_label_size)
     set_equal_3d(traj3d_ax, gt_positions, est_positions, net_positions)
     traj3d_ax.view_init(elev=28, azim=-62)
-    traj3d_ax.legend(loc="upper right", frameon=True, framealpha=0.92, borderpad=0.45, handlelength=2.2)
+    try:
+        traj3d_ax.dist = 6.4
+    except Exception:
+        pass
+    traj3d_ax.legend(
+        loc="upper right",
+        frameon=True,
+        framealpha=0.92,
+        borderpad=0.45,
+        handlelength=2.2,
+        fontsize=legend_size,
+    )
+    bbox = traj3d_ax.get_position()
+    traj3d_ax.set_position([bbox.x0, bbox.y0 + 0.025, bbox.width, bbox.height])
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=dpi)
