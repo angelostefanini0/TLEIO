@@ -79,21 +79,19 @@ def short_sequence_name(sequence: str) -> str:
 
 
 def configure_style(font_scale: float, line_width: float) -> None:
-    title_size = 10.0 * font_scale
-    label_size = 10.5 * font_scale
-    tick_size = 8.8 * font_scale
-    legend_size = 10.0 * font_scale
+    title_size = 10.5 * font_scale
+    label_size = 9.5 * font_scale
+    tick_size = 7.8 * font_scale
+    legend_size = 9.5 * font_scale
     plt.rcParams.update(
         {
-            "font.family": "serif",
-            "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
-            "mathtext.fontset": "stix",
+            "font.family": "DejaVu Sans",
             "axes.titlesize": title_size,
             "axes.labelsize": label_size,
             "xtick.labelsize": tick_size,
             "ytick.labelsize": tick_size,
             "legend.fontsize": legend_size,
-            "axes.linewidth": 0.9,
+            "axes.linewidth": 0.8,
             "grid.linewidth": 0.42,
             "lines.linewidth": line_width,
             "savefig.bbox": "tight",
@@ -138,75 +136,58 @@ def plot_sequence(
 
     t_rel = est_times - est_times[0]
 
-    fig = plt.figure(figsize=(8.9, 3.35))
+    fig = plt.figure(figsize=(8.98, 3.51))
     gs = GridSpec(
         3,
         2,
         figure=fig,
-        width_ratios=(1.62, 1.0),
-        left=0.070,
-        right=0.988,
-        bottom=0.145,
-        top=0.875,
-        hspace=0.30,
-        wspace=0.245,
+        width_ratios=(1.58, 1.0),
+        left=0.062,
+        right=0.985,
+        bottom=0.125,
+        top=0.935,
+        hspace=0.34,
+        wspace=0.22,
     )
     axes = [fig.add_subplot(gs[row, 0]) for row in range(3)]
     xy_ax = fig.add_subplot(gs[:, 1])
 
     colors = {"gt": "tab:blue", "tleio": "tab:green"}
     labels = ("X", "Y", "Z")
-    legend_handles = None
     for axis_idx, label in enumerate(labels):
-        gt_line, = axes[axis_idx].plot(
+        axes[axis_idx].plot(
             t_rel,
             gt_positions[:, axis_idx],
             color=colors["gt"],
             linewidth=line_width,
             label="Ground Truth",
         )
-        tleio_line, = axes[axis_idx].plot(
+        axes[axis_idx].plot(
             t_rel,
             est_positions[:, axis_idx],
             color=colors["tleio"],
             linewidth=line_width,
             label="TLEIO",
         )
-        if legend_handles is None:
-            legend_handles = [gt_line, tleio_line]
-        axes[axis_idx].set_ylabel(f"{label} [m]", fontweight="bold", labelpad=6)
-        axes[axis_idx].grid(True, alpha=0.30)
+        axes[axis_idx].set_ylabel(f"{label} [m]", labelpad=5)
+        axes[axis_idx].grid(True, alpha=0.32)
         axes[axis_idx].margins(x=0.01)
-        axes[axis_idx].tick_params(axis="both", pad=2.5, width=0.85)
+        axes[axis_idx].tick_params(axis="both", pad=2.5, width=0.8)
         if axis_idx < 2:
             axes[axis_idx].tick_params(labelbottom=False)
         else:
-            axes[axis_idx].set_xlabel("Time [s]", fontweight="bold", labelpad=6)
+            axes[axis_idx].set_xlabel("Time [s]", fontweight="bold", labelpad=5)
 
     xy_ax.plot(gt_positions[:, 0], gt_positions[:, 1], color=colors["gt"], linewidth=line_width, label="Ground Truth")
     xy_ax.plot(est_positions[:, 0], est_positions[:, 1], color=colors["tleio"], linewidth=line_width, label="TLEIO")
     xy_ax.scatter(gt_positions[-1, 0], gt_positions[-1, 1], color="red", marker="x", s=28, linewidths=1.4, zorder=5)
-    xy_ax.set_title(f"XY Projection ({short_sequence_name(sequence)})", pad=5)
-    xy_ax.set_xlabel("X [m]", fontweight="bold", labelpad=6)
-    xy_ax.set_ylabel("Y [m]", fontweight="bold", labelpad=6)
-    xy_ax.grid(True, alpha=0.30)
-    xy_ax.tick_params(axis="both", pad=2.5, width=0.85)
+    xy_ax.set_title(f"XY Projection ({short_sequence_name(sequence)})", pad=3)
+    xy_ax.set_xlabel("X [m]", labelpad=5)
+    xy_ax.set_ylabel("Y [m]", labelpad=5)
+    xy_ax.grid(True, alpha=0.32)
+    xy_ax.tick_params(axis="both", pad=2.5, width=0.8)
     set_equal_xy(xy_ax, gt_positions[:, :2], est_positions[:, :2])
-
-    if legend_handles is not None:
-        fig.legend(
-            handles=legend_handles,
-            loc="upper center",
-            bbox_to_anchor=(0.52, 0.992),
-            ncol=2,
-            frameon=True,
-            framealpha=0.95,
-            fancybox=False,
-            edgecolor="0.25",
-            borderpad=0.35,
-            handlelength=2.3,
-            columnspacing=1.5,
-        )
+    xy_ax.legend(loc="upper right", frameon=True, borderpad=0.45, handlelength=2.0)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=dpi)
@@ -241,7 +222,7 @@ def main() -> None:
     parser.add_argument("--format", choices=("png", "pdf", "svg"), default="png")
     parser.add_argument("--no-ate", action="store_true", help="Plot raw TLEIO instead of RPG ATE-aligned TLEIO.")
     parser.add_argument("--font-scale", type=float, default=1.0, help="Scale all plot fonts.")
-    parser.add_argument("--line-width", type=float, default=1.8, help="Trajectory line width.")
+    parser.add_argument("--line-width", type=float, default=1.55, help="Trajectory line width.")
     args = parser.parse_args()
 
     configure_style(args.font_scale, args.line_width)
