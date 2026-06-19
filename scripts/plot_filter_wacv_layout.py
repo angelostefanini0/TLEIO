@@ -82,14 +82,14 @@ def configure_style() -> None:
     plt.rcParams.update(
         {
             "font.family": "DejaVu Sans",
-            "axes.titlesize": 9,
+            "axes.titlesize": 8,
             "axes.labelsize": 8,
             "xtick.labelsize": 7,
             "ytick.labelsize": 7,
-            "legend.fontsize": 8,
+            "legend.fontsize": 7,
             "axes.linewidth": 0.8,
             "grid.linewidth": 0.45,
-            "lines.linewidth": 1.45,
+            "lines.linewidth": 1.55,
             "savefig.bbox": "tight",
             "savefig.pad_inches": 0.03,
             "pdf.fonttype": 42,
@@ -131,8 +131,19 @@ def plot_sequence(
 
     t_rel = est_times - est_times[0]
 
-    fig = plt.figure(figsize=(8.6, 3.15))
-    gs = GridSpec(3, 2, figure=fig, width_ratios=(1.55, 1.0), hspace=0.22, wspace=0.24)
+    fig = plt.figure(figsize=(8.6, 3.25))
+    gs = GridSpec(
+        3,
+        2,
+        figure=fig,
+        width_ratios=(1.68, 1.0),
+        left=0.065,
+        right=0.985,
+        bottom=0.145,
+        top=0.925,
+        hspace=0.34,
+        wspace=0.22,
+    )
     axes = [fig.add_subplot(gs[row, 0]) for row in range(3)]
     xy_ax = fig.add_subplot(gs[:, 1])
 
@@ -141,10 +152,11 @@ def plot_sequence(
     for axis_idx, label in enumerate(labels):
         axes[axis_idx].plot(t_rel, gt_positions[:, axis_idx], color=colors["gt"], label="Ground Truth")
         axes[axis_idx].plot(t_rel, est_positions[:, axis_idx], color=colors["tleio"], label="TLEIO")
-        axes[axis_idx].set_title(f"{label} Position", pad=3)
+        axes[axis_idx].set_title(f"{label} Position", pad=2)
         axes[axis_idx].set_ylabel(f"{label} [m]", fontweight="bold")
         axes[axis_idx].grid(True, alpha=0.35)
         axes[axis_idx].margins(x=0.01)
+        axes[axis_idx].tick_params(axis="both", pad=2)
         if axis_idx < 2:
             axes[axis_idx].tick_params(labelbottom=False)
         else:
@@ -153,11 +165,12 @@ def plot_sequence(
     xy_ax.plot(gt_positions[:, 0], gt_positions[:, 1], color=colors["gt"], label="Ground Truth")
     xy_ax.plot(est_positions[:, 0], est_positions[:, 1], color=colors["tleio"], label="TLEIO")
     xy_ax.scatter(gt_positions[-1, 0], gt_positions[-1, 1], color="red", marker="x", s=22, zorder=5)
-    xy_ax.set_title(f"XY Projection ({short_sequence_name(sequence)})", pad=3)
+    xy_ax.set_title(f"XY Projection ({short_sequence_name(sequence)})", pad=2)
     xy_ax.set_xlabel("X [m]", fontweight="bold")
     xy_ax.set_ylabel("Y [m]", fontweight="bold")
     xy_ax.grid(True, alpha=0.35)
-    xy_ax.legend(loc="best", frameon=True)
+    xy_ax.tick_params(axis="both", pad=2)
+    xy_ax.legend(loc="upper right", frameon=True, borderpad=0.35, handlelength=1.8)
     set_equal_xy(xy_ax, gt_positions[:, :2], est_positions[:, :2])
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
