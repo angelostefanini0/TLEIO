@@ -1,0 +1,4 @@
+root: data/tartanair
+skip_event: false
+skip_air: false
+keep_archives: false

@@ -1,4 +1,4 @@
-"""Implement the clone-based IMU propagation and TLEIO triplet EKF update.
+"""Implement the clone-based IMU propagation and TLEIO EKF update.
 
 This file is the core of the filter branch. It keeps the current IMU state,
 manages stochastic pose clones at the three frame times, propagates with IMU
@@ -10,7 +10,7 @@ EKF residual.
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from filter.measurement_triplet import build_triplet_update, make_default_joint_covariance
+from .measurement import build_update, make_default_joint_covariance
 from filter.utils.math_utils import hat, mat_exp,Jr_exp, enforce_symmetry_and_pos_def
 
 
@@ -211,14 +211,14 @@ class ImuMSCKF:
         output and, optionally, one joint `12 x 12` covariance for the stacked
         residual space.
 
-        `build_triplet_update()` returns the Jacobian of the residual itself,
+        `build_update()` returns the Jacobian of the residual itself,
         not the Jacobian of a predicted measurement map. Because of that, the
         EKF correction must apply the negative Kalman step so the residual is
         driven toward zero instead of away from it.
         """
         covariance = network_output.get("joint_covariance", self.default_measurement_covariance)
         # Get residual (z - h(x)), Jacobian (H), and base Measurement Noise (R)
-        residual, H, R = build_triplet_update(
+        residual, H, R = build_update(
             self.state,
             network_output,
             covariance,

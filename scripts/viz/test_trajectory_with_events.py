@@ -14,7 +14,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.viz.eds_loader import EdsDataLoader
-from scripts.inspect_relative_motions import load_table, translation_rel_to_T
+from scripts.plot_trajectories import load_table, translation_rel_to_T
 from scripts.viz.matplotlib_utils import create_live_trajectory_viewer, update_live_trajectory_viewer
 from src.learning.dataloader.representation.event_denoising import background_activity_filter_events
 from scripts.utils.config import default_config_path, parse_args_with_config

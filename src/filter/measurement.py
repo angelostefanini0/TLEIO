@@ -1,16 +1,16 @@
 """Build TLEIO triplet measurements for the clone-based EKF update.
 
-This file converts the transformer's raw `2 x 3` output into the stacked EKF
-objects that the filter needs: normalized relative poses, a minimal 6D
+This file converts the transformer's raw `4 x 3` output into the stacked EKF
+objects that the filter needs: normalized relative poses, a minimal 12D
 residual, sparse clone-only Jacobians, and a single joint measurement
-covariance for the `(1 -> 2, 2 -> 3)` update.
+covariance for the `(1 -> 2, 2 -> 3, 3 -> 4, 4 -> 5)` update.
 """
 
 import numpy as np
 from filter.utils.math_utils import hat,enforce_symmetry_and_pos_def
 
 
-def extract_raw_triplet_measurement(network_output):
+def extract_raw_measurement(network_output):
     """Extract the raw `4 x 3` relative-pose means from a flexible input format.
 
     The filter accepts either a bare NumPy array or a dictionary so that the
@@ -40,7 +40,7 @@ def extract_raw_triplet_measurement(network_output):
     return raw.copy()
 
 
-def normalize_triplet_measurement(raw_measurement):
+def normalize_measurement(raw_measurement):
     """Normalize the two output quaternions in-place and return a clean copy."""
 
     measurement = np.asarray(raw_measurement, dtype=float).copy()
@@ -161,7 +161,7 @@ def embed_pair_jacobian(local_jacobian, clone_i, clone_j, state_dim, imu_dim=15)
     return global_jacobian
 
 
-def build_triplet_update(state, network_output, default_covariance, covariance_scale=1.0):
+def build_update(state, network_output, default_covariance, covariance_scale=1.0):
     """Build the stacked TLEIO measurement residual, Jacobian, and covariance.
 
     The filter expects exactly five clones because the learned triplet
@@ -174,7 +174,7 @@ def build_triplet_update(state, network_output, default_covariance, covariance_s
             "TLEIO update requires exactly five clones before building the triplet measurement."
         )
     # Extract 4x3 measurement and 12x12 covariance
-    measurement = extract_raw_triplet_measurement(network_output)
+    measurement = extract_raw_measurement(network_output)
     covariance = extract_joint_measurement_covariance(network_output)
 
     residual_list, jacobians = [], []
