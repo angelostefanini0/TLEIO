@@ -1,4 +1,4 @@
-# TLEIO: Tight Learned Event-Inertial Odometry
+# TLEIO: Tight Learned Events-Inertial Odometry
 
 TLEIO is a tight learned event-inertial odometry pipeline. The repository contains the data download and preprocessing scripts, the EventsFormer network used to regress relative event-camera motion, and a stochastic-cloning EKF that fuses those learned constraints with IMU measurements.
 
@@ -128,7 +128,7 @@ python src/main_network.py \
   --checkpoint_path checkpoints/eds_eventsformer
 ```
 
-Checkpoints and the matching `args.txt` are saved in the selected checkpoint directory.
+Checkpoints and the matching `args.txt` are saved in the selected checkpoint directory. 
 
 ## Run EventsFormer Inference
 
