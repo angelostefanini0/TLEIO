@@ -20,15 +20,6 @@ from src.spatial_math import (
 from scripts.utils.plotting import plot_covariance_error_cones, plot_relative_motion_inspection
 from scripts.utils.config import default_config_path, parse_args_with_config
 
-"""
-python scripts/inspect_relative_motions.py \
-  --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt \
-  --rel path/to/predicted_relative_motions.txt \
-  --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt
-""""""
-python scripts/inspect_relative_motions.py --gt data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt --rel path/to/predicted_relative_motions.txt  --gt_rel data/eds/processed/00_peanuts_dark/relative_motions.txt
-"""
-
 def load_table(path: Path) -> np.ndarray:
     with open(path, "r") as f:
         first = f.readline().strip()
@@ -199,7 +190,7 @@ def main():
     
     args = parse_args_with_config(
         parser,
-        default_config_path("inspect_relative_motions"),
+        default_config_path("plot_trajectories"),
         required=(),
     )
 

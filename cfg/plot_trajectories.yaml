@@ -1,0 +1,4 @@
+gt: data/eds/processed/00_peanuts_dark/stamped_groundtruth.txt
+rel: data/eds/predicted_relative_motions/predicted_relative_motions.txt
+gt_rel: data/eds/processed/00_peanuts_dark/relative_motions.txt
+save_dir:

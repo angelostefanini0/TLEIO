@@ -28,6 +28,14 @@ outputs/main_filter/
 checkpoints/
 precomputed_office_integer/
 TLIO_net_output/
+author-kit-3DV2025-v1/
+Tight_Learned_Event_Inertial_Odometry/
+demo/
+demo_missing/
+eyecatcher/
+tleio_wacv_2027_2/
+rpg_ultimate_slam_open/
+
 tmp/
 data/*
 !data/.gitkeep
@@ -40,6 +48,7 @@ data/*
 events.out.tfevents.*
 *.log
 *.zip
+rpg_trajectory_evaluation/
 downloads/
 
 # Local copies / external repos
