@@ -10,7 +10,7 @@ TLEIO is a tight learned event-inertial odometry pipeline. The repository contai
   </tr>
   <tr>
     <td align="center" valign="middle">
-      <video src="figures/method/TLEIO%20DEMO.mp4" autoplay loop muted playsinline controls style="width: 100%; border-radius: 8px;"></video>
+      <video src="https://raw.githubusercontent.com/angelostefanini0/TLEIO/main/figures/method/TLEIO%20DEMO.mp4" autoplay loop muted playsinline controls style="width: 100%; border-radius: 8px;"></video>
     </td>
   </tr>
   <tr>
@@ -20,10 +20,11 @@ TLEIO is a tight learned event-inertial odometry pipeline. The repository contai
   </tr>
 </table>
 
-[Open the TLEIO demo video](figures/method/TLEIO%20DEMO.mp4)
+[Open the TLEIO demo video](https://raw.githubusercontent.com/angelostefanini0/TLEIO/main/figures/method/TLEIO%20DEMO.mp4)
 
 ## Method Overview
 
+![TLEIO pipeline](figures/method/pipeline.png)
 
 The full pipeline converts event streams into voxel clips, predicts short-window relative displacements with EventsFormer, and fuses those measurements with high-rate IMU propagation in the filter.
 
