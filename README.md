@@ -71,7 +71,7 @@ Most scripts read defaults from `cfg/*.yaml`; command-line arguments override th
 ### EDS
 
 ```bash
-python scripts/download/download_eds.py --seq 0,1,2,3,4
+python scripts/download/download_eds.py --seq 0,1,2,3,4,5
 ```
 
 This downloads EDS data under `data/eds`. The default sequence list is in `cfg/download_eds.yaml`.
