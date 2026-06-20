@@ -1,4 +1,4 @@
-__# TLEIO
+# TLEIO: Tight Learned Event-Inertial Odometry
 
 TLEIO is a tight learned event-inertial odometry pipeline. The repository contains the data download and preprocessing scripts, the EventsFormer network used to regress relative event-camera motion, and a stochastic-cloning EKF that fuses those learned constraints with IMU measurements.
 
@@ -11,7 +11,7 @@ https://github.com/user-attachments/assets/04fa2e40-7d03-445a-8c5b-53c3609a9f07
 
 ## Method Overview
 
-![TLEIO pipeline](figures/method/pipeline.png)
+
 
 The full pipeline converts event streams into voxel clips, predicts short-window relative displacements with EventsFormer, and fuses those measurements with high-rate IMU propagation in the filter.
 
