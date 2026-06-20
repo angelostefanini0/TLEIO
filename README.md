@@ -1,10 +1,11 @@
 # TLEIO: Tight Learned Events-Inertial Odometry
 
-TLEIO is a tight learned event-inertial odometry pipeline. The repository contains the data download and preprocessing scripts, the EventsFormer network used to regress relative event-camera motion, and a stochastic-cloning EKF that fuses those learned constraints with IMU measurements.
+TLEIO is a tight learned event-inertial odometry pipeline for estimating camera motion from event streams and IMU measurements. It combines EventsFormer, a transformer-based learned front-end for short-window event-camera motion regression, with a stochastic-cloning EKF that tightly fuses learned relative-motion constraints and high-rate inertial propagation.
+
 
 ## Demo Video
 
-TLEIO demo showing the event-inertial odometry pipeline and its trajectory output.
+TLEIO in action: learned event-camera motion constraints are fused with IMU measurements to produce accurate odometry trajectories.
 
 https://github.com/user-attachments/assets/04fa2e40-7d03-445a-8c5b-53c3609a9f07
 
@@ -13,20 +14,19 @@ https://github.com/user-attachments/assets/04fa2e40-7d03-445a-8c5b-53c3609a9f07
 
 
 
-The full pipeline converts event streams into voxel clips, predicts short-window relative displacements with EventsFormer, and fuses those measurements with high-rate IMU propagation in the filter.
+The full pipeline transforms asynchronous event streams into voxel clips, estimates short-window camera displacements with EventsFormer, and tightly fuses the learned constraints with high-rate IMU propagation in a stochastic-cloning EKF.
 
 ![TLEIO model architecture](figures/method/model_architecture.png)
 
-EventsFormer is the learned front-end. It receives preprocessed event voxels and outputs relative translation constraints, optionally with uncertainty, that are consumed by the filter back-end.
+EventsFormer is the learned event front-end of TLEIO. It processes precomputed event voxel clips and predicts relative translation constraints, optionally with uncertainty estimates, for the filter back-end.
 
 ![TLEIO tokenizer](figures/method/tokenizer.png)
 
-The tokenizer splits each event voxel into patches and projects them into tokens for the transformer.
+The tokenizer converts each event voxel clip into spatio-temporal patch tokens suitable for transformer processing.
 
 ![EventsFormer encoder](figures/method/eventsformer_encoder.png)
 
-The EventsFormer encoder applies divided space-time attention over the voxel clip before the prediction head regresses consecutive relative motions.
-
+The EventsFormer encoder applies divided space-time attention to capture spatial event structure and temporal motion cues before the prediction head regresses consecutive relative motions.
 ## Repository Layout
 
 ```text
@@ -41,7 +41,7 @@ src/main_network.py   Training entry point
 src/main_filter.py    Filter entry point
 ```
 
-Generated data, checkpoints, logs, plots, and filter outputs are intentionally ignored by git.
+
 
 ## Setup
 
@@ -119,7 +119,7 @@ Each precomputed sequence contains `derotated_voxels.npy`, `relative_motions.txt
 
 ## Train EventsFormer
 
-Training is optional if you already have a trained checkpoint. Update `cfg/train.yaml` or override paths from the CLI:
+
 
 ```bash
 python src/main_network.py \
