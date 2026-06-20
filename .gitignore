@@ -1,64 +1,73 @@
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-azure/
-eval_outputs/
-evaluation/
-outputs/
-scripts/azure/
+*.egg-info/
 
 # Environments
 .venv/
-env/
 venv/
+env/
 .conda/
 
-# Local/editor files
+# Editors / OS
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
 
-# Generated experiment outputs
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+*.xdv
+
+# Local LaTeX paper folders
+author-kit-3DV2025-v1/
+Tight_Learned_Event_Inertial_Odometry/
+tleio_wacv_2027_2/
+
+# Experiments / generated outputs
+outputs/
+eval_outputs/
+evaluation/
 plots/
 results/
-outputs/main_filter/
+figures/
 checkpoints/
-precomputed_office_integer/
-TLIO_net_output/
 tmp/
+TLIO_net_output/
+precomputed_office_integer/
+events.out.tfevents.*
+eyecatcher/output/
+
+# Data and large local artifacts
 data/*
 !data/.gitkeep
-
-# Large/local artifacts
 *.h5
 *.npy
-*.pth
+*.npz
 *.pt
-events.out.tfevents.*
-*.log
+*.pth
 *.zip
+*.mp4
 downloads/
 
-# Local copies / external repos
+# Local demo trajectories
+demo/*.txt
+demo_missing/
+
+# Local/external code drops
 azure/
+scripts/azure/
 tartanairpy/*
 thirdparty/*
 !thirdparty/README.md
-
-# Build artifacts
-build/
-develop-eggs/
-dist/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-tartanairpy/*
