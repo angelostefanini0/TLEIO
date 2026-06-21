@@ -41,8 +41,8 @@ class RunnerConfig:
 
     # Paths
     data_root: Path = ROOT / "data"
-    dataset: str = "eds"
-    sequence: str = "00_peanuts_dark"
+    dataset: str = "tartanair"
+    sequence: str = "MH001"
     processed_dir: Path | None = None
     output_root: Path = ROOT / "outputs" / "main_filter"
 
@@ -565,9 +565,7 @@ def run_filter(config: RunnerConfig) -> dict:
     trajectory_table = np.asarray(trajectory_rows, dtype=np.float64)
     sequence_out_dir = config.out_dir / config.sequence
     saved_path = save_trajectory(sequence_out_dir / "stamped_traj_estimate.txt",trajectory_table)
-    gt_path = sequence_path / "stamped_groundtruth.txt"
-    ground_truth_trajectory = np.loadtxt(gt_path, comments="#", ndmin=2)
-    ground_truth_trajectory[:, 0] *= infer_time_scale_to_seconds(ground_truth_trajectory[:, 0])
+    ground_truth_trajectory = build_ground_truth_trajectory(anchor_timestamps_us,anchor_positions,anchor_quaternions,)
 
     regressed_trajectory = None
     # Adds a plot for the transformer output before EKF
