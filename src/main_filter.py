@@ -41,16 +41,20 @@ class RunnerConfig:
 
     # Paths
     data_root: Path = ROOT / "data"
-    dataset: str = "testv7"
-    sequence: str = "competition_Test_MH001"
+    dataset: str = "eds"
+    sequence: str = "00_peanuts_dark"
+    processed_dir: Path | None = None
+    output_root: Path = ROOT / "outputs" / "main_filter"
 
     @property
     def processed_root(self) -> Path:
+        if self.processed_dir is not None:
+            return self.processed_dir
         return self.data_root / self.dataset / "processed"
     
     @property
     def out_dir(self) -> Path:
-        return ROOT / "outputs" / "main_filter" / self.dataset
+        return self.output_root / self.dataset
 
     # Execution modes
     use_gt: bool = False  # Set via CLI argument
@@ -622,6 +626,18 @@ def parse_args():
         help="Sequence folder name to process (e.g., '00_peanuts_dark', '01_peanuts_light', '03_rocket_earth_dark')"
     )
     parser.add_argument(
+        "--processed_root",
+        type=Path,
+        default=None,
+        help="Processed dataset split root. Defaults to data/<dataset>/processed.",
+    )
+    parser.add_argument(
+        "--output_root",
+        type=Path,
+        default=CONFIG.output_root,
+        help="Root directory for filter outputs.",
+    )
+    parser.add_argument(
         "--plot_transformer",
         action="store_true",
         help="Plots the regressed trajectory from the Transformer."
@@ -668,6 +684,8 @@ def main() -> None:
         use_gt=args.gt, 
         dataset=args.dataset,
         sequence=args.sequence,
+        processed_dir=args.processed_root,
+        output_root=args.output_root,
         plot_transformer=args.plot_transformer,
         plot_imu=args.plot_imu,
         interactive_plot=args.interactive_plot,

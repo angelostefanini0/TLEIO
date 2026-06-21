@@ -1,238 +1,237 @@
-# TLEIO Setup and Quickstart
+# TLEIO: Tight Learned Events-Inertial Odometry
 
-## 1. Environment Setup
+TLEIO is a tight learned event-inertial odometry pipeline for estimating camera motion from event streams and IMU measurements. It combines EventsFormer, a transformer-based learned front-end for short-window event-camera motion regression, with a stochastic-cloning EKF that tightly fuses learned relative-motion constraints and high-rate inertial propagation.
 
-Create and activate the conda environment to ensure all dependencies are met:
+
+## Demo Video
+
+TLEIO in action: learned event-camera motion constraints are fused with IMU measurements to produce accurate odometry trajectories.
+
+https://github.com/user-attachments/assets/04fa2e40-7d03-445a-8c5b-53c3609a9f07
+
+
+## Method Overview
+
+
+
+The full pipeline transforms asynchronous event streams into voxel clips, estimates short-window camera displacements with EventsFormer, and tightly fuses the learned constraints with high-rate IMU propagation in a stochastic-cloning EKF.
+
+![TLEIO model architecture](figures/method/model_architecture.png)
+
+EventsFormer is the learned event front-end of TLEIO. It processes precomputed event voxel clips and predicts relative translation constraints, optionally with uncertainty estimates, for the filter back-end.
+
+![TLEIO tokenizer](figures/method/tokenizer.png)
+
+The tokenizer converts each event voxel clip into spatio-temporal patch tokens suitable for transformer processing.
+
+![EventsFormer encoder](figures/method/eventsformer_encoder.png)
+
+The EventsFormer encoder applies divided space-time attention to capture spatial event structure and temporal motion cues before the prediction head regresses consecutive relative motions.
+## Repository Layout
+
+```text
+cfg/                  YAML defaults for the command-line scripts
+scripts/download/     Dataset download helpers
+scripts/processing/   Ground-truth processing and voxel precomputation
+scripts/testing/      EventsFormer inference scripts
+scripts/viz/          Optional visualization utilities
+src/learning/         Dataloaders and EventsFormer implementation
+src/filter/           Filter implementation
+src/main_network.py   Training entry point
+src/main_filter.py    Filter entry point
+```
+
+
+
+## Setup
 
 ```bash
 conda env create -f environment.yaml
 conda activate tleio
-```
-
-To properly activate the rpg_trajectory_evaluation toolbox, imported in this repo as a git submodule, run the following command:
-
-```bash
 git submodule update --init --recursive
 ```
 
-## 1.1 Script Configs
+Most scripts read defaults from `cfg/*.yaml`; command-line arguments override the YAML values.
 
-Launch defaults live in `cfg/*.yaml`. Supported scripts load their matching config automatically, and any CLI argument you pass overrides the YAML value.
+## Download Data
 
-For example:
-
-```bash
-python scripts/processing/precompute_derotated_voxels.py
-python scripts/testing/test.py --sequence_dir data/eds/precomputed_testing/03_rocket_earth_dark
-python src/main_network.py --config cfg/train.yaml --b_size 8
-```
-
-Edit the corresponding YAML file when you want a reusable launch setup without typing every argument each time.
-
-For a normal run, the short commands below are enough as long as the matching YAML file contains the paths and options you want. Use CLI arguments only for one-off overrides.
-
-## 2. Data Download
-
-We provide example download scripts to download the synthetic data that has been used to train the network (TartanAir and TartanEvent), and real event-camera data from Event-aided Direct Sparse (EDS) Odometry paper. The download scripts are configured through `cfg/download_*.yaml` and can also be overridden from the CLI.
-
-### 2.1 EDS
-
-Download sequences from the EDS dataset:
-
-- EDS project page: <https://rpg.ifi.uzh.ch/eds.html>
-- EDS download root used by the script: <https://download.ifi.uzh.ch/rpg/eds/dataset>
+### EDS
 
 ```bash
-python scripts/download/download_eds.py
+python scripts/download/download_eds.py --seq 0,1,2,3,4,5
 ```
 
-By default, the script uses `cfg/download_eds.yaml`. To select sequences without editing the YAML:
+This downloads EDS data under `data/eds`. The default sequence list is in `cfg/download_eds.yaml`.
+
+### TartanAir + TartanEvent
 
 ```bash
-python scripts/download/download_eds.py --seq 0,1,2,3
+python scripts/download/download_tartanair.py --env office --difficulty easy hard
 ```
 
-### 2.2 TartanAir + TartanEvent Training Data
+Training data is downloaded under `data/tartanair`. The script combines TartanAir pose data with TartanEvent event streams.
 
-The training downloader combines TartanEvent event streams with the matching TartanAir pose metadata. TartanEvent archives are downloaded from the RAMP-VO data resources, while TartanAir archives are downloaded from Hugging Face using the official TartanAir file list.
-
-- TartanAir dataset website: <https://theairlab.org/tartanair-dataset/>
-- TartanAir Hugging Face dataset used by the script: <https://huggingface.co/datasets/theairlabcmu/tartanair>
-- TartanAir training file list used by the script to check for available sequences: <https://raw.githubusercontent.com/castacks/tartanair_tools/master/download_training_zipfiles.txt>
-- RAMP-VO paper: <https://arxiv.org/abs/2309.09947>
-- RAMP-VO/TartanEvent data root used by the script: <https://download.ifi.uzh.ch/rpg/web/data/iros24_rampvo/datasets/>
-
-Run the training downloader with the defaults in `cfg/download_tartanair.yaml`:
-
-```bash
-python scripts/download/download_tartanair.py
-```
-
-To download specific training environments:
-
-```bash
-python scripts/download/download_tartanair.py \
-  --env office carwelding endofworld \
-  --difficulty easy hard
-```
-The scripts also support partial downloads of ground-truth/camera data or event data only. 
-
-### 2.3 TartanAir + TartanEvent Competition Data
-
-Competition data is handled separately to keep the training downloader simple. The script downloads the TartanEvent competition event archive from the RAMP-VO data root and the TartanAir monocular test release from the Google Drive link used by the original download script.
+### TartanAir + TartanEvent Competition Split
 
 ```bash
 python scripts/download/download_tartanair_competition.py
 ```
 
-To download only one side of the competition data:
+Competition data is written under `data/tartanair/competition`.
+
+## Process Data
+
+Process EDS into train, validation, and test folders:
 
 ```bash
-python scripts/download/download_tartanair_competition.py --skip-air
-python scripts/download/download_tartanair_competition.py --skip-event
+python scripts/processing/processing_eds.py --overwrite
 ```
 
-The default output root is `data/tartanair/competition`.
-
-## 3. Data pre-processing
-
-We provide example scripts to generate supervision data for the network, and to pre-compute the event voxels for efficient GPU training, storing them in npy files.   
-
-### 3.1 EDS Data pre-processing
-
-Run the `scripts/processing/processing_eds.py` script to process and the ground truth data to get supervision for the network using the data from the EDS dataset. The script generates a ms_to_idx mapping for efficient event retrieval in the dataloader, and the relative transforms between ground truth poses downsampled at the target frequency.
+Process TartanAir/TartanEvent:
 
 ```bash
-python scripts/processing/processing_eds.py
+python scripts/processing/processing_tartan.py --overwrite
 ```
 
-### 3.2 Tartan Data pre-processing
+Processed sequence folders contain the files used by the rest of the pipeline:
 
-Run the `scripts/processing/processing_tartan.py` script to process the ground truth data to get supervision for the network.
-
-The script builds `stamped_groundtruth.txt` from `pose_lcam_front.txt` and `imu/cam_time.txt`
-
-```bash
-python scripts/processing/processing_tartan.py
+```text
+events.h5
+anchor_poses.txt
+relative_motions.txt
+stamped_groundtruth.txt
+imu.csv
 ```
 
-### 3.3 Precomputing event voxels
+## Precompute Event Voxels
 
-Training can either build event voxel grids online in the dataloader or read
-precomputed voxels from disk. For faster training, we recommend precomputing the
-voxel grids once and storing them as `.npy` files. This moves denoising,
-downsampling, voxelization, and optional event de-rotation out of the training
-loop, reducing CPU dataloader overhead and helping the GPU stay busy.
-
-Run:
-
-```bash
-python scripts/processing/precompute_derotated_voxels.py
-```
-
-The script reads processed sequences from `root_dir` and writes one output
-folder per sequence under `output_dir`. Each output sequence contains:
-
-- `derotated_voxels.npy`: voxel tensor with shape `[N, C, H, W]`, where `N` is
-  the number of anchor timestamps and `C` is the number of temporal bins.
-- `relative_motions.txt`: copied supervision targets used by the training
-  dataset.
-- `metadata.json`: preprocessing settings used to produce the voxel file.
-
-Defaults live in `cfg/precompute_derotated_voxels.yaml`. Typical overrides are:
+EventsFormer inference and training use precomputed voxel clips by default.
 
 ```bash
 python scripts/processing/precompute_derotated_voxels.py \
-  --root_dir data/tartanair/processed_train \
-  --output_dir data/tartanair/precomputed_train \
+  --root_dir data/eds/processed_testing \
+  --output_dir data/eds/precomputed_testing \
   --denoising true \
-  --derotate true \
   --overwrite
 ```
 
-The training script can then consume the precomputed folders directly, avoiding
-event slicing and voxel construction during each epoch.
+Each precomputed sequence contains `derotated_voxels.npy`, `relative_motions.txt`, and `metadata.json`.
 
-## 4. Training the model:
-Run the `main_network.py` script to train the model. A bunch of arguments can be passed for general data handling, optimization strategies and model parameters.
+## Train EventsFormer
 
-Single GPU training with precomputed voxelization:
+
 
 ```bash
-python src/main_network.py
+python src/main_network.py \
+  --root_dir data/eds/precomputed_train \
+  --val_root_dir data/eds/precomputed_validation \
+  --checkpoint_path checkpoints/eds_eventsformer
 ```
 
-### 4.1 Training Profiling
+Checkpoints and the matching `args.txt` are saved in the selected checkpoint directory. 
 
-Training profiling is still built into `src/main_network.py`. To run a short profiling pass, edit `cfg/train_profile.yaml` if needed and run:
+## Run EventsFormer Inference
+
+Run inference on one precomputed sequence and write the predicted relative motions into the matching processed sequence folder. This is the format expected by the filter.
 
 ```bash
-python src/main_network.py --config cfg/train_profile.yaml
-```
-Compare the printed timing line at the end of the epoch:
-- If `avg_data_wait` is still larger than `avg_compute`, try more workers before increasing batch size further.
-- If `avg_compute` is dominant and GPU memory is still comfortable, try a larger `--b_size`.
-- If throughput stops improving, that configuration is already near the sweet spot.
+SEQ=03_rocket_earth_dark
+CKPT=checkpoints/eds_eventsformer/checkpoint_best.pth
 
-## 5. Testing the model: 
-Run the `scripts/testing/test.py` script to test the model and save the motions into a file.
-
-The script reads `args.txt` from the checkpoint directory, so the same training-time settings for downsampling and denoising are reused automatically during inference. You can also enable `--average_overlaps` to average multiple predictions that correspond to the same relative motion. Translation-only checkpoints now save `t0_us t1_us px py pz`.
-
-```bash
-python scripts/testing/test.py
+python scripts/testing/test.py \
+  --sequence_dir data/eds/precomputed_testing/$SEQ \
+  --checkpoint_file $CKPT \
+  --output_file data/eds/processed_testing/$SEQ/$SEQ.txt \
+  --average_overlaps
 ```
 
-## 5.1 Batch testing precomputed sequences:
-Use `scripts/testing/batch_test.py` to run `scripts/testing/test.py` on every valid sequence folder inside a precomputed root. A valid sequence folder must contain `derotated_voxels.npy` and `relative_motions.txt`.
-
-Example used for the Office precomputed dataset:
-
-```bash
-python scripts/testing/batch_test.py
-```
-
-The main prediction files are saved as:
+The prediction file has columns:
 
 ```text
-data/tartanair/predicted_relative_motions/precomputed_office_integer/<sequence>.txt
+t0_us t1_us px py pz
 ```
 
-Files ending in `_raw.txt` are raw model outputs for debugging and are not needed for trajectory plots.
+If `--save_covariance` is used with a covariance checkpoint, the file also contains `sigma_x sigma_y sigma_z`.
 
-To plot all Office sequences against ground truth:
+To run inference on every sequence in a precomputed folder:
 
 ```bash
-for seq_dir in data/tartanair/precomputed_office_integer/*; do
-  seq=$(basename "$seq_dir")
-
-  python scripts/inspect_relative_motions.py \
-    --gt "data/tartanair/processed_train/$seq/stamped_groundtruth.txt" \
-    --rel "data/tartanair/predicted_relative_motions/precomputed_office_integer/$seq.txt" \
-    --gt_rel "$seq_dir/relative_motions.txt" \
-    --save_dir "plots/precomputed_office_integer/$seq"
-done
+python scripts/testing/batch_test.py \
+  --batch_root data/eds/precomputed_testing \
+  --checkpoint_file checkpoints/eds_eventsformer/checkpoint_best.pth \
+  --output_dir data/eds/predicted_relative_motions \
+  --average_overlaps
 ```
 
-## 6. Inspection of model output: 
-Run the `inspect_relative_motions.py` script to see how the model predicition compares to the GT. `gt` expects the stamped groundtruth, `rel` expects translation-only predictions `[t0_us t1_us px py pz]`, and `gt_rel` expects the groundtruth relative motions used for reference translations and trajectory rotations.
+## Run the Filter
 
-```bash
-python scripts/inspect_relative_motions.py
-```
+Run the EKF on one processed sequence after writing the EventsFormer prediction file into that same sequence folder.
 
-## 7. Live visualization and inspection of results: 
-Run the `scripts/viz/test_trajectory_with_events.py` script with trajectory arguments to playback the input video with events overlayed onto RGB frames, and get the corresponding trajectory plot live (gt against predicted from the model). It supports the same optional background-activity denoising controls as the event-only mode and denoising during live playback
-```bash
-python scripts/viz/test_trajectory_with_events.py
-```
-
-## 8. Running the filter
-Run the `src/main_filter.py` script to run the filter and save the results in the output directory 'outputs', alongside 3D trajectory, position and rotation comparison plots. Use '--h' for a complete overview of the parsers.
 ```bash
 python src/main_filter.py \
---dataset DATASET \
---sequence SEQUENCE \
---plot_transformer \    # To visualize the trajectory estimated by the network-
---plot_projections \    # To save the 2D projections plots.
+  --dataset eds \
+  --processed_root data/eds/processed_testing \
+  --sequence 03_rocket_earth_dark \
+  --plot_transformer \
+  --plot_projections
 ```
+
+Filter outputs are saved under:
+
+```text
+outputs/main_filter/<dataset>/<sequence>/
+```
+
+The main files are `stamped_traj_estimate.txt` and the trajectory/error plots generated by `scripts/filter_diagnostics.py`.
+
+## Inspect Network Trajectories
+
+To reconstruct and plot a trajectory directly from relative-motion predictions:
+
+```bash
+python scripts/plot_trajectories.py \
+  --gt data/eds/processed_testing/03_rocket_earth_dark/stamped_groundtruth.txt \
+  --rel data/eds/processed_testing/03_rocket_earth_dark/03_rocket_earth_dark.txt \
+  --gt_rel data/eds/processed_testing/03_rocket_earth_dark/relative_motions.txt \
+  --save_dir plots/eds_03_rocket_earth_dark
+```
+
+## Reproduce the Main Pipeline Results
+
+1. Create the environment and initialize submodules.
+2. Download the target dataset split.
+3. Run the matching processing script.
+4. Precompute event voxels for the processed split.
+5. Run EventsFormer inference with the trained checkpoint.
+6. Run `src/main_filter.py` on each processed sequence.
+7. Use the saved files in `outputs/main_filter/<dataset>/<sequence>/` for trajectory plots and metrics.
+
+For an EDS test sequence, the complete command sequence is:
+
+```bash
+SEQ=03_rocket_earth_dark
+CKPT=checkpoints/eds_eventsformer/checkpoint_best.pth
+
+python scripts/processing/precompute_derotated_voxels.py \
+  --root_dir data/eds/processed_testing \
+  --output_dir data/eds/precomputed_testing \
+  --denoising true \
+  --overwrite
+
+python scripts/testing/test.py \
+  --sequence_dir data/eds/precomputed_testing/$SEQ \
+  --checkpoint_file $CKPT \
+  --output_file data/eds/processed_testing/$SEQ/$SEQ.txt \
+  --average_overlaps
+
+python src/main_filter.py \
+  --dataset eds \
+  --processed_root data/eds/processed_testing \
+  --sequence $SEQ \
+  --plot_transformer \
+  --plot_projections
+```
+
+## Notes
+
+The public repository does not include downloaded datasets or trained checkpoint binaries. Place released checkpoints under `checkpoints/` and keep their `args.txt` files next to the `.pth` files, because inference loads the training-time model configuration from that file.
