@@ -3,7 +3,7 @@
 1. load one processed sequence (`anchor_poses.txt`, `relative_motions.txt`, `imu.csv`);
 2. initialize the EKF from the first two anchor poses;
 3. propagate the IMU exactly from anchor to anchor;
-4. update the EKF with overlapping clips of relative translations from the transformer;
+4. update the EKF with overlapping triplets of relative translations from the transformer;
 5. marginalize a single oldest clone after each attempted update.
 
 The transformer's output is assumed to already be available on disk.
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass, replace
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import sys
@@ -40,8 +41,8 @@ class RunnerConfig:
 
     # Paths
     data_root: Path = ROOT / "data"
-    dataset: str = "eds"
-    sequence: str = "00_peanuts_dark"
+    dataset: str = "testv7"
+    sequence: str = "competition_Test_MH001"
 
     @property
     def processed_root(self) -> Path:
@@ -57,27 +58,20 @@ class RunnerConfig:
     plot_imu: bool = False
     interactive_plot: bool = False 
     plot_projections: bool = False
-
-    # Optional sequence truncation
-    max_frames: int | None = None
+    plot_ate: bool = False 
 
     # # IMU preprocessing
     imu_axis_multipliers: tuple[float, float, float] = (1.0, 1.0, 1.0)
 
     # IMU process noise
-    sigma_na: float = 0.011065875226523246
-    sigma_ng: float = 0.01251528557615725
-    sigma_nba: float = 6.536078678232154e-05
-    sigma_nbg: float = 2.1514640261497524e-05
+    sigma_na: float = 0.0031594227678764424
+    sigma_ng: float = 0.00022161895597298104
+    sigma_nba: float = 4.5072574649258535e-05
+    sigma_nbg: float = 7.374373866121663e-07
 
     # EKF assumed measurement covariance
-    assumed_sigma_rel_t: float = 0.02194332115673975
-    assumed_sigma_rel_r_deg: float = 2.0
-    meas_cov_scale: float = 1.2649054158337365
-
-    # Optional extra synthetic noise added on top of measurements
-    extra_measurement_noise_t: float = 0.0
-    seed: int = 7
+    assumed_sigma_rel_t: float = 0.02194332115673975 # for fixed covariance ablation
+    meas_cov_scale: float = 0.33099642292388415
 
     # Initialization offsets applied on top of the first anchor pose/velocity
     initial_position_offset_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -86,12 +80,13 @@ class RunnerConfig:
     initial_bg: tuple[float, float, float] = (0.0, 0.0, 0.0)
     initial_ba: tuple[float, float, float] = (0.0, 0.0, 0.0)
     gravity_world_mps2: tuple[float, float, float] = (0.0, 0.0, 9.80665)
-    initial_attitude_sigma_deg: float = 0.11534784349262132
-    initial_velocity_sigma_mps: float = 1.8658950002457901
-    initial_position_sigma_m: float = 0.04181564546764053
-    initial_z_sigma_m: float = 0.006867502596918262
-    initial_bg_sigma_rps: float = 0.00033573143221825514
-    initial_ba_sigma_mps2: float = 0.1779266257977154
+    network_scale: float = 0.5816711433024562
+    initial_attitude_sigma_deg: float = 0.3387476210194474
+    initial_velocity_sigma_mps: float = 0.1461417023558029
+    initial_position_sigma_m: float = 0.004099644013174264
+    initial_z_sigma_m: float = 0.007975250416043874
+    initial_bg_sigma_rps: float = 0.0007382676285995384
+    initial_ba_sigma_mps2: float = 0.025430606254182857
 
 # Global instance of default configuration
 CONFIG = RunnerConfig()
@@ -106,7 +101,7 @@ def _sequence_path(config: RunnerConfig) -> Path:
     return sequence_path
 
 
-def _load_anchor_poses(sequence_path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def load_anchor_poses(sequence_path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Load processed anchor poses from the text file."""
 
     anchor_path = sequence_path / "anchor_poses.txt"
@@ -117,16 +112,16 @@ def _load_anchor_poses(sequence_path: Path) -> tuple[np.ndarray, np.ndarray, np.
             f"{anchor_path} has {anchor_table.shape[1]} columns, expected 8: "
             "timestamp px py pz qx qy qz qw."
         )
-    # Extract timestamps,positions and quaternions 
+    # Extract timestamps, positions and quaternions 
     timestamps_us = anchor_table[:, 0].astype(np.int64)
     positions = anchor_table[:, 1:4].astype(np.float64)
     quaternions = anchor_table[:, 4:8].astype(np.float64)
     return timestamps_us, positions, quaternions
 
 
-def _load_relative_motion_table(sequence_path: Path, use_gt: bool) -> np.ndarray:
+def load_relative_motion_table(sequence_path: Path, use_gt: bool) -> np.ndarray:
     """Load processed relative motions and skip any stale non-numeric header lines."""
-    #Chooses file based on configuration
+    # Chooses file based on configuration
     filename = "relative_motions.txt" if use_gt else f"{sequence_path.name}.txt"
     rel_path = sequence_path / filename
     
@@ -149,12 +144,12 @@ def _load_relative_motion_table(sequence_path: Path, use_gt: bool) -> np.ndarray
             f"{rel_path} has shape {relative_motions.shape}, expected N x 5 or N x 9: "
             "t0 t1 px py pz [qx qy qz qw]."
         )
-    if relative_motions.shape[0] < 4:
-        raise ValueError(f"{rel_path} needs at least four rows to form one update.")
+    if relative_motions.shape[0] < 6:
+        raise ValueError(f"{rel_path} needs at least six rows to form one clip update.")
     return relative_motions
 
 
-def _load_sequence_imu(sequence_path: Path) -> np.ndarray:
+def load_sequence_imu(sequence_path: Path) -> np.ndarray:
     """Load one processed IMU table with columns `timestamp gx gy gz ax ay az`."""
 
     imu_path = sequence_path / "imu.csv"
@@ -167,7 +162,7 @@ def _load_sequence_imu(sequence_path: Path) -> np.ndarray:
     return imu[np.argsort(imu[:, 0])]
 
 
-def _infer_time_scale_to_seconds(timestamps: np.ndarray) -> float:
+def infer_time_scale_to_seconds(timestamps: np.ndarray) -> float:
     """Infer whether timestamps are in seconds, microseconds, or nanoseconds."""
 
     timestamps = np.asarray(timestamps, dtype=np.float64)
@@ -182,12 +177,12 @@ def _infer_time_scale_to_seconds(timestamps: np.ndarray) -> float:
     return 1.0
 
 
-def _build_anchor_times_from_relative_motions(relative_motion_table: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def build_anchor_times_from_relative_motions(relative_motion_table: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Recover anchor timestamps and the translation-only measurements used by the EKF."""
 
     raw_times = relative_motion_table[:, :2]
-    time_scale = _infer_time_scale_to_seconds(raw_times.reshape(-1))
-    # COnvert timestamps in seconds
+    time_scale = infer_time_scale_to_seconds(raw_times.reshape(-1))
+    # Convert timestamps in seconds
     edge_start_times_s = raw_times[:, 0].astype(np.float64) * time_scale
     edge_end_times_s = raw_times[:, 1].astype(np.float64) * time_scale
     # Temporal validity check
@@ -204,12 +199,15 @@ def _build_anchor_times_from_relative_motions(relative_motion_table: np.ndarray)
     anchor_times_s = np.concatenate([edge_start_times_s[:1], edge_end_times_s], axis=0)
     # Extract the translation measurements (px, py, pz)
     relative_measurements = relative_motion_table[:, 2:5].astype(np.float64)
-    relative_sigmas = None
-
+    if relative_motion_table.shape[1] >= 8:
+        relative_sigmas = relative_motion_table[:, 5:8].astype(np.float64)
+    else:
+        relative_sigmas = None
+        
     return anchor_times_s, relative_measurements, relative_sigmas
 
 
-def _validate_anchor_alignment(
+def validate_anchor_alignment(
     anchor_timestamps_us: np.ndarray,
     relative_anchor_times_s: np.ndarray,
     relative_measurements: np.ndarray,
@@ -240,33 +238,7 @@ def _validate_anchor_alignment(
     return anchor_timestamps_us, anchor_times_s, relative_measurements, relative_sigmas
 
 
-def _truncate_sequence(
-    anchor_timestamps_us: np.ndarray,
-    anchor_positions: np.ndarray,
-    anchor_quaternions: np.ndarray,
-    relative_measurements: np.ndarray,
-    relative_sigmas: np.ndarray | None,
-    max_frames: int | None,
-):
-    """Optionally keep only the first `max_frames` anchors."""
-
-    if max_frames is None:
-        return anchor_timestamps_us, anchor_positions, anchor_quaternions, relative_measurements, relative_sigmas
-
-    if max_frames < 5:
-        raise ValueError("`max_frames` must be at least 5 to run measurement updates.")
-    # Truncate all related arrays
-    anchor_timestamps_us = anchor_timestamps_us[:max_frames]
-    anchor_positions = anchor_positions[:max_frames]
-    anchor_quaternions = anchor_quaternions[:max_frames]
-    relative_measurements = relative_measurements[: max(0, max_frames - 1)]
-    if relative_sigmas is not None:
-        relative_sigmas = relative_sigmas[: max(0, max_frames - 1)]
-        
-    return anchor_timestamps_us, anchor_positions, anchor_quaternions, relative_measurements, relative_sigmas
-
-
-def _build_exact_imu_segment(
+def build_exact_imu_segment(
     raw_times_s: np.ndarray,
     raw_gyro: np.ndarray,
     raw_accel: np.ndarray,
@@ -297,26 +269,21 @@ def _build_exact_imu_segment(
     for sample_idx, timestamp_s in enumerate(segment_times):
         timestamp_s = float(timestamp_s)
         measurements.append(
-            ImuMeasurement(
-                timestamp=timestamp_s,
-                dt=max(timestamp_s - prev_time_s, 0.0),
-                accel=accel_interp[sample_idx].astype(np.float64),
-                gyro=gyro_interp[sample_idx].astype(np.float64),
-            )
+            ImuMeasurement(timestamp=timestamp_s,dt=max(timestamp_s - prev_time_s, 0.0),accel=accel_interp[sample_idx].astype(np.float64),gyro=gyro_interp[sample_idx].astype(np.float64))
         )
         prev_time_s = timestamp_s
 
     return measurements
 
 
-def _build_anchor_imu_segments(
+def build_anchor_imu_segments(
     imu_table: np.ndarray,
     anchor_timestamps_us: np.ndarray,
     axis_multipliers: tuple[float, float, float],
 ) -> list[list[ImuMeasurement]]:
     """Precompute one exact propagation segment for each consecutive anchor pair."""
 
-    time_scale = _infer_time_scale_to_seconds(imu_table[:, 0])
+    time_scale = infer_time_scale_to_seconds(imu_table[:, 0])
     raw_times_s = imu_table[:, 0].astype(np.float64) * time_scale
     raw_gyro = imu_table[:, 1:4].astype(np.float64)
     raw_accel = imu_table[:, 4:7].astype(np.float64)
@@ -332,18 +299,12 @@ def _build_anchor_imu_segments(
     segments: list[list[ImuMeasurement]] = []
     for idx in range(len(anchor_times_s) - 1):
         segments.append(
-            _build_exact_imu_segment(
-                raw_times_s,
-                raw_gyro,
-                raw_accel,
-                anchor_times_s[idx],
-                anchor_times_s[idx + 1],
-            )
+            build_exact_imu_segment(raw_times_s,raw_gyro,raw_accel,anchor_times_s[idx],anchor_times_s[idx + 1])
         )
     return segments
 
 
-def _make_filter_args(config: RunnerConfig) -> SimpleNamespace:
+def make_filter_args(config: RunnerConfig) -> SimpleNamespace:
     """Create the args namespace consumed by `ImuMSCKF`."""
 
     return SimpleNamespace(
@@ -352,8 +313,8 @@ def _make_filter_args(config: RunnerConfig) -> SimpleNamespace:
         sigma_nba=float(config.sigma_nba),
         sigma_nbg=float(config.sigma_nbg),
         sigma_rel_t=float(config.assumed_sigma_rel_t),
-        sigma_rel_r=float(np.deg2rad(config.assumed_sigma_rel_r_deg)),
         meas_cov_scale=float(config.meas_cov_scale),
+        network_scale=float(config.network_scale),
         initial_attitude_sigma_rad=float(np.deg2rad(config.initial_attitude_sigma_deg)),
         initial_velocity_sigma_mps=float(config.initial_velocity_sigma_mps),
         initial_position_sigma_m=float(config.initial_position_sigma_m),
@@ -363,7 +324,7 @@ def _make_filter_args(config: RunnerConfig) -> SimpleNamespace:
     )
 
 
-def _apply_initial_offsets(
+def apply_initial_offsets(
     R0: np.ndarray,
     v0: np.ndarray,
     p0: np.ndarray,
@@ -378,20 +339,18 @@ def _apply_initial_offsets(
     return R0 @ R_offset, v0 + v_offset, p0 + p_offset
 
 
-def _state_to_row(timestamp_s: float, ekf_state) -> np.ndarray:
+def state_to_row(timestamp_s: float, ekf_state) -> np.ndarray:
     """Convert one EKF state into a text-friendly row."""
 
     quaternion_xyzw = Rotation.from_matrix(ekf_state.R).as_quat()
     return np.concatenate(
-        [
-            np.array([float(timestamp_s)], dtype=np.float64),
+        [ np.array([float(timestamp_s)], dtype=np.float64),
             ekf_state.p.astype(np.float64),
-            quaternion_xyzw.astype(np.float64),
-        ]
+            quaternion_xyzw.astype(np.float64), ]
     )
 
 
-def _save_trajectory(path: Path, trajectory_table: np.ndarray) -> Path:
+def save_trajectory(path: Path, trajectory_table: np.ndarray) -> Path:
     """Save one trajectory table with timestamp, position, and quaternion."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -400,7 +359,7 @@ def _save_trajectory(path: Path, trajectory_table: np.ndarray) -> Path:
     return path
 
 
-def _build_ground_truth_trajectory(
+def build_ground_truth_trajectory(
     anchor_timestamps_us: np.ndarray,
     anchor_positions: np.ndarray,
     anchor_quaternions: np.ndarray,
@@ -415,12 +374,11 @@ def _build_ground_truth_trajectory(
         ]
     )
 
-def _compute_transformer_trajectory(
+def compute_transformer_trajectory(
     sequence_path: Path,
     anchor_timestamps_us: np.ndarray,
     anchor_positions: np.ndarray,
     anchor_quaternions: np.ndarray,
-    max_frames: int | None
 ) -> np.ndarray | None:
     """
     Computes the trajectory based solely on the Transformer's
@@ -429,21 +387,19 @@ def _compute_transformer_trajectory(
     """
     try:
         # Reload the Transformer's predictions 
-        regressed_table = _load_relative_motion_table(sequence_path, use_gt=False)
+        regressed_table = load_relative_motion_table(sequence_path, use_gt=False)
         
         reg_dp = regressed_table[:, 2:5]
-        
-        # Apply truncation if requested
-        if max_frames is not None:
-            reg_dp = reg_dp[: max(0, max_frames - 1)]
                 
         # Ensure the lengths match
-        if len(reg_dp) == len(anchor_timestamps_us) - 1:
+        limit = min(len(reg_dp), len(anchor_timestamps_us) - 1)
+        
+        if limit > 0:
             regr_positions = [anchor_positions[0].astype(np.float64)]
             regr_quaternions = [anchor_quaternions[0].astype(np.float64)]
             
             # Integrate the poses 
-            for i in range(len(reg_dp)):
+            for i in range(limit):
                 R_curr = Rotation.from_quat(regr_quaternions[-1])
                 
                 # Translate into the global frame
@@ -452,18 +408,49 @@ def _compute_transformer_trajectory(
 
                 regr_quaternions.append(anchor_quaternions[i + 1])
                     
-            return _build_ground_truth_trajectory(
-                anchor_timestamps_us,
-                np.array(regr_positions),
-                np.array(regr_quaternions), 
-            )
-            
+            return build_ground_truth_trajectory(anchor_timestamps_us[:limit + 1], np.array(regr_positions),np.array(regr_quaternions))
     except Exception as e:
         print(f"Warning: Failed to generate the regressed trajectory for the plot: {e}")
         
     return None
 
+def transformer_ate(
+    ground_truth_trajectory: np.ndarray,
+    regressed_trajectory: np.ndarray,
+) -> tuple[float, np.ndarray]:
+    """Compute the Transformer ATE using UZH RPG."""
+    import tempfile
+    import contextlib
+    import io
+    from trajectory import Trajectory
 
+    with tempfile.TemporaryDirectory(prefix="rpg_align_transformer_") as temp_dir:
+        eval_dir = Path(temp_dir)
+        eval_gt_path = eval_dir / "stamped_groundtruth.txt"
+        eval_est_path = eval_dir / "stamped_traj_estimate.txt"
+
+        # Copy and format Ground Truth timestamps to seconds
+        gt_table = ground_truth_trajectory.copy()
+        gt_table[:, 0] *= infer_time_scale_to_seconds(gt_table[:, 0])
+        np.savetxt(eval_gt_path, gt_table, fmt="%.9f")
+
+        # Copy and format Transformer estimated timestamps to seconds
+        est_table = regressed_trajectory.copy()
+        est_table[:, 0] *= infer_time_scale_to_seconds(est_table[:, 0])
+        np.savetxt(eval_est_path, est_table, fmt="%.9f")
+
+        # Run UZH RPG Trajectory evaluation silently
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            traj = Trajectory(str(eval_dir), est_type="traj_est")
+            if not traj.data_loaded:
+                raise RuntimeError("Failed to load files into UZH RPG toolbox for alignment.")
+            traj.compute_absolute_error()
+
+        # Extract the ATE RMSE
+        ate_rmse = float(traj.abs_errors["abs_e_trans_stats"]["rmse"])
+
+        return ate_rmse
+    
 def run_filter(config: RunnerConfig) -> dict:
     """Run the relative-motion EKF on one processed sequence."""
 
@@ -471,42 +458,27 @@ def run_filter(config: RunnerConfig) -> dict:
     sequence_path = _sequence_path(config)
 
     # Load foundational data: anchor ground truths and IMU inputs
-    anchor_timestamps_us, anchor_positions, anchor_quaternions = _load_anchor_poses(sequence_path)
+    anchor_timestamps_us, anchor_positions, anchor_quaternions = load_anchor_poses(sequence_path)
     # Pass `config.use_gt` to determine which table to load
-    relative_motion_table = _load_relative_motion_table(sequence_path, config.use_gt)
-    imu_table = _load_sequence_imu(sequence_path)
+    relative_motion_table = load_relative_motion_table(sequence_path, config.use_gt)
+    imu_table = load_sequence_imu(sequence_path)
 
     # Extract EKF measurement bounds (times & translations) from the relative motion table
-    relative_anchor_times_s, relative_measurements, relative_sigmas = _build_anchor_times_from_relative_motions(
-        relative_motion_table
-    )
-    relative_sigmas=None
+    relative_anchor_times_s, relative_measurements, relative_sigmas = build_anchor_times_from_relative_motions(relative_motion_table)
 
     # Ensure that anchor_poses timeline perfectly matches the relative_motions timeline
-    anchor_timestamps_us, _, relative_measurements, relative_sigmas = _validate_anchor_alignment(
+    anchor_timestamps_us, _, relative_measurements, relative_sigmas = validate_anchor_alignment(
         anchor_timestamps_us,
         relative_anchor_times_s,
         relative_measurements,
         relative_sigmas
     )
-    anchor_timestamps_us, anchor_positions, anchor_quaternions, relative_measurements, relative_sigmas = _truncate_sequence(
-        anchor_timestamps_us,
-        anchor_positions,
-        anchor_quaternions,
-        relative_measurements,
-        relative_sigmas,
-        config.max_frames,
-    )
 
-    if len(anchor_timestamps_us) < 3:
-        raise ValueError("Need at least five anchors to run the EKF update.")
+    if len(anchor_timestamps_us) < 5:
+        raise ValueError("Need at least five anchors to run the triplet EKF update.")
 
     # Slice the IMU data stream to exactly match the durations between anchors
-    anchor_imu_segments = _build_anchor_imu_segments(
-        imu_table,
-        anchor_timestamps_us,
-        config.imu_axis_multipliers,
-    )
+    anchor_imu_segments = build_anchor_imu_segments(imu_table,anchor_timestamps_us,config.imu_axis_multipliers)
 
     # Determine absolute starting states from the first two available ground truth anchors
     anchor_times_s = anchor_timestamps_us.astype(np.float64) * 1e-6
@@ -514,25 +486,24 @@ def run_filter(config: RunnerConfig) -> dict:
     R0 = Rotation.from_quat(anchor_quaternions[0]).as_matrix()
     dt0 = max(anchor_times_s[1] - anchor_times_s[0], 1e-9)
     v0 = (anchor_positions[1] - anchor_positions[0]) / dt0
-    R0, v0, p0 = _apply_initial_offsets(R0, v0.astype(np.float64), p0, config)
+    R0, v0, p0 = apply_initial_offsets(R0, v0.astype(np.float64), p0, config)
     bg0 = np.asarray(config.initial_bg, dtype=np.float64)
     ba0 = np.asarray(config.initial_ba, dtype=np.float64)
     # Initialize the MSCKF
-    ekf = ImuMSCKF(_make_filter_args(config))
+    ekf = ImuMSCKF(make_filter_args(config))
     ekf.g = np.asarray(config.gravity_world_mps2, dtype=np.float64)
     ekf.initialize_with_state(anchor_times_s[0], R0, v0, p0, bg0, ba0)
     # Setting for IMU plot
     imu_trajectory_rows = []
     if config.plot_imu:
-        imu_ekf = ImuMSCKF(_make_filter_args(config))
+        imu_ekf = ImuMSCKF(make_filter_args(config))
         imu_ekf.g = np.asarray(config.gravity_world_mps2, dtype=np.float64)
         imu_ekf.initialize_with_state(anchor_times_s[0], R0.copy(), v0.copy(), p0.copy(), bg0.copy(), ba0.copy())
-        imu_trajectory_rows.append(_state_to_row(anchor_times_s[0], imu_ekf.state))
-    # Pre-configure random noise generator and joint covariance matrices for measurements
-    rng = np.random.default_rng(config.seed)
+        imu_trajectory_rows.append(state_to_row(anchor_times_s[0], imu_ekf.state))
+    # Pre-configure joint covariance matrices for measurements
     joint_covariance = make_default_joint_covariance(float(config.assumed_sigma_rel_t))
     # Diagnostics setup
-    trajectory_rows = [_state_to_row(anchor_times_s[0], ekf.state)]
+    trajectory_rows = [state_to_row(anchor_times_s[0], ekf.state)]
     residual_norms: list[float] = []
     delta_norms: list[float] = []
     rejected_updates = 0
@@ -542,11 +513,11 @@ def run_filter(config: RunnerConfig) -> dict:
     for anchor_idx in range(1, 4):
         ekf.propagate(anchor_imu_segments[anchor_idx - 1])
         ekf.augment_clone()
-        trajectory_rows.append(_state_to_row(anchor_times_s[anchor_idx], ekf.state))
+        trajectory_rows.append(state_to_row(anchor_times_s[anchor_idx], ekf.state))
 
         if config.plot_imu:
             imu_ekf.propagate(anchor_imu_segments[anchor_idx - 1])
-            imu_trajectory_rows.append(_state_to_row(anchor_times_s[anchor_idx], imu_ekf.state))
+            imu_trajectory_rows.append(state_to_row(anchor_times_s[anchor_idx], imu_ekf.state))
 
     # MAIN FILTER LOOP
     # Iterating starting from anchor 4 ensures we have a window available
@@ -557,16 +528,10 @@ def run_filter(config: RunnerConfig) -> dict:
 
         if config.plot_imu:
             imu_ekf.propagate(anchor_imu_segments[anchor_idx - 1])
-            imu_trajectory_rows.append(_state_to_row(anchor_times_s[anchor_idx], imu_ekf.state))
+            imu_trajectory_rows.append(state_to_row(anchor_times_s[anchor_idx], imu_ekf.state))
 
         # Measurement Extraction
         measurement = relative_measurements[anchor_idx - 4 : anchor_idx].copy()
-        # Optionally inject extra noise into the measurement for testing
-        if config.extra_measurement_noise_t > 0.0:
-            measurement += rng.normal(
-                scale=float(config.extra_measurement_noise_t),
-                size=measurement.shape,
-            )
         current_joint_covariance = joint_covariance.copy()
         # If relative sigmas from Transformer are available, inject them 
         # dynamically into the covariance diagonal.
@@ -588,33 +553,23 @@ def run_filter(config: RunnerConfig) -> dict:
             residual_norms.append(float(np.linalg.norm(update_info["residual"])))
             delta_norms.append(float(np.linalg.norm(update_info["delta_x"])))
         # Log current state after correction
-        trajectory_rows.append(_state_to_row(anchor_times_s[anchor_idx], ekf.state))
+        trajectory_rows.append(state_to_row(anchor_times_s[anchor_idx], ekf.state))
         # Drop the oldest historical clone from the sliding window
         ekf.marginalize_oldest_clone()
 
     # Save the EKF's finalized estimate
-    sequence_out_dir = config.out_dir / config.sequence
     trajectory_table = np.asarray(trajectory_rows, dtype=np.float64)
-    saved_path = _save_trajectory(
-        sequence_out_dir / f"stamped_traj_estimate.txt",
-        trajectory_table,
-    )
-    ground_truth_trajectory = _build_ground_truth_trajectory(
-        anchor_timestamps_us,
-        anchor_positions,
-        anchor_quaternions,
-    )
+    sequence_out_dir = config.out_dir / config.sequence
+    saved_path = save_trajectory(sequence_out_dir / "stamped_traj_estimate.txt",trajectory_table)
+    gt_path = sequence_path / "stamped_groundtruth.txt"
+    ground_truth_trajectory = np.loadtxt(gt_path, comments="#", ndmin=2)
+    ground_truth_trajectory[:, 0] *= infer_time_scale_to_seconds(ground_truth_trajectory[:, 0])
 
     regressed_trajectory = None
-    #Adds a plot for the transformer output before EKF
+    # Adds a plot for the transformer output before EKF
     if config.plot_transformer:
-        regressed_trajectory = _compute_transformer_trajectory(
-            sequence_path,
-            anchor_timestamps_us,
-            anchor_positions,
-            anchor_quaternions,
-            config.max_frames
-        )
+        regressed_trajectory = compute_transformer_trajectory(sequence_path,anchor_timestamps_us,anchor_positions,anchor_quaternions)
+
     imu_trajectory = np.asarray(imu_trajectory_rows, dtype=np.float64) if config.plot_imu else None
         
     # Diagnostics: compute error metrics
@@ -626,7 +581,9 @@ def run_filter(config: RunnerConfig) -> dict:
         output_dir=sequence_out_dir,
         file_prefix=config.sequence,
         plot_projections=config.plot_projections,
+        plot_ate=config.plot_ate,
     )
+
 
     return {
         "dataset": config.dataset,
@@ -640,7 +597,7 @@ def run_filter(config: RunnerConfig) -> dict:
         "ground_truth": ground_truth_trajectory,
         "regressed": regressed_trajectory,
         "imu_only": imu_trajectory,
-        "saved_file": str(saved_path),
+        "saved_file": str(saved_path) if saved_path is not None else None,
         "diagnostics": diagnostics,
     }
 
@@ -684,6 +641,11 @@ def parse_args():
         action="store_true",
         help="Saves the 2D projections plots."
     )
+    parser.add_argument(
+        "--plot_ate",
+        action="store_true",
+        help="Plots ATE aligned TLEIO trajectory"
+    )
     return parser.parse_args()
 
 
@@ -710,7 +672,8 @@ def main() -> None:
         plot_imu=args.plot_imu,
         interactive_plot=args.interactive_plot,
         plot_projections=args.plot_projections,
-        **dataset_params
+        plot_ate=args.plot_ate,
+        **dataset_params,
     )
     # Execute EKF processing
     results = run_filter(active_config)
@@ -729,19 +692,15 @@ def main() -> None:
 
     #Plots (if requested)
     if active_config.interactive_plot:
-        if results["regressed"] is not None:
-            show_interactive_3d_plot(
-                estimated_trajectory=results["trajectory"],
-                ground_truth_trajectory=results["ground_truth"],
-                regressed_trajectory=results["regressed"],
-                imu_trajectory=results.get("imu_only"),
-            )
-        else:
-            show_interactive_3d_plot(
-                estimated_trajectory=results["trajectory"],
-                ground_truth_trajectory=results["ground_truth"],
-                imu_trajectory=results.get("imu_only"),
-            )
+        ate_pos = results["diagnostics"].get("ate_positions")
+        show_interactive_3d_plot(
+            estimated_trajectory=results["trajectory"],
+            ground_truth_trajectory=results["ground_truth"],
+            regressed_trajectory=results.get("regressed"),
+            imu_trajectory=results.get("imu_only"),
+            ate_positions=ate_pos,
+        )
+    
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import numpy as np
 
 from .from_scipy import compute_q_from_matrix
 from .quiet_numba import jit
+from scipy.spatial.transform import Rotation
 
 
 def get_rotation_from_gravity(acc):
@@ -326,3 +327,42 @@ def enforce_symmetry_and_pos_def(P: np.ndarray, epsilon: float = 1e-9) -> np.nda
     """Enforce symmetry and adds epsilon for stability."""
     P_sym = 0.5 * (P + P.T)
     return P_sym + epsilon * np.eye(P_sym.shape[0])
+
+def omega4_matrix(wm):
+    """Build the 4x4 skew-symmetric operator used for quaternion multiplication."""
+    return np.array([
+        [  0.0,  -wm[0], -wm[1], -wm[2]],
+        [ wm[0],   0.0,   wm[2], -wm[1]],
+        [ wm[1], -wm[2],   0.0,   wm[0]],
+        [ wm[2],  wm[1], -wm[0],   0.0 ]
+    ])
+
+def integrate_quaternion_3rd_order(R, wm, dt, oldomega4):
+    """
+    Perform 3rd-order quaternion integration.
+    """
+    q_xyzw = Rotation.from_matrix(R).as_quat()
+    q = np.array([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]) 
+    # Skew-symmetric operator needed for quaternion multiplication  
+    omega4 = np.array([
+        [  0.0,  -wm[0], -wm[1], -wm[2]],
+        [ wm[0],   0.0,   wm[2], -wm[1]],
+        [ wm[1], -wm[2],   0.0,   wm[0]],
+        [ wm[2],  wm[1], -wm[0],   0.0 ]
+    ])
+    
+    I = np.eye(4)
+    w_sq = np.sum(wm**2)
+    # Third-order Taylor series approximation of the quaternion matrix exponential
+    transition_matrix = (I+ 0.75 * omega4 * dt - 0.25 * oldomega4 * dt 
+        - (1.0 / 6.0) * w_sq * (dt**2) * I - (1.0 / 24.0) * (omega4 @ oldomega4) * (dt**2) 
+        - (1.0 / 48.0) * w_sq * omega4 * (dt**3))
+    
+    q_next = transition_matrix @ q
+    q_next /= np.linalg.norm(q_next)
+    
+    q_next_xyzw = np.array([q_next[1], q_next[2], q_next[3], q_next[0]])
+    R_next = Rotation.from_quat(q_next_xyzw).as_matrix()
+    
+    return R_next, omega4
+

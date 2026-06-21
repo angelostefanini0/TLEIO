@@ -8,25 +8,25 @@ EKF residual.
 """
 
 import numpy as np
-from scipy.spatial.transform import Rotation
 
 from .measurement import build_update, make_default_joint_covariance
-from filter.utils.math_utils import hat, mat_exp,Jr_exp, enforce_symmetry_and_pos_def
+from filter.utils.math_utils import hat, mat_exp,Jr_exp, enforce_symmetry_and_pos_def,omega4_matrix,integrate_quaternion_3rd_order
 
 
 class State:
     """Store the nominal filter state and its covariance.
 
-    The implementation keeps the current IMU state first and then appends the
-    pose clones, which is the layout already assumed by the existing code.
+    The implementation keeps the stochastic pose clones first and then the
+    current IMU state, which is the layout assumed by the existing code.
 
     Error State Vector Layout:
-    [0:3]   - Rotation error (delta theta)
-    [3:6]   - Velocity error (delta v)
-    [6:9]   - Position error (delta p)
-    [9:12]  - Gyroscope bias error (delta bg)
-    [12:15] - Accelerometer bias error (delta ba)
-    [15:]   - Appended stochastic clones (6 DoF per clone: 3 rotation, 3 position)
+    [0 : 6*N]      - Stochastic clones (6 DoF per clone: 3 rotation, 3 position),
+                     oldest first, where N is the current clone count
+    [6*N : 6*N+3]  - Rotation error (delta theta)
+    [6*N+3 : +6]   - Velocity error (delta v)
+    [6*N+6 : +9]   - Position error (delta p)
+    [6*N+9 : +12]  - Gyroscope bias error (delta bg)
+    [6*N+12 : +15] - Accelerometer bias error (delta ba)
     """
 
     def __init__(self):
@@ -38,7 +38,7 @@ class State:
         self.bg = np.zeros(3)    # gyroscope bias
         self.ba = np.zeros(3)    # accelerometer bias 
 
-        self.oldomega4 = np.zeros((4, 4)) # state matrix for third-order quaternion integration
+        self.oldomega4 = None    # state matrix for third-order quaternion integration
 
         # Clones for MSCKF 
         self.clone_Rs = []       # cloned body-to-world rotations, oldest first
@@ -58,7 +58,7 @@ class ImuMSCKF:
     #Constants
     IMU_STATE_DIM = 15
     CLONE_STATE_DIM = 6
-    CHI2_THRESHOLD = 21.026 #95% confidence for 6 DoF
+    CHI2_THRESHOLD = 21.026 # 95% confidence for 12 DoF
 
 
     def __init__(self, args):
@@ -72,7 +72,6 @@ class ImuMSCKF:
         self.sigma_nbg = getattr(args, "sigma_nbg", 1e-5)
         # Transformer measurement assumptions
         self.sigma_rel_t = getattr(args, "sigma_rel_t", 0.10)
-        self.sigma_rel_r = getattr(args, "sigma_rel_r", 0.10)
         self.meas_cov_scale = getattr(args, "meas_cov_scale", 1.0)
         # Initialization of P
         self.initial_attitude_sigma_rad = getattr(args, "initial_attitude_sigma_rad", 0.01)
@@ -81,6 +80,9 @@ class ImuMSCKF:
         self.initial_z_sigma_m = getattr(args, "initial_z_sigma_m", 0.01)
         self.initial_bg_sigma_rps = getattr(args, "initial_bg_sigma_rps", 0.004)
         self.initial_ba_sigma_mps2 = getattr(args, "initial_ba_sigma_mps2", 0.04)
+
+        # Network scale
+        self.network_scale = getattr(args, "network_scale", 1.0)
 
         self.g = np.array([0.0, 0.0, -9.80665])
         self.state = State()
@@ -92,9 +94,7 @@ class ImuMSCKF:
             bg=np.zeros(3), 
             ba=np.zeros(3)
         )
-        self.default_measurement_covariance = make_default_joint_covariance(
-            self.sigma_rel_t
-        )
+        self.default_measurement_covariance = make_default_joint_covariance(self.sigma_rel_t)
         self.t = 0.0
         self.adaptive_cov = AdaptiveCovariance(M1=2, M2=1, gamma=1e-5)
 
@@ -107,7 +107,7 @@ class ImuMSCKF:
         self.state.p = p.copy()
         self.state.bg = bg.copy()
         self.state.ba = ba.copy()
-        self.state.oldomega4 = np.zeros((4, 4))
+        self.state.oldomega4 = None
         self.state.clone_Rs = []
         self.state.clone_ps = []
         if P is None:
@@ -137,26 +137,15 @@ class ImuMSCKF:
             v_prev = self.state.v.copy()
             p_prev = self.state.p.copy()
 
-            dR = mat_exp(wm * dt)
-            specific_force_world = R_prev @ am + self.g
+            acc_world = R_prev @ am + self.g
+            if self.state.oldomega4 is None:
+                self.state.oldomega4 = omega4_matrix(wm)
             # Integrate nominal state (through third-order approximation)
-            self.state.R, self.state.oldomega4 = integrate_quaternion_3rd_order(
-                R_prev, wm, dt, self.state.oldomega4
-            )
-            self.state.v = v_prev + specific_force_world * dt
-            self.state.p = p_prev + v_prev * dt + 0.5 * specific_force_world * dt**2
+            self.state.R, self.state.oldomega4 = integrate_quaternion_3rd_order(R_prev, wm, dt, self.state.oldomega4)
+            self.state.v = v_prev + acc_world * dt
+            self.state.p = p_prev + v_prev * dt + 0.5 * acc_world * dt**2
             # Propagate covariance
-            self.state.P = propagate_covariance(
-                self.state.P,
-                R_prev,
-                wm,
-                am,
-                dt,
-                self.sigma_ng,
-                self.sigma_na,
-                self.sigma_nbg,
-                self.sigma_nba,
-            )
+            self.state.P = propagate_covariance(self.state.P,R_prev,wm,am,dt,self.sigma_ng,self.sigma_na,self.sigma_nbg,self.sigma_nba)
 
         self.t = imu_data[-1].timestamp
 
@@ -169,18 +158,26 @@ class ImuMSCKF:
         # Save clone
         self.state.clone_Rs.append(self.state.R.copy())
         self.state.clone_ps.append(self.state.p.copy())
+        # Boundary between the existing clones block and the trailing IMU block
+        clones_old_dim = self.CLONE_STATE_DIM * n_clones
         # Jacobian mapping current IMU state to the new clone state 
         # (Identity matrices mapping IMU rotation to clone rotation, IMU pos to clone pos)
         clone_jacobian = np.zeros((self.CLONE_STATE_DIM, n_old))
-        clone_jacobian[0:3, 0:3] = np.eye(3)
-        clone_jacobian[3:6, 6:9] = np.eye(3)
+        clone_jacobian[0:3, clones_old_dim : clones_old_dim + 3] = np.eye(3)
+        clone_jacobian[3:6, clones_old_dim + 6 : clones_old_dim + 9] = np.eye(3)
         # Expand covariance
         P_old = self.state.P
         P_new = np.zeros((n_new, n_new))
-        P_new[:n_old, :n_old] = P_old
-        P_new[n_old:, :n_old] = clone_jacobian @ P_old
-        P_new[:n_old, n_old:] = (clone_jacobian @ P_old).T
-        P_new[n_old:, n_old:] = clone_jacobian @ P_old @ clone_jacobian.T
+        P_new[:clones_old_dim, :clones_old_dim] = P_old[:clones_old_dim, :clones_old_dim]
+        P_new[:clones_old_dim, clones_old_dim + self.CLONE_STATE_DIM :] = P_old[:clones_old_dim, clones_old_dim:]
+        P_new[clones_old_dim + self.CLONE_STATE_DIM :, :clones_old_dim] = P_old[clones_old_dim:, :clones_old_dim]
+        P_new[clones_old_dim + self.CLONE_STATE_DIM :, clones_old_dim + self.CLONE_STATE_DIM :] = P_old[clones_old_dim:, clones_old_dim:]
+        cross = clone_jacobian @ P_old
+        P_new[clones_old_dim : clones_old_dim + self.CLONE_STATE_DIM, :clones_old_dim] = cross[:, :clones_old_dim]
+        P_new[clones_old_dim : clones_old_dim + self.CLONE_STATE_DIM, clones_old_dim + self.CLONE_STATE_DIM :] = cross[:, clones_old_dim:]
+        P_new[:clones_old_dim, clones_old_dim : clones_old_dim + self.CLONE_STATE_DIM] = cross[:, :clones_old_dim].T
+        P_new[clones_old_dim + self.CLONE_STATE_DIM :, clones_old_dim : clones_old_dim + self.CLONE_STATE_DIM] = cross[:, clones_old_dim:].T
+        P_new[clones_old_dim : clones_old_dim + self.CLONE_STATE_DIM, clones_old_dim : clones_old_dim + self.CLONE_STATE_DIM] = (clone_jacobian @ P_old @ clone_jacobian.T)
         # Enforce symmetry
         self.state.P = enforce_symmetry_and_pos_def(P_new)
 
@@ -195,9 +192,11 @@ class ImuMSCKF:
         self.state.clone_ps.pop(0)
 
         n_clones_after = self.state.get_clone_count()
-        # Indices to keep: IMU state (0-14) + remaining clones (skipping the dropped one at index 15-20)
-        keep = list(range(self.IMU_STATE_DIM)) + list(
-            range(self.IMU_STATE_DIM + self.CLONE_STATE_DIM, self.IMU_STATE_DIM + self.CLONE_STATE_DIM + self.CLONE_STATE_DIM * n_clones_after)
+        # Indices to keep: remaining clones (skipping the dropped one at 
+        # index 0:CLONE_STATE_DIM) + trailing IMU state
+        keep = list(range(self.CLONE_STATE_DIM, self.CLONE_STATE_DIM + self.CLONE_STATE_DIM * n_clones_after)
+        ) + list(range(self.CLONE_STATE_DIM + self.CLONE_STATE_DIM * n_clones_after,
+                self.CLONE_STATE_DIM + self.CLONE_STATE_DIM * n_clones_after + self.IMU_STATE_DIM)
         )
 
         P = self.state.P
@@ -218,12 +217,7 @@ class ImuMSCKF:
         """
         covariance = network_output.get("joint_covariance", self.default_measurement_covariance)
         # Get residual (z - h(x)), Jacobian (H), and base Measurement Noise (R)
-        residual, H, R = build_update(
-            self.state,
-            network_output,
-            covariance,
-            covariance_scale=self.meas_cov_scale,
-        )
+        residual, H, R = build_update(self.state,network_output,covariance,covariance_scale=self.meas_cov_scale,network_scale=self.network_scale)
 
         P = self.state.P
         # Inflate measurement noise according to Adaptive Covariance
@@ -270,24 +264,20 @@ class ImuMSCKF:
         delta_x = np.asarray(delta_x, dtype=float)
         expected_dim = self.state.P.shape[0]
         if delta_x.shape != (expected_dim,):
-            raise ValueError(
-                f"Expected an error-state correction with shape ({expected_dim},), got {delta_x.shape}."
-            )
+            raise ValueError(f"Expected an error-state correction with shape ({expected_dim},), got {delta_x.shape}.")
+        n_clones = self.state.get_clone_count()
+        current_offset = self.CLONE_STATE_DIM * n_clones
         # Update IMU base state
-        self.state.R = self.state.R @ mat_exp(delta_x[0:3])
-        self.state.v = self.state.v + delta_x[3:6]
-        self.state.p = self.state.p + delta_x[6:9]
-        self.state.bg = self.state.bg + delta_x[9:12]
-        self.state.ba = self.state.ba + delta_x[12:15]
+        self.state.R = self.state.R @ mat_exp(delta_x[current_offset : current_offset + 3])
+        self.state.v = self.state.v + delta_x[current_offset + 3 : current_offset + 6]
+        self.state.p = self.state.p + delta_x[current_offset + 6 : current_offset + 9]
+        self.state.bg = self.state.bg + delta_x[current_offset + 9 : current_offset + 12]
+        self.state.ba = self.state.ba + delta_x[current_offset + 12 : current_offset + 15]
         # Update cloned states
-        for clone_idx in range(self.state.get_clone_count()):
-            offset = self.IMU_STATE_DIM + self.CLONE_STATE_DIM * clone_idx
-            self.state.clone_Rs[clone_idx] = (
-                self.state.clone_Rs[clone_idx] @ mat_exp(delta_x[offset : offset + 3])
-                )
-            self.state.clone_ps[clone_idx] = (
-                self.state.clone_ps[clone_idx] + delta_x[offset + 3 : offset + 6]
-            )
+        for clone_idx in range(n_clones):
+            offset = self.CLONE_STATE_DIM * clone_idx
+            self.state.clone_Rs[clone_idx] = (self.state.clone_Rs[clone_idx] @ mat_exp(delta_x[offset : offset + 3]))
+            self.state.clone_ps[clone_idx] = (self.state.clone_ps[clone_idx] + delta_x[offset + 3 : offset + 6])
 
     def _sync_current_pose_with_latest_clone(self):
         """Keep the live IMU pose consistent with the newest clone at the same timestamp."""
@@ -360,7 +350,7 @@ class AdaptiveCovariance:
 
 def propagate_rvt_and_jac(R, v, p, bg, ba, wm_raw, am_raw, dt, g):
     """Propagate the nominal IMU state and its first-order transition matrix."""
-    # Unbias measurements
+    # Unbiased measurements
     wm = wm_raw - bg
     am = am_raw - ba
     # Integrate rotation, position and velocity
@@ -388,9 +378,10 @@ def propagate_covariance(P, R, wm, am, dt, sg, sa, sbg, sba):
     """Propagate the current-plus-clones covariance through one IMU interval."""
 
     n = P.shape[0]
-    n_imu = 15
+    n_current = 15
+    current_start = n - n_current
     # State transition matrix
-    _, _, _, Phi_imu = propagate_rvt_and_jac(
+    _, _, _, Phi_current = propagate_rvt_and_jac(
         R,
         np.zeros(3),
         np.zeros(3),
@@ -417,46 +408,10 @@ def propagate_covariance(P, R, wm, am, dt, sg, sa, sbg, sba):
     Q_d = G @ Q_c @ G.T * dt
     # Full transition matrix
     Phi = np.eye(n)
-    Phi[:n_imu, :n_imu] = Phi_imu
+    Phi[current_start:, current_start:] = Phi_current
     # Propagate covariance
     P_new = Phi @ P @ Phi.T
-    P_new[:n_imu, :n_imu] += Q_d
+    P_new[current_start:, current_start:] += Q_d
     
     return enforce_symmetry_and_pos_def(P_new)
-
-
-
-def integrate_quaternion_3rd_order(R, wm, dt, oldomega4):
-    """
-    Perform 3rd-order quaternion integration.
-    """
-    q_xyzw = Rotation.from_matrix(R).as_quat()
-    q = np.array([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]) 
-    #Skew-symmetric operator needed for quaternion multiplication  
-    omega4 = np.array([
-        [  0.0,  -wm[0], -wm[1], -wm[2]],
-        [ wm[0],   0.0,   wm[2], -wm[1]],
-        [ wm[1], -wm[2],   0.0,   wm[0]],
-        [ wm[2],  wm[1], -wm[0],   0.0 ]
-    ])
-    
-    I = np.eye(4)
-    w_sq = np.sum(wm**2)
-    # Third-order Taylor series approximation of the quaternion matrix exponential
-    transition_matrix = (
-        I 
-        + 0.75 * omega4 * dt 
-        - 0.25 * oldomega4 * dt 
-        - (1.0 / 6.0) * w_sq * (dt**2) * I 
-        - (1.0 / 24.0) * (omega4 @ oldomega4) * (dt**2) 
-        - (1.0 / 48.0) * w_sq * omega4 * (dt**3)
-    )
-    
-    q_next = transition_matrix @ q
-    q_next /= np.linalg.norm(q_next)
-    
-    q_next_xyzw = np.array([q_next[1], q_next[2], q_next[3], q_next[0]])
-    R_next = Rotation.from_quat(q_next_xyzw).as_matrix()
-    
-    return R_next, omega4
 
