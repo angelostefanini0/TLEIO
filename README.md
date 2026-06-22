@@ -51,6 +51,15 @@ conda activate tleio
 git submodule update --init --recursive
 ```
 
+Run all pipeline commands from the activated `tleio` environment. The EventsFormer model imports `einops`; it is listed in `environment.yaml`, and this quick check should pass before inference:
+
+```bash
+conda activate tleio
+python -c "import einops; print('einops OK')"
+```
+
+If that import fails in an existing environment, update it with `conda env update -f environment.yaml` or install the missing package with `conda install -c conda-forge einops`.
+
 Most scripts read defaults from `cfg/*.yaml`; command-line arguments override the YAML values.
 
 ## Download Data
@@ -79,6 +88,12 @@ python scripts/download/download_tartanair_competition.py
 
 Competition data is written under `data/tartanair/competition`.
 
+To download and extract only one competition sequence, pass `--seq`. For example:
+
+```bash
+python scripts/download/download_tartanair_competition.py --seq MH001
+```
+
 ## Process Data
 
 Process EDS into train, validation, and test folders:
@@ -101,6 +116,23 @@ anchor_poses.txt
 relative_motions.txt
 stamped_groundtruth.txt
 imu.csv
+```
+
+If a Tartan sequence does not include an IMU file, synthesize one from the processed ground truth:
+
+```bash
+SEQ=TartanEvent_competition_mono_MH001
+PROCESSED_ROOT=data/tartanair/processed_testing
+
+python scripts/processing/imu_synthesizer.py \
+  --sequence_dir $PROCESSED_ROOT/$SEQ \
+  --overwrite
+```
+
+The generated file is `$PROCESSED_ROOT/$SEQ/imu.csv` with columns:
+
+```text
+timestamp_us,gx,gy,gz,ax,ay,az
 ```
 
 ## Precompute Event Voxels
@@ -135,13 +167,16 @@ Checkpoints and the matching `args.txt` are saved in the selected checkpoint dir
 Run inference on one precomputed sequence and write the predicted relative motions into the matching processed sequence folder. This is the format expected by the filter.
 
 ```bash
+DATASET=eds
 SEQ=03_rocket_earth_dark
+PRECOMPUTED_ROOT=data/$DATASET/precomputed_testing
+PROCESSED_ROOT=data/$DATASET/processed_testing
 CKPT=checkpoints/eds_eventsformer/checkpoint_best.pth
 
 python scripts/testing/test.py \
-  --sequence_dir data/eds/precomputed_testing/$SEQ \
+  --sequence_dir $PRECOMPUTED_ROOT/$SEQ \
   --checkpoint_file $CKPT \
-  --output_file data/eds/processed_testing/$SEQ/$SEQ.txt \
+  --output_file $PROCESSED_ROOT/$SEQ/$SEQ.txt \
   --average_overlaps
 ```
 
@@ -157,9 +192,9 @@ To run inference on every sequence in a precomputed folder:
 
 ```bash
 python scripts/testing/batch_test.py \
-  --batch_root data/eds/precomputed_testing \
-  --checkpoint_file checkpoints/eds_eventsformer/checkpoint_best.pth \
-  --output_dir data/eds/predicted_relative_motions \
+  --batch_root $PRECOMPUTED_ROOT \
+  --checkpoint_file $CKPT \
+  --output_dir data/$DATASET/predicted_relative_motions \
   --average_overlaps
 ```
 
@@ -168,10 +203,14 @@ python scripts/testing/batch_test.py \
 Run the EKF on one processed sequence after writing the EventsFormer prediction file into that same sequence folder.
 
 ```bash
+DATASET=eds
+SEQ=03_rocket_earth_dark
+PROCESSED_ROOT=data/$DATASET/processed_testing
+
 python src/main_filter.py \
-  --dataset eds \
-  --processed_root data/eds/processed_testing \
-  --sequence 03_rocket_earth_dark \
+  --dataset $DATASET \
+  --processed_root $PROCESSED_ROOT \
+  --sequence $SEQ \
   --plot_transformer \
   --plot_projections
 ```
@@ -189,11 +228,15 @@ The main files are `stamped_traj_estimate.txt` and the trajectory/error plots ge
 To reconstruct and plot a trajectory directly from relative-motion predictions:
 
 ```bash
+DATASET=eds
+SEQ=03_rocket_earth_dark
+PROCESSED_ROOT=data/$DATASET/processed_testing
+
 python scripts/plot_trajectories.py \
-  --gt data/eds/processed_testing/03_rocket_earth_dark/stamped_groundtruth.txt \
-  --rel data/eds/processed_testing/03_rocket_earth_dark/03_rocket_earth_dark.txt \
-  --gt_rel data/eds/processed_testing/03_rocket_earth_dark/relative_motions.txt \
-  --save_dir plots/eds_03_rocket_earth_dark
+  --gt $PROCESSED_ROOT/$SEQ/stamped_groundtruth.txt \
+  --rel $PROCESSED_ROOT/$SEQ/$SEQ.txt \
+  --gt_rel $PROCESSED_ROOT/$SEQ/relative_motions.txt \
+  --save_dir plots/${DATASET}_${SEQ}
 ```
 
 ## Reproduce the Main Pipeline Results
@@ -201,37 +244,96 @@ python scripts/plot_trajectories.py \
 1. Create the environment and initialize submodules.
 2. Download the target dataset split.
 3. Run the matching processing script.
-4. Precompute event voxels for the processed split.
-5. Run EventsFormer inference with the trained checkpoint.
-6. Run `src/main_filter.py` on each processed sequence.
-7. Use the saved files in `outputs/main_filter/<dataset>/<sequence>/` for trajectory plots and metrics.
+4. Generate `imu.csv` if the processed sequence does not already include IMU data.
+5. Precompute event voxels for the processed split.
+6. Run EventsFormer inference with the trained checkpoint.
+7. Run `src/main_filter.py` on each processed sequence.
+8. Use the saved files in `outputs/main_filter/<dataset>/<sequence>/` for trajectory plots and metrics.
 
-For an EDS test sequence, the complete command sequence is:
+### Sequential Tartan Competition Example
+
+This is the explicit step-by-step path for one Tartan competition sequence. `RAW_SEQ` is the competition sequence name from the archive. `SEQ` is the processed sequence name produced by `processing_tartan.py` from the raw `<environment>/<difficulty>/<sequence>` layout.
 
 ```bash
-SEQ=03_rocket_earth_dark
-CKPT=checkpoints/eds_eventsformer/checkpoint_best.pth
+conda activate tleio
+
+RAW_SEQ=MH001
+SEQ=TartanEvent_competition_mono_${RAW_SEQ}
+RAW_COMP_ROOT=data/tartanair/competition/data/storage/pellerito
+RAW_SEQUENCE_DIR=$RAW_COMP_ROOT/TartanEvent_competition/mono/$RAW_SEQ
+PROCESSED_ROOT=data/tartanair/processed_testing
+PRECOMPUTED_ROOT=data/tartanair/precomputed_testing
+CKPT=checkpoints/checkpoint_last.pth.zip
+
+python scripts/download/download_tartanair_competition.py \
+  --seq $RAW_SEQ \
+  --skip-air
+
+python scripts/processing/processing_tartan.py \
+  $RAW_COMP_ROOT \
+  --save-path data/tartanair/processed_train \
+  --save_path_testing $PROCESSED_ROOT \
+  --test-seq $SEQ \
+  --process_gt pose_lcam_front.txt \
+  --overwrite
+
+python scripts/processing/imu_synthesizer.py \
+  --sequence_dir $PROCESSED_ROOT/$SEQ \
+  --overwrite
 
 python scripts/processing/precompute_derotated_voxels.py \
-  --root_dir data/eds/processed_testing \
-  --output_dir data/eds/precomputed_testing \
+  --root_dir $PROCESSED_ROOT \
+  --output_dir $PRECOMPUTED_ROOT \
   --denoising true \
   --overwrite
 
 python scripts/testing/test.py \
-  --sequence_dir data/eds/precomputed_testing/$SEQ \
+  --sequence_dir $PRECOMPUTED_ROOT/$SEQ \
   --checkpoint_file $CKPT \
-  --output_file data/eds/processed_testing/$SEQ/$SEQ.txt \
+  --output_file $PROCESSED_ROOT/$SEQ/$SEQ.txt \
   --average_overlaps
 
 python src/main_filter.py \
-  --dataset eds \
-  --processed_root data/eds/processed_testing \
+  --dataset tartanair \
+  --processed_root $PROCESSED_ROOT \
   --sequence $SEQ \
   --plot_transformer \
   --plot_projections
+
+python scripts/plot_trajectories.py \
+  --gt $PROCESSED_ROOT/$SEQ/stamped_groundtruth.txt \
+  --rel $PROCESSED_ROOT/$SEQ/$SEQ.txt \
+  --gt_rel $PROCESSED_ROOT/$SEQ/relative_motions.txt \
+  --save_dir plots/tartanair_${RAW_SEQ}_sequential
+```
+
+If the checkpoint predicts covariance and you want the filter to consume those per-axis sigmas, add `--save_covariance` to `scripts/testing/test.py`. The output file then contains:
+
+```text
+t0_us t1_us px py pz sigma_x sigma_y sigma_z
+```
+
+### One-Pass Raw Tartan Pipeline
+
+`src/main.py` performs online voxelization, network inference, and EKF fusion directly from the raw event stream and an IMU CSV. Use the same raw sequence folder and checkpoint:
+
+```bash
+conda activate tleio
+
+RAW_SEQ=MH001
+SEQ=TartanEvent_competition_mono_${RAW_SEQ}
+RAW_COMP_ROOT=data/tartanair/competition/data/storage/pellerito
+RAW_SEQUENCE_DIR=$RAW_COMP_ROOT/TartanEvent_competition/mono/$RAW_SEQ
+PROCESSED_ROOT=data/tartanair/processed_testing
+CKPT=checkpoints/checkpoint_last.pth.zip
+
+python src/main.py \
+  --raw_sequence_dir $RAW_SEQUENCE_DIR \
+  --checkpoint_file $CKPT \
+  --imu_file $PROCESSED_ROOT/$SEQ/imu.csv \
+  --output_dir outputs/main_online/tartanair/$SEQ
 ```
 
 ## Notes
 
-The public repository does not include downloaded datasets or trained checkpoint binaries. Place released checkpoints under `checkpoints/` and keep their `args.txt` files next to the `.pth` files, because inference loads the training-time model configuration from that file.
+The public repository does not include downloaded datasets or trained checkpoint binaries. Place released checkpoints under `checkpoints/` and keep their `args.txt` files next to the `.pth` files, because inference loads the training-time model configuration from that file. A missing or stale `args.txt` can make inference fail or silently use preprocessing/model settings that do not match the checkpoint.

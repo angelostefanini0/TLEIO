@@ -110,17 +110,17 @@ class OnlineConfig:
 class RawTartanEventSlicer:
     def __init__(self, events_file: Path, timestamps_key: str, time_divisor: int):
         self.events_file = events_file
+        self.time_divisor = int(time_divisor)
         self.h5f = h5py.File(events_file, "r")
         self.x_ds = self._dataset("x")
         self.y_ds = self._dataset("y")
         self.p_ds = self._dataset("p")
         self.t_ds = self._dataset_by_path(timestamps_key)
-        raw_t = np.asarray(self.t_ds, dtype=np.int64)
-        t_us = raw_t // int(time_divisor)
-        np.maximum.accumulate(t_us, out=t_us)
-        self.t0_us = int(t_us[0])
-        self.t_us = t_us - self.t0_us
-        self.t_final_us = int(self.t_us[-1])
+        self.num_events = int(self.t_ds.shape[0])
+        if self.num_events <= 0:
+            raise ValueError(f"{events_file}: empty timestamp dataset '{timestamps_key}'")
+        self.t0_us = int(self.t_ds[0]) // self.time_divisor
+        self.t_final_us = int(self.t_ds[self.num_events - 1]) // self.time_divisor - self.t0_us
 
     def _dataset_by_path(self, key: str):
         if key in self.h5f:
@@ -132,11 +132,22 @@ class RawTartanEventSlicer:
     def _dataset(self, key: str):
         return self._dataset_by_path(f"events/{key}")
 
+    def _lower_bound_raw_time(self, target_raw_time: int) -> int:
+        left = 0
+        right = self.num_events
+        while left < right:
+            mid = (left + right) // 2
+            if int(self.t_ds[mid]) < target_raw_time:
+                left = mid + 1
+            else:
+                right = mid
+        return left
+
     def get_events(self, t_start_us: int, t_end_us: int) -> dict[str, np.ndarray] | None:
         if t_start_us < 0 or t_end_us <= t_start_us or t_start_us > self.t_final_us:
             return None
-        start = int(np.searchsorted(self.t_us, t_start_us, side="left"))
-        end = int(np.searchsorted(self.t_us, t_end_us, side="left"))
+        start = self._lower_bound_raw_time((int(t_start_us) + self.t0_us) * self.time_divisor)
+        end = self._lower_bound_raw_time((int(t_end_us) + self.t0_us) * self.time_divisor)
         if end <= start:
             return {
                 "x": np.empty(0, dtype=np.float32),
@@ -153,7 +164,10 @@ class RawTartanEventSlicer:
             "x": np.asarray(self.x_ds[start:end]),
             "y": np.asarray(self.y_ds[start:end]),
             "p": p,
-            "t": self.t_us[start:end].astype(np.int64, copy=False),
+            "t": np.maximum.accumulate(
+                np.asarray(self.t_ds[start:end], dtype=np.int64) // self.time_divisor
+            )
+            - self.t0_us,
         }
 
     def close(self) -> None:

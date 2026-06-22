@@ -23,6 +23,7 @@ Conventions:
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -38,7 +39,7 @@ from scipy.spatial.transform import Rotation, RotationSpline, Slerp
 TRAJECTORY_NAME = "competition_Test_ME000"
 
 # Root containing the processed TartanAir trajectory folders.
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 PROCESSED_TRAIN_ROOT = REPO_ROOT / "data/test/processed/"
 
 # Input and output filenames inside the selected trajectory folder.
@@ -68,6 +69,49 @@ RANDOM_SEED = 7
 OVERWRITE_OUTPUT = True
 
 # =============================================================================
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate a synthetic IMU CSV from a processed stamped_groundtruth.txt file."
+    )
+    parser.add_argument(
+        "--sequence_dir",
+        type=Path,
+        default=None,
+        help="Processed sequence folder containing stamped_groundtruth.txt.",
+    )
+    parser.add_argument(
+        "--trajectory_name",
+        type=str,
+        default=TRAJECTORY_NAME,
+        help="Trajectory folder name under --processed_root when --sequence_dir is not set.",
+    )
+    parser.add_argument(
+        "--processed_root",
+        type=Path,
+        default=PROCESSED_TRAIN_ROOT,
+        help="Processed root used with --trajectory_name.",
+    )
+    parser.add_argument(
+        "--groundtruth_filename",
+        type=str,
+        default=GROUNDTRUTH_FILENAME,
+        help="Ground-truth filename inside the processed sequence folder.",
+    )
+    parser.add_argument(
+        "--output_filename",
+        type=str,
+        default=OUTPUT_IMU_FILENAME,
+        help="IMU CSV filename to write inside the processed sequence folder.",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action=argparse.BooleanOptionalAction,
+        default=OVERWRITE_OUTPUT,
+        help="Overwrite an existing output IMU file.",
+    )
+    return parser.parse_args()
 
 
 def normalize_quaternions(quaternions: np.ndarray) -> np.ndarray:
@@ -262,15 +306,16 @@ def generate_imu_from_groundtruth(
 
 
 def main() -> None:
-    trajectory_dir = PROCESSED_TRAIN_ROOT / TRAJECTORY_NAME
-    gt_path = trajectory_dir / GROUNDTRUTH_FILENAME
-    imu_path = trajectory_dir / OUTPUT_IMU_FILENAME
+    args = parse_args()
+    trajectory_dir = args.sequence_dir if args.sequence_dir is not None else args.processed_root / args.trajectory_name
+    gt_path = trajectory_dir / args.groundtruth_filename
+    imu_path = trajectory_dir / args.output_filename
 
     if not trajectory_dir.is_dir():
         raise FileNotFoundError(f"Trajectory folder does not exist: {trajectory_dir}")
     if not gt_path.is_file():
         raise FileNotFoundError(f"Ground-truth file does not exist: {gt_path}")
-    if imu_path.exists() and not OVERWRITE_OUTPUT:
+    if imu_path.exists() and not args.overwrite:
         raise FileExistsError(f"Output already exists and OVERWRITE_OUTPUT is False: {imu_path}")
 
     imu = generate_imu_from_groundtruth(

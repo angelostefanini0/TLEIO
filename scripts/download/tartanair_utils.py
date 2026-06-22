@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import re
+import struct
 import tarfile
 import time
 import urllib.parse
 import urllib.request
 import zipfile
+import zlib
 from pathlib import Path, PurePosixPath
 
 from tqdm import tqdm
@@ -172,6 +174,138 @@ def download_tartanevent(root: Path, env_zip: str, delete_zip: bool) -> None:
     extract_zip_archives([target_zip], delete_zip=delete_zip, extract_root=env_folder)
 
 
+class HttpRangeReader:
+    """Small seekable HTTP range reader for zipfile.ZipFile."""
+
+    def __init__(self, url: str):
+        self.url = url
+        self.pos = 0
+        self.size = self._remote_size()
+
+    def _remote_size(self) -> int:
+        req = urllib.request.Request(self.url, headers={"Range": "bytes=0-0"})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            content_range = response.headers.get("Content-Range")
+            if content_range:
+                return int(content_range.rsplit("/", 1)[1])
+            content_length = response.headers.get("Content-Length")
+            if response.status == 206 and content_length:
+                return int(content_length)
+            raise RuntimeError(f"Server does not expose range size for {self.url}")
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def tell(self) -> int:
+        return self.pos
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        if whence == 0:
+            self.pos = int(offset)
+        elif whence == 1:
+            self.pos += int(offset)
+        elif whence == 2:
+            self.pos = self.size + int(offset)
+        else:
+            raise ValueError(f"Invalid whence: {whence}")
+        self.pos = max(0, min(self.pos, self.size))
+        return self.pos
+
+    def read(self, size: int = -1) -> bytes:
+        if self.pos >= self.size:
+            return b""
+        if size is None or size < 0:
+            end = self.size - 1
+        else:
+            end = min(self.pos + int(size), self.size) - 1
+        if end < self.pos:
+            return b""
+
+        req = urllib.request.Request(
+            self.url,
+            headers={"Range": f"bytes={self.pos}-{end}"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as response:
+            if response.status != 206:
+                raise RuntimeError(f"Server ignored range request for {self.url}")
+            data = response.read()
+        self.pos += len(data)
+        return data
+
+
+def read_http_range(url: str, start: int, end: int) -> bytes:
+    req = urllib.request.Request(url, headers={"Range": f"bytes={start}-{end}"})
+    with urllib.request.urlopen(req, timeout=30) as response:
+        if response.status != 206:
+            raise RuntimeError(f"Server ignored range request for {url}")
+        return response.read()
+
+
+def iter_http_range_chunks(url: str, start: int, size: int, chunk_size: int = 32 * 1024 * 1024):
+    offset = 0
+    while offset < size:
+        length = min(chunk_size, size - offset)
+        yield read_http_range(url, start + offset, start + offset + length - 1)
+        offset += length
+
+
+def zip_member_data_offset(url: str, info: zipfile.ZipInfo) -> int:
+    header = read_http_range(url, info.header_offset, info.header_offset + 29)
+    fields = struct.unpack("<IHHHHHIIIHH", header)
+    signature = fields[0]
+    if signature != 0x04034B50:
+        raise RuntimeError(f"Invalid local zip header for {info.filename}")
+    name_len = fields[9]
+    extra_len = fields[10]
+    return info.header_offset + 30 + name_len + extra_len
+
+
+def extract_zip_member_url(url: str, info: zipfile.ZipInfo, extract_root: Path) -> None:
+    output_path = extract_root / info.filename
+    if info.is_dir():
+        output_path.mkdir(parents=True, exist_ok=True)
+        return
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    data_offset = zip_member_data_offset(url, info)
+    crc = 0
+    written = 0
+
+    with output_path.open("wb") as fh:
+        if info.compress_type == zipfile.ZIP_STORED:
+            for chunk in iter_http_range_chunks(url, data_offset, info.compress_size):
+                fh.write(chunk)
+                crc = zlib.crc32(chunk, crc)
+                written += len(chunk)
+        elif info.compress_type == zipfile.ZIP_DEFLATED:
+            decompressor = zlib.decompressobj(-zlib.MAX_WBITS)
+            for chunk in iter_http_range_chunks(url, data_offset, info.compress_size):
+                data = decompressor.decompress(chunk)
+                if data:
+                    fh.write(data)
+                    crc = zlib.crc32(data, crc)
+                    written += len(data)
+            data = decompressor.flush()
+            if data:
+                fh.write(data)
+                crc = zlib.crc32(data, crc)
+                written += len(data)
+        else:
+            raise RuntimeError(
+                f"Unsupported compression method {info.compress_type} for {info.filename}"
+            )
+
+    if written != info.file_size:
+        raise RuntimeError(
+            f"Size mismatch for {info.filename}: wrote {written}, expected {info.file_size}"
+        )
+    if (crc & 0xFFFFFFFF) != info.CRC:
+        raise RuntimeError(f"CRC mismatch for {info.filename}")
+
+
 def ensure_tartanair_file_list(file_list: Path) -> None:
     if file_list.exists():
         return
@@ -243,25 +377,63 @@ def download_tartanair_huggingface(
     extract_zip_archives(zip_paths, delete_zip=delete_zip)
 
 
-def extract_zip_archives(zip_paths: list[Path], delete_zip: bool, extract_root: Path | None = None) -> None:
+def extract_zip_archives(
+    zip_paths: list[Path],
+    delete_zip: bool,
+    extract_root: Path | None = None,
+    member_filter=None,
+) -> None:
     for zip_path in zip_paths:
         root = extract_root or zip_path.parent
         print(f"Verifying archive: {zip_path}")
         with zipfile.ZipFile(zip_path, "r") as zf:
-            bad = zf.testzip()
-            if bad is not None:
-                raise RuntimeError(f"Corrupted zip archive {zip_path}, first bad file: {bad}")
+            members = zf.namelist()
+            if member_filter is None:
+                bad = zf.testzip()
+                if bad is not None:
+                    raise RuntimeError(f"Corrupted zip archive {zip_path}, first bad file: {bad}")
+            else:
+                members = [name for name in members if member_filter(name)]
+                if not members:
+                    raise RuntimeError(f"No selected sequence files found in {zip_path}")
             print(f"Extracting {zip_path} into {root}")
-            zf.extractall(path=root)
+            zf.extractall(path=root, members=members)
         if delete_zip:
             zip_path.unlink(missing_ok=True)
 
 
-def extract_tar_archive(archive_path: Path, extract_root: Path, delete_archive: bool) -> None:
+def extract_zip_url(
+    url: str,
+    extract_root: Path,
+    member_filter,
+) -> None:
+    extract_root.mkdir(parents=True, exist_ok=True)
+    print(f"Reading remote zip directory: {url}")
+    with zipfile.ZipFile(HttpRangeReader(url), "r") as zf:
+        members = [info for info in zf.infolist() if member_filter(info.filename)]
+        if not members:
+            raise RuntimeError(f"No selected sequence files found in {url}")
+        print(f"Extracting {len(members)} selected file(s) into {extract_root}")
+        for info in tqdm(members, desc="selected zip members", unit="file"):
+            extract_zip_member_url(url, info, extract_root)
+
+
+def extract_tar_archive(
+    archive_path: Path,
+    extract_root: Path,
+    delete_archive: bool,
+    member_filter=None,
+) -> None:
     print(f"Extracting {archive_path} into {extract_root}")
     extract_root.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive_path, "r:*") as tar:
-        tar.extractall(path=extract_root)
+        if member_filter is None:
+            tar.extractall(path=extract_root)
+        else:
+            members = [member for member in tar.getmembers() if member_filter(member.name)]
+            if not members:
+                raise RuntimeError(f"No selected sequence files found in {archive_path}")
+            tar.extractall(path=extract_root, members=members)
     if delete_archive:
         archive_path.unlink(missing_ok=True)
 
