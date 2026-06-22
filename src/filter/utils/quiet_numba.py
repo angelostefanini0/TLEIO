@@ -1,3 +1,4 @@
+# Reference: https://github.com/CathIAS/TLIO/blob/master/src/utils/quiet_numba.py
 """Provide a quiet `jit` decorator for filter math helpers.
 
 This file keeps the filter package importable whether `numba` is available or
