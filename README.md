@@ -337,3 +337,4 @@ python src/main.py \
 ## Notes
 
 The public repository does not include downloaded datasets or trained checkpoint binaries. Place released checkpoints under `checkpoints/` and keep their `args.txt` files next to the `.pth` files, because inference loads the training-time model configuration from that file. A missing or stale `args.txt` can make inference fail or silently use preprocessing/model settings that do not match the checkpoint.
+The checkpoints can be downloaded from https://drive.google.com/drive/folders/1RnAKGuD_6BHSWama648qtUKyGo524Bw3?usp=sharing alongside the txt folder
