@@ -34,7 +34,7 @@ python scripts/project_page/render_sequences.py                 # videos and fig
 python scripts/project_page/render_paper_results.py             # paper plots
 ```
 
-`reproduce.py` downloads the released checkpoint and `args.txt` when absent, processes the sequences, synthesizes IMU measurements, precomputes derotated event voxels, runs EventsFormer and the SC-EKF, and writes poses, metrics and a provenance manifest to `website/results/`. `render_sequences.py` renders, per sequence, a synchronized events / 3D-trajectory video (latest 60k raw events, 2× speed) and an aligned comparison figure. Its summary, `assets/figures/sequences.json`, drives the sequence player. `tune_filter.py` calibrates the two filter scales once for all sequences. `style.py` holds the shared palette and typeface.
+`reproduce.py` downloads the released checkpoint and `args.txt` when absent, processes the sequences, synthesizes IMU measurements, precomputes derotated event voxels, runs EventsFormer and the SC-EKF, and writes poses, metrics and a provenance manifest to `website/results/`. `render_sequences.py` renders, per sequence, a synchronized events / 3D-trajectory video (latest 100k raw events, real time) and an aligned comparison figure. Its summary, `assets/figures/sequences.json`, drives the sequence player. `tune_filter.py` calibrates the two filter scales once for all sequences. `style.py` holds the shared palette and typeface.
 
 ## Protocol of the local runs
 

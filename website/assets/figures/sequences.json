@@ -127,122 +127,122 @@
     {
       "file": "office_Easy_P000.mp4",
       "sequence": "office_Easy_P000",
-      "frames": 370,
+      "frames": 724,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Easy_P001.mp4",
       "sequence": "office_Easy_P001",
-      "frames": 365,
+      "frames": 713,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Easy_P002.mp4",
       "sequence": "office_Easy_P002",
-      "frames": 421,
+      "frames": 826,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Easy_P003.mp4",
       "sequence": "office_Easy_P003",
-      "frames": 471,
+      "frames": 925,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Easy_P004.mp4",
       "sequence": "office_Easy_P004",
-      "frames": 411,
+      "frames": 805,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Easy_P005.mp4",
       "sequence": "office_Easy_P005",
-      "frames": 255,
+      "frames": 493,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Easy_P006.mp4",
       "sequence": "office_Easy_P006",
-      "frames": 283,
+      "frames": 549,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Hard_P000.mp4",
       "sequence": "office_Hard_P000",
-      "frames": 207,
+      "frames": 397,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Hard_P001.mp4",
       "sequence": "office_Hard_P001",
-      "frames": 178,
+      "frames": 340,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Hard_P002.mp4",
       "sequence": "office_Hard_P002",
-      "frames": 264,
+      "frames": 511,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Hard_P003.mp4",
       "sequence": "office_Hard_P003",
-      "frames": 90,
+      "frames": 164,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Hard_P004.mp4",
       "sequence": "office_Hard_P004",
-      "frames": 186,
+      "frames": 355,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Hard_P005.mp4",
       "sequence": "office_Hard_P005",
-      "frames": 239,
+      "frames": 462,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Hard_P006.mp4",
       "sequence": "office_Hard_P006",
-      "frames": 139,
+      "frames": 262,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     },
     {
       "file": "office_Hard_P007.mp4",
       "sequence": "office_Hard_P007",
-      "frames": 236,
+      "frames": 456,
       "fps": 15,
-      "playback_speed": 2,
-      "event_window": "latest 60000 events, at most 10 ms"
+      "playback_speed": 1,
+      "event_window": "latest 100000 events, at most 15 ms"
     }
   ]
 }
