@@ -12,7 +12,7 @@ python -m http.server 8000 -d website
 
 | Section | Source |
 | --- | --- |
-| Teaser video, method figures | Repository demo and `figures/method/` |
+| Teaser video, method figures | Repository demo, `assets/model_arch.pdf`, and `figures/method/` |
 | Qualitative results | Local runs of the released checkpoint, rendered by `scripts/project_page/` |
 | Benchmark (TartanAir and runtime plots, tables) | Values published in the paper, `assets/benchmarks/reported-results.json` |
 

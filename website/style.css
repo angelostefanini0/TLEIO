@@ -74,6 +74,7 @@ figcaption b { color: var(--ink); font-weight: 600; }
 .picker button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 .seq-video { width: 100%; aspect-ratio: 16 / 9; background: #fff; border: 1px solid var(--rule); border-radius: 6px; margin-bottom: 18px; }
 /* Method steps */
+.model-architecture { display: block; width: 100%; aspect-ratio: 1652 / 741; border: 0; }
 .steps { list-style: none; counter-reset: step; display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; padding: 0; margin: 8px 0 26px; }
 .steps li { counter-increment: step; border-top: 2px solid var(--accent); padding-top: 14px; }
 .steps h3 { font-size: .98rem; font-weight: 600; margin: 0 0 6px; }

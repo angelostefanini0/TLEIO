@@ -18,7 +18,7 @@ https://github.com/user-attachments/assets/04fa2e40-7d03-445a-8c5b-53c3609a9f07
 
 The full pipeline transforms asynchronous event streams into voxel clips, estimates short-window camera displacements with EventsFormer, and tightly fuses the learned constraints with high-rate IMU propagation in a stochastic-cloning EKF.
 
-![TLEIO model architecture](figures/method/model_architecture.png)
+[TLEIO model architecture (PDF)](website/assets/model_arch.pdf)
 
 EventsFormer is the learned event front-end of TLEIO. It processes precomputed event voxel clips and predicts relative translation constraints, optionally with uncertainty estimates, for the filter back-end.
 

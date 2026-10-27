@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Noto+Sans+Mono&display=swap">
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 <nav class="topbar" aria-label="Sections">
@@ -74,7 +74,10 @@
     <h2>Method</h2>
     <p class="lede">TLEIO splits odometry into a learned front-end that reads motion from events and a lightweight filter that integrates it with inertial data.</p>
     <figure>
-      <img src="assets/model_architecture.png" alt="TLEIO overview: event camera, preprocessing with derotation, tokenizer, EventsFormer and prediction head, fused with IMU propagation in a stochastic-cloning EKF" width="1900" height="740" loading="lazy">
+      <object class="model-architecture" data="assets/model_arch.pdf#view=FitH&amp;toolbar=0&amp;navpanes=0" type="application/pdf" aria-label="TLEIO overview: event camera, preprocessing with derotation, tokenizer, EventsFormer and prediction head, fused with IMU propagation in a stochastic-cloning EKF">
+        <p><a href="assets/model_arch.pdf">View the TLEIO model architecture (PDF)</a>.</p>
+      </object>
+      <figcaption><a href="assets/model_arch.pdf">Open model architecture (PDF)</a></figcaption>
     </figure>
     <ol class="steps">
       <li><h3>Event voxels</h3><p>Events are accumulated in 50&nbsp;ms windows of five temporal bins and derotated with the current orientation, so that what remains is mostly translational motion.</p></li>
