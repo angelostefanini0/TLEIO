@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Noto+Sans+Mono&display=swap">
-  <link rel="stylesheet" href="style.css?v=11">
+  <link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 <nav class="topbar" aria-label="Sections">
@@ -74,9 +74,9 @@
     <h2>Method</h2>
     <p class="lede">TLEIO splits odometry into a learned front-end that reads motion from events and a lightweight filter that integrates it with inertial data.</p>
     <figure>
-      <object class="model-architecture" data="assets/model_arch.pdf#view=FitH&amp;toolbar=0&amp;navpanes=0" type="application/pdf" aria-label="TLEIO overview: event camera, preprocessing with derotation, tokenizer, EventsFormer and prediction head, fused with IMU propagation in a stochastic-cloning EKF">
-        <p><a href="assets/model_arch.pdf">View the TLEIO model architecture (PDF)</a>.</p>
-      </object>
+      <a href="assets/model_arch.pdf">
+        <img src="assets/model_arch.svg" alt="TLEIO overview: event camera, preprocessing with derotation, tokenizer, EventsFormer and prediction head, fused with IMU propagation in a stochastic-cloning EKF" width="1652" height="741" loading="lazy">
+      </a>
       <figcaption><a href="assets/model_arch.pdf">Open model architecture (PDF)</a></figcaption>
     </figure>
     <ol class="steps">

@@ -12,9 +12,15 @@ python -m http.server 8000 -d website
 
 | Section | Source |
 | --- | --- |
-| Teaser video, method figures | Repository demo, `assets/model_arch.pdf`, and `figures/method/` |
+| Teaser video, method figures | Repository demo, `assets/model_arch.svg` (from `assets/model_arch.pdf`), and `figures/method/` |
 | Qualitative results | Local runs of the released checkpoint, rendered by `scripts/project_page/` |
 | Benchmark (TartanAir and runtime plots, tables) | Values published in the paper, `assets/benchmarks/reported-results.json` |
+
+The README and project page display an SVG preview of the model architecture and link to the original PDF. After updating the PDF, regenerate the preview from the repository root with Poppler:
+
+```bash
+pdftocairo -svg website/assets/model_arch.pdf website/assets/model_arch.svg
+```
 
 ## Reproduce the local runs
 
