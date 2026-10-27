@@ -1,0 +1,6004 @@
+{
+ "objective": "mean over sequences of ATE / path length [%] (SE(3) alignment, scale fixed)",
+ "sequences": [
+  "office_Easy_P000",
+  "office_Easy_P001",
+  "office_Easy_P002",
+  "office_Easy_P003",
+  "office_Easy_P004",
+  "office_Easy_P005",
+  "office_Easy_P006",
+  "office_Hard_P000",
+  "office_Hard_P001",
+  "office_Hard_P002",
+  "office_Hard_P003",
+  "office_Hard_P004",
+  "office_Hard_P005",
+  "office_Hard_P006",
+  "office_Hard_P007"
+ ],
+ "network_scales": [
+  0.58,
+  0.7,
+  0.8,
+  0.85,
+  0.9,
+  0.95,
+  1.0,
+  1.1
+ ],
+ "meas_cov_scales": [
+  0.33,
+  1.0,
+  2.0,
+  4.0,
+  8.0,
+  16.0,
+  32.0
+ ],
+ "grid_percent": [
+  [
+   8.250566903860083,
+   4.916483353450746,
+   3.540418411152915,
+   2.8846940906390475,
+   2.677285874080657,
+   2.673339838972714,
+   2.6089458616068537
+  ],
+  [
+   5.210093089082815,
+   3.0272494012208275,
+   2.404676776593261,
+   2.2427508936185645,
+   2.272316576054762,
+   2.2167706935503357,
+   2.3069904758342554
+  ],
+  [
+   3.9640554926273968,
+   2.275614522352345,
+   1.959825952717632,
+   1.973428378950275,
+   2.0471786687634945,
+   2.138899826218744,
+   2.2128022369164673
+  ],
+  [
+   3.8227749712868366,
+   2.3918139447993028,
+   1.919953799313861,
+   1.888560433947693,
+   2.0500559328186014,
+   2.166115529318647,
+   2.218744751114494
+  ],
+  [
+   3.470381633109797,
+   2.6222316432453487,
+   1.9890721460982979,
+   1.9236258985926447,
+   2.104210874431213,
+   2.226919986076137,
+   2.260100873314653
+  ],
+  [
+   4.031795610374873,
+   2.8809455714032257,
+   2.254058477666198,
+   2.043121883344469,
+   2.1889324327939,
+   2.317012896139158,
+   2.3432181573762265
+  ],
+  [
+   4.872584921453838,
+   3.462207157473131,
+   2.677154569040272,
+   2.25343818445403,
+   2.312355836811263,
+   2.4331384141702217,
+   2.4641516996970214
+  ],
+  [
+   6.234549779302707,
+   5.03347705936689,
+   3.988256941179998,
+   2.993939744497096,
+   2.7182330923534113,
+   2.7628566231230676,
+   2.802018251477839
+  ]
+ ],
+ "best": {
+  "network_scale": 0.85,
+  "meas_cov_scale": 4.0
+ },
+ "best_percent": 1.888560433947693,
+ "repository_default": {
+  "network_scale": 0.5816711433024562,
+  "meas_cov_scale": 0.33099642292388415
+ },
+ "per_run": [
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 10.595145213344205,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 8.357059233109643,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 5.9349343203070495,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.7018965661399617,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 3.1260092135805384,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.652697687319005,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.541488007558073,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 7.604992300197809,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 4.477367596402503,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.3979186866884867,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.074386180952147,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.9999495969642638,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.9807882387430247,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.9770313958802967,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.906694384645853,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.983480780699806,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.5286141158559368,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.4281349176332438,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.6053525590409854,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.7873717811440826,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.723059535327546,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 3.1597734994866395,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.4601651752212246,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.2717693535831485,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.2903345906184491,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.6080863911770125,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.8114599159948328,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.7015498376691376,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.095161996124613,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.2350924480738885,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.218669182873744,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.270984988779225,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.6829965093778694,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.8748175372801517,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.7629092999735436,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 8.814956904228415,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.4446104019982355,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.3619724856597546,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.3575478806505263,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.7754388224387225,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.9821079604407654,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.901648436885575,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 11.94818794755247,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.37683474742639,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.5974199722272884,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.5327545495011679,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.8763260938041444,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.121049430549709,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.089750760014606,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 12.270922014370672,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 7.6488523529583885,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.633978867428997,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.106456397313484,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.139203620652904,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.4502268184839973,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.53271971045622,
+   "path_m": 114.36362609606442
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 9.093899606476503,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.65162726279719,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.6766652957066075,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.453867377847976,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.3489476250959633,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.184548823903511,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.090527402258813,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.028871343643177,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.4302070512452447,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.361456874588547,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.4535457619925976,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.193855328557298,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.038615363293399,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.9735852049208285,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 2.4370360686478003,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.858271774972065,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.599242924199755,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.446736597904162,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.1871448945939242,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.102332973723448,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.050657853403349,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 2.39634972202316,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.7822932270655154,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.4944348615578145,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.4014811129453286,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.227170798053015,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.190269198376116,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.1435736914962216,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 2.7673559751543677,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.700085312889238,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.388083222864286,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.30550950044152,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.288602327075214,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.3031636633550665,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.270995859050012,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 3.1758760638124577,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.790762438168341,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.437065441099574,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.272758584258072,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.3626613762634356,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.439281808845302,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.430069000284087,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.1079703852937275,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.479343208528529,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.6308831909373356,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.3188979025803316,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.4400624756839764,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.578905163276883,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.6101357658604805,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 9.472096532420034,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 6.406292811284954,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 4.023200736349793,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.738668083228186,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.689900350890268,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.9000488169008247,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 3.00309438018756,
+   "path_m": 92.24724091017475
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 31.46164892571089,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 5.296026505023369,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.497452797780154,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.9213308897111503,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.7591570745595084,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.870605984455675,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 3.1980423471915174,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 18.26232820249433,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.0661473044921097,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.98645807497407,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.077025008971765,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.199398379648676,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.3680014275752836,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.661685858775187,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 3.9587104766020276,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.6162892306016636,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.7174476720014622,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.821400009342884,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.945828943205628,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.147038484805133,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.4010035527699456,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 6.269583992712985,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.6983129487711275,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.6829781466503053,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.7720494467334948,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.886289948456514,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.1127955096477122,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.3576873157351463,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 7.041170077800794,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.844457178274021,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.7052136208077875,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.7777545705396198,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.8901021580579453,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.131733779094574,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.376957500874889,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 8.591521863839228,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.7622719866560637,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.8581716465485405,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.8577569065766464,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.9740718947686962,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.2117077048359155,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.4527960046100827,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 12.122839730334027,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 6.323306492263119,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.199450762611653,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.0518614057673785,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.1491630827194936,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.3589176644715115,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.5765507961621084,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 16.024454719727988,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 12.08855599222834,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 6.452296008891529,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.0425768832015105,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.6985694785567946,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.857966688316445,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.976629765637487,
+   "path_m": 112.95773788208759
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 8.821564900240187,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 5.016533501101497,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.615222862596204,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.217678148174113,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.935815150886606,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.629016047937635,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.5039727059305377,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 5.1879885371717975,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.2920071450745234,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.1466365791562327,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.952749003334337,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.428833289471816,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.0462697649212016,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.9827617968741345,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.0927962428418985,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.339224794146641,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.919555717837642,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.7137108560886696,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.2187542335090646,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.8827680637926458,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.79526861668145,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 3.8810584307862928,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.730274944655223,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.7657993484887826,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.6635942128876056,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.224510461073443,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.9231024848155165,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.804445173325032,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 3.9305665665133844,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.7898037797403816,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.7434078341257386,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.6456805470174776,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.3127579750549563,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.006830141553119,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.8819056006936665,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.586739286006515,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.666251263765005,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.787849777491703,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.641303304771468,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.4836706345842,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.137964515709825,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.026210759234453,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.233608525996905,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.584127075017372,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.021781856344929,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.730889340082167,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.691239616330794,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.309584051006106,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.2213737312177675,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 8.801020028886716,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.602666919590375,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.593446408144669,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.3398960608326185,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 3.101325407205545,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.809351323443693,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.6994678667289493,
+   "path_m": 123.36036722287328
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 11.909368005549302,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 6.56682553505927,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.810327896999555,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.9484564015413293,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.849409946414313,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.9677888470992944,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 3.063000355506771,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 13.596898917666502,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 4.573578199762572,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.0231637282817094,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.692950552171682,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.6374354701040077,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.7314986537029515,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.8263605289745968,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 15.49824878175187,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.749865444348161,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.875494863867009,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.698571102762562,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.671638448323424,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.7599070022310213,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.860361758014098,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 12.813834049389891,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.654821818046347,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.993642126756403,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.7739772881999833,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.767857598394585,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.8597055705342393,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.9751153006447093,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 7.033271872470805,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.7594563629248596,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.205239050861032,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.937483117448068,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.9198089280834734,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 3.0303041370992885,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 3.142554562827829,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.431201817752413,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 4.235440938335465,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.6351315366303307,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.2422225575966115,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 3.1528958171076207,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 3.2607562546183195,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 3.3713393001468526,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 5.332327359612433,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 5.239939718445889,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 4.537545310607565,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.8404380813248413,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 3.5847919408150495,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 3.535846483473857,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 3.6506976720985302,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 10.77240665168431,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 9.511282674999629,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 8.753601178812197,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 6.287249577348116,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 5.057429072295907,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 4.553902950645974,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 4.338999589283565,
+   "path_m": 117.73895322141371
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 5.946238560768617,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.574322681045176,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.3062107393405176,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.2645686325989651,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.2968098050545394,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.4181628480938302,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.4010188121448663,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.619046292703918,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.2310939588886676,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.704287127904137,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.02745837312629,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.078288789759101,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.9371661916632312,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.9263061922940525,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 5.363576539374538,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 4.2730183474776915,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.38513195629323,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.6958085910346252,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.971124758848543,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.8547019707253143,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.695802827455557,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 5.2583466734551765,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 6.080109702504345,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.1324642361817534,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.940508575317868,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 3.3208076069525685,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 3.3747860907056455,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 3.1474417505865215,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 6.153888187151669,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 8.368827955521219,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 4.342345457401284,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.197107800607464,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 3.67912385819827,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 3.897692652401544,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 3.6309046925349624,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 9.301485698964242,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 10.222009036070462,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 6.088578562746666,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.6154867542958584,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 3.9983650093998557,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 4.34860043295261,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 4.145207081323543,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 12.466723697315645,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 11.878555230010344,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 8.403051254193336,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 4.351887667068138,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 4.2956138501805485,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 4.757641581997251,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 4.6729968201050225,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 9.714812355384526,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 14.643755679589004,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 12.31705504229335,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 6.911485182788474,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 5.092459060171958,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 5.418090623867216,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 5.687787758237943,
+   "path_m": 73.28166180878813
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 2.46751383170456,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 8.379025903211694,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 7.697328170672297,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 5.438619021742537,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.8722899019672403,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.2530068517914636,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.8891411400216427,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 2.4256132758941815,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 4.69715542199583,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.455568770279164,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.1638423736025136,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.882237521558303,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.6206868317861576,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.533835080921468,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.800578909153181,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.137719385094572,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.666856173528911,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.5553470768869149,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.4252576485663868,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.3655165580747253,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.3195249915275247,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.436313865297708,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.4150746478291403,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.4475555422919086,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.3563760152176323,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.3007395823822356,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.2908284992584695,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.2542021747539769,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 2.3260192901243077,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.2619514884506304,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.1603308538084818,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.2135738433538634,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.227604754080832,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.2627075994801014,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.235336280376961,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 2.1951920451234352,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.911125505257637,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.9453759662669097,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.1388582874920208,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.2401577254054792,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.2659255265570057,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.2669675125025992,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 1.7807215447290639,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.699279966417227,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.9014612196610519,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.1819636329909218,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.310165490144946,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.3298729427542857,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.3337838555656256,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 2.9622818839613503,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.3344702273120173,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.51142726426507,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.7070033973522696,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.6783856040276128,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.6299310410427814,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Easy_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.5431803059097442,
+   "path_m": 94.30826933374803
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 6.477326892062062,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 4.7793498671215815,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.826252558582204,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.379800922187664,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.320913861163167,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.726513954382083,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.96124028302667,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 2.978509672216473,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.62847538652029,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.334742903103554,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.6090962384635714,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.7880564806819546,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.953849113963917,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.4106268710496797,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 2.1739858665085285,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.987324733800515,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.8808261295140613,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.049994187443605,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.2011917269168038,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.6131390113816766,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.8978610540390082,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 3.3304035154319678,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.684519683294667,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.7277674843022394,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.8414011161425926,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.1498883416448005,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.4533337725905433,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.6712618344835413,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 2.0798674486845234,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.2882677560646183,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.86580049890293,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.1162907982797394,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.2806726678366318,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.3008558903349885,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.4965753078244064,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 2.2438256945945647,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.5049520376147911,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.428587788309705,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.4290242380467824,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.3161652260826326,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.2131896933994264,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.3951380659933326,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 3.3655762499707795,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.0612226791349357,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.8341990145997398,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.639080949080156,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.3380752883506475,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.2082769055637785,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.380662248320125,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.955821633338298,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.392387067666714,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.5703722245653202,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.6046762012920985,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.486343850351485,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.4372857465258695,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P000",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.60438182503361,
+   "path_m": 113.90142639905835
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.7406489282468613,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.9546535451449542,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.0263684121594716,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.1483135773328361,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.3441907935202178,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.6534149956932946,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.9725918820173096,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.7556065174730275,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.6690289912316741,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.6558992760381628,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.7947160661880378,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.0239162886655901,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.3315852316341086,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.5440611796989157,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.6980575455783389,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.5225997854777793,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.5514042589392794,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.6514677030753018,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 0.8575789290099429,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.0523348864172497,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.2555605952375506,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.6014533001150122,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.5348719588609957,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.5670703425808393,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.6492557209379616,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 0.8037714148420217,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 0.960481680664411,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.1457031669779485,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.639060874077665,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.5478354374477793,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.6204060818459786,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.7031962308180256,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 0.7972045973787634,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 0.9108691315189696,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.0719776751220504,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.9369844567993875,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.7071162732067799,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.7522677873369853,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.8255267963401377,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 0.8449114866115182,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 0.9165540657574304,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.0453516436807755,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 1.6787080652569946,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.1122040059259883,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.9800002198746172,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.9799365142071159,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 0.9372346300843823,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 0.9798029556857509,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.0704995031874591,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 2.848792793078037,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.1240173765153654,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.7455593701610064,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.4033923672723467,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.2522051876284512,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.239622907263485,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P001",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.2653771240628016,
+   "path_m": 91.95314788619837
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 20.128786736283974,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 9.679272147207612,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.960774950062462,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.5376703342268696,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 3.147517512095935,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 3.1436818340503834,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 3.046660072159128,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 8.830188786833698,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.9762217551807457,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.6415725329597333,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.533139279645904,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.6429638743053863,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.575428603544774,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.532975735306311,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 3.462088520998373,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.833821955764231,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.1412971010739703,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.1219280173571216,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.215817481445597,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.1647666115392883,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.056922341170855,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 3.7348617301192677,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.299041001061749,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.254454667966839,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.8677795312833667,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.9628658606225686,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.9365360464910133,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.8357699618428402,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.160335998206743,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.519195789768376,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.983852852180157,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.624312822698109,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.6718681961763984,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.7262959739008565,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.6466623366985933,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.249597625531387,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.1357641585541436,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.6089567294395795,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.3709092379606675,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.389655289583208,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.5531252205912116,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.5008462142575514,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 3.9232091855192652,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.736964886009602,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.308672634823141,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.144190035766513,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.2180650574788976,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.420685631109895,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.4075818067017973,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.959897020632041,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.6916149698583052,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.3710932927389636,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.329239830714596,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.3229539651624083,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.4292341663925494,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P002",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.4245254224388182,
+   "path_m": 112.62142999521271
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.810500755205809,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.1370724993271693,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.0983558483906013,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.8710586545840081,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.0157184648090058,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.413314585797818,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.643353715938992,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.7942404968359603,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.9778846033263576,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.746513304437262,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.7154323082202911,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.1109205463706047,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.5325662943991571,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.6485740272177791,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.28534039575927245,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.5265557092546008,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.4821246789266281,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.7216490542026799,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.2004845185917135,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.5436526594264244,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.5977139209235638,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.24697045167665674,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.37620165237338066,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.46379009050668557,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.7769163645100289,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.2235429785635374,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.5230907290159268,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.5272613349957256,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.5058767484402166,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.3405324626855482,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.5453458311082707,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.8496995136874007,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.2358293475969175,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.47194739792235,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.4350854510271138,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.35293725473386667,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.36799599038055525,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.641067586941831,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.9233223802409668,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.2500265969909439,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.4129495364516615,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.3399256057497997,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.23973159071053315,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.4039581966800689,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.6959949093113305,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.9887549620956165,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.2422289464540666,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.3353923544968243,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.2476571690205773,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.1922863563420023,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.3110207574664115,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.6622161754958918,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.9989587596890943,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.1607186253231387,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.1744885322546985,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P003",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.0896891648402685,
+   "path_m": 43.04884143091026
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 1.7118607078815418,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.8564641295137636,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.576120201576748,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.462130847889393,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.768756736088528,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.8575174808820476,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 3.079348836044397,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 1.0793953362992377,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.064459418279386,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.5034664480447386,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.6097903856589124,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.174026591231772,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.402331374426941,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.655578542720321,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.7197367909215597,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.9727636370710586,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.0086346245102717,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.4514749113089986,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.0196478344994175,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.246978188906297,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.385815818347987,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.8709343097045672,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.9333398240013385,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.0969845401826093,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.5526785438585258,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.03638867242103,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.160969841381773,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.2520920367744166,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.8072670023546625,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.2133328775754981,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.2721757966867142,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.6910014892124545,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.9893329124937884,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.0859107217049635,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.1105044495014207,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.8403175570622724,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.6714837808781153,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.610754439962869,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.8220469454714712,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.941316863358782,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.0217635551794486,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.989538206267821,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.9866417437150178,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.064656619776065,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.0397331287966325,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.94695720343863,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.9034133785844731,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.9496568508946495,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.9012141055820888,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 1.5841645911273252,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.170569791589563,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.313170180193677,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.1173718862523,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.9120299134519123,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.8099378212249397,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P004",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.828763242793832,
+   "path_m": 79.5631742380129
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 10.6035073229122,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 11.866020129160637,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 9.801112371775663,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 8.374544262008532,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 8.298471870649724,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 7.133448012087649,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 4.507730182109849,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 8.110825692806676,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 9.42477602343266,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 8.775526683503141,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 7.592063753463651,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 6.606578850767698,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 4.355354423167105,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 4.1573323804259354,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 7.90887371636867,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 6.966992620631734,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 6.781037741854766,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 5.254930704255281,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 3.8220940722479813,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 3.6389116062598355,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 4.107419066850999,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 6.088172148989866,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 5.651928684190436,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 5.229962080957477,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.8306979998534314,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 3.2991630966022574,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 3.5171455584249256,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 4.0911658530249,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.842534377769674,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 4.611091499241475,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.9944788383854277,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.3152214822146826,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 3.0335377274682727,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 3.450896014565587,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 4.075225855971881,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.502430689076721,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 4.16106382394608,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.6489697478745606,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.143532374275178,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.900183168321144,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 3.436503210587971,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 4.089259341236882,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.12678388106584,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 4.062180914386048,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.591189259636772,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.099558773174096,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.8924413965286617,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 3.461924330986155,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 4.1205033926841255,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.030426727810465,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.885552512296749,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 3.6507143198723924,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 3.3259158723684608,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 3.0496480055879736,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 3.590489863686937,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P005",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 4.262885941956905,
+   "path_m": 117.56623412075808
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 1.5126754889273109,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.5468419882310125,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.2408865737643544,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.2305211694318123,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.3938889989562413,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.6831155032355738,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.8691538935026188,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.7007711315610967,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.849078751456977,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.8801379665789111,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 0.9543143914499524,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.1051407446248354,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.2230191903467824,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.3239793794509063,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.7195686434152223,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.7774956797088474,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 0.9377372212284786,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.055227009833669,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.1075704462992788,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.1803851486742,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.236520566736453,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.7953095636581236,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.8093569551335638,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.009527466170588,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.1759390692610763,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.2845056624938653,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.3002785027578547,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.3503503377755917,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.5580566297135239,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 0.9378411529055707,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.1507016416832274,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.3207239212632467,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.5364774778236436,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.5194618564607356,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.5283910086038108,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.6904589809843681,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.1586841208679852,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.3434286573955865,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.5471093545126935,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.8080183714488054,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.8038664530995037,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.7391622988280433,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 0.8401311842671109,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.4323903953428823,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.5842204770854666,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.8258728385681393,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.063276873710409,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.128786561108735,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.9891776001960542,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 1.1809987644007973,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.794784884281075,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.07129053501291,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.418599206082249,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.6686307999288847,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.7645104398617626,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P006",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.592186577325531,
+   "path_m": 72.78044282774545
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.58,
+   "meas_cov_scale": 0.33,
+   "ate_m": 8.707252564945266,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.58,
+   "meas_cov_scale": 1.0,
+   "ate_m": 4.270924714566075,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.58,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.8600718219328662,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.58,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.659777539031963,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.58,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.606815832911981,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.58,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.553266165082719,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.58,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.6194980966562336,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.7,
+   "meas_cov_scale": 0.33,
+   "ate_m": 3.746426532170563,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.7,
+   "meas_cov_scale": 1.0,
+   "ate_m": 1.7307212160824188,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.7,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.0691609938582103,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.7,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.5059621368496363,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.7,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.3954425512420914,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.7,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.3664140484058787,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.7,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.453063701362832,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.8,
+   "meas_cov_scale": 0.33,
+   "ate_m": 4.788217930309938,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.8,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.285046303506751,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.8,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.0997011422445333,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.8,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.2497984221952405,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.8,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.4269933973163234,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.8,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.42213978686725,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.8,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.5123370155615798,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.85,
+   "meas_cov_scale": 0.33,
+   "ate_m": 5.331260459215517,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.85,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.779055643169622,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.85,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.2653739593112565,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.85,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.2451702899033816,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.85,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.496169904165533,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.85,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.5268787795022198,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.85,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.6037831049858176,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.9,
+   "meas_cov_scale": 0.33,
+   "ate_m": 5.555623922731883,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.9,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.9805363566560175,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.9,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.4333051498245344,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.9,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.3685070667789887,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.9,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.6141663233955665,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.9,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.680458790666817,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.9,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.7249149445995866,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.95,
+   "meas_cov_scale": 0.33,
+   "ate_m": 5.437871646970428,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.95,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.7391155397227904,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.95,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.6033442438041978,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.95,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.6038845820401866,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.95,
+   "meas_cov_scale": 8.0,
+   "ate_m": 1.7877172157019554,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.95,
+   "meas_cov_scale": 16.0,
+   "ate_m": 1.8512028450015952,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 0.95,
+   "meas_cov_scale": 32.0,
+   "ate_m": 1.8732525632337231,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.0,
+   "meas_cov_scale": 0.33,
+   "ate_m": 5.501464693647053,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.0,
+   "meas_cov_scale": 1.0,
+   "ate_m": 2.4933903784192744,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.0,
+   "meas_cov_scale": 2.0,
+   "ate_m": 1.8610029731212163,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.0,
+   "meas_cov_scale": 4.0,
+   "ate_m": 1.9251486383834095,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.0,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.034809894950604,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.0,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.0347481169916404,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.0,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.0435144232973066,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.1,
+   "meas_cov_scale": 0.33,
+   "ate_m": 5.915184419359766,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.1,
+   "meas_cov_scale": 1.0,
+   "ate_m": 3.4090031093127893,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.1,
+   "meas_cov_scale": 2.0,
+   "ate_m": 2.7401610774999043,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.1,
+   "meas_cov_scale": 4.0,
+   "ate_m": 2.6871195949462447,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.1,
+   "meas_cov_scale": 8.0,
+   "ate_m": 2.6790118884777585,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.1,
+   "meas_cov_scale": 16.0,
+   "ate_m": 2.4604117116948467,
+   "path_m": 93.73308786810048
+  },
+  {
+   "sequence": "office_Hard_P007",
+   "network_scale": 1.1,
+   "meas_cov_scale": 32.0,
+   "ate_m": 2.424540730155066,
+   "path_m": 93.73308786810048
+  }
+ ]
+}

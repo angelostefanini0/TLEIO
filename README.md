@@ -1,5 +1,7 @@
 # TLEIO: Tight Learned Events-Inertial Odometry
 
+[Paper (arXiv:2610.33356)](https://arxiv.org/abs/2610.33356) · [Project page](https://angelostefanini0.github.io/TLEIO/)
+
 TLEIO is a tight learned event-inertial odometry pipeline for estimating camera motion from event streams and IMU measurements. It combines EventsFormer, a transformer-based learned front-end for short-window event-camera motion regression, with a stochastic-cloning EKF that tightly fuses learned relative-motion constraints and high-rate inertial propagation.
 
 

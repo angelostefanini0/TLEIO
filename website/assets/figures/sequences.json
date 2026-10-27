@@ -1,0 +1,248 @@
+{
+  "source": "website/results/<seq> exported by reproduce.py; raw TartanEvent event streams",
+  "alignment": "Rigid SE(3) fit over all matched samples; scale fixed",
+  "sequences": [
+    {
+      "sequence": "office_Easy_P000",
+      "label": "Office \u00b7 Easy \u00b7 P000",
+      "ate_se3_rmse_m": 1.2903345906184491,
+      "rotation_rmse_deg": 2.6591306587602856,
+      "duration_s": 47.2,
+      "path_length_m": 114.36362609606442
+    },
+    {
+      "sequence": "office_Easy_P001",
+      "label": "Office \u00b7 Easy \u00b7 P001",
+      "ate_se3_rmse_m": 2.4014811129453286,
+      "rotation_rmse_deg": 3.8283436563166284,
+      "duration_s": 46.4,
+      "path_length_m": 92.24724091017475
+    },
+    {
+      "sequence": "office_Easy_P002",
+      "label": "Office \u00b7 Easy \u00b7 P002",
+      "ate_se3_rmse_m": 1.7720494467334948,
+      "rotation_rmse_deg": 2.422013655521205,
+      "duration_s": 54.0,
+      "path_length_m": 112.95773788208759
+    },
+    {
+      "sequence": "office_Easy_P003",
+      "label": "Office \u00b7 Easy \u00b7 P003",
+      "ate_se3_rmse_m": 2.6635942128876056,
+      "rotation_rmse_deg": 5.283274584184841,
+      "duration_s": 60.6,
+      "path_length_m": 123.36036722287328
+    },
+    {
+      "sequence": "office_Easy_P004",
+      "label": "Office \u00b7 Easy \u00b7 P004",
+      "ate_se3_rmse_m": 2.7739772881999833,
+      "rotation_rmse_deg": 3.7882858114791147,
+      "duration_s": 52.6,
+      "path_length_m": 117.73895322141371
+    },
+    {
+      "sequence": "office_Easy_P005",
+      "label": "Office \u00b7 Easy \u00b7 P005",
+      "ate_se3_rmse_m": 2.940508575317868,
+      "rotation_rmse_deg": 3.7134834121829368,
+      "duration_s": 31.799999999999997,
+      "path_length_m": 73.28166180878813
+    },
+    {
+      "sequence": "office_Easy_P006",
+      "label": "Office \u00b7 Easy \u00b7 P006",
+      "ate_se3_rmse_m": 1.3563760152176323,
+      "rotation_rmse_deg": 1.9568217070675165,
+      "duration_s": 35.5,
+      "path_length_m": 94.30826933374803
+    },
+    {
+      "sequence": "office_Hard_P000",
+      "label": "Office \u00b7 Hard \u00b7 P000",
+      "ate_se3_rmse_m": 0.8414011161425926,
+      "rotation_rmse_deg": 1.3509255437258965,
+      "duration_s": 25.4,
+      "path_length_m": 113.90142639905835
+    },
+    {
+      "sequence": "office_Hard_P001",
+      "label": "Office \u00b7 Hard \u00b7 P001",
+      "ate_se3_rmse_m": 0.6492557209379616,
+      "rotation_rmse_deg": 0.6885522732563573,
+      "duration_s": 21.599999999999998,
+      "path_length_m": 91.95314788619837
+    },
+    {
+      "sequence": "office_Hard_P002",
+      "label": "Office \u00b7 Hard \u00b7 P002",
+      "ate_se3_rmse_m": 1.8677795312833667,
+      "rotation_rmse_deg": 2.8826654007300796,
+      "duration_s": 32.95,
+      "path_length_m": 112.62142999521271
+    },
+    {
+      "sequence": "office_Hard_P003",
+      "label": "Office \u00b7 Hard \u00b7 P003",
+      "ate_se3_rmse_m": 0.7769163645100289,
+      "rotation_rmse_deg": 0.6234281148708792,
+      "duration_s": 9.85,
+      "path_length_m": 43.04884143091026
+    },
+    {
+      "sequence": "office_Hard_P004",
+      "label": "Office \u00b7 Hard \u00b7 P004",
+      "ate_se3_rmse_m": 1.5526785438585258,
+      "rotation_rmse_deg": 0.8327983603798168,
+      "duration_s": 22.599999999999998,
+      "path_length_m": 79.5631742380129
+    },
+    {
+      "sequence": "office_Hard_P005",
+      "label": "Office \u00b7 Hard \u00b7 P005",
+      "ate_se3_rmse_m": 3.8306979998534314,
+      "rotation_rmse_deg": 2.2901454211991106,
+      "duration_s": 29.7,
+      "path_length_m": 117.56623412075808
+    },
+    {
+      "sequence": "office_Hard_P006",
+      "label": "Office \u00b7 Hard \u00b7 P006",
+      "ate_se3_rmse_m": 1.1759390692610763,
+      "rotation_rmse_deg": 0.8034926428325759,
+      "duration_s": 16.4,
+      "path_length_m": 72.78044282774545
+    },
+    {
+      "sequence": "office_Hard_P007",
+      "label": "Office \u00b7 Hard \u00b7 P007",
+      "ate_se3_rmse_m": 1.2451702899033816,
+      "rotation_rmse_deg": 1.0573897648820012,
+      "duration_s": 29.299999999999997,
+      "path_length_m": 93.73308786810048
+    }
+  ],
+  "videos": [
+    {
+      "file": "office_Easy_P000.mp4",
+      "sequence": "office_Easy_P000",
+      "frames": 370,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Easy_P001.mp4",
+      "sequence": "office_Easy_P001",
+      "frames": 365,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Easy_P002.mp4",
+      "sequence": "office_Easy_P002",
+      "frames": 421,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Easy_P003.mp4",
+      "sequence": "office_Easy_P003",
+      "frames": 471,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Easy_P004.mp4",
+      "sequence": "office_Easy_P004",
+      "frames": 411,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Easy_P005.mp4",
+      "sequence": "office_Easy_P005",
+      "frames": 255,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Easy_P006.mp4",
+      "sequence": "office_Easy_P006",
+      "frames": 283,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Hard_P000.mp4",
+      "sequence": "office_Hard_P000",
+      "frames": 207,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Hard_P001.mp4",
+      "sequence": "office_Hard_P001",
+      "frames": 178,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Hard_P002.mp4",
+      "sequence": "office_Hard_P002",
+      "frames": 264,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Hard_P003.mp4",
+      "sequence": "office_Hard_P003",
+      "frames": 90,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Hard_P004.mp4",
+      "sequence": "office_Hard_P004",
+      "frames": 186,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Hard_P005.mp4",
+      "sequence": "office_Hard_P005",
+      "frames": 239,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Hard_P006.mp4",
+      "sequence": "office_Hard_P006",
+      "frames": 139,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    },
+    {
+      "file": "office_Hard_P007.mp4",
+      "sequence": "office_Hard_P007",
+      "frames": 236,
+      "fps": 15,
+      "playback_speed": 2,
+      "event_window": "latest 60000 events, at most 10 ms"
+    }
+  ]
+}

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TLEIO: Tight Learned Event-Inertial Odometry</title>
+  <meta name="description" content="TLEIO learns short-window relative motion from event streams with a transformer and tightly fuses it with IMU propagation in a stochastic-cloning EKF.">
+  <meta property="og:title" content="TLEIO: Tight Learned Event-Inertial Odometry">
+  <meta property="og:description" content="A transformer-based architecture for end-to-end motion from event streams. arXiv:2610.33356.">
+  <meta property="og:image" content="assets/demo-poster.jpg">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Noto+Sans+Mono&display=swap">
+  <link rel="stylesheet" href="style.css?v=10">
+</head>
+<body>
+<nav class="topbar" aria-label="Sections">
+  <a class="brand" href="#top">TLEIO</a>
+  <div>
+    <a href="#qualitative">Results</a><a href="#method">Method</a><a href="#results">Benchmark</a><a href="#bibtex">BibTeX</a>
+    <a class="gh" href="https://github.com/angelostefanini0/TLEIO">GitHub</a>
+  </div>
+</nav>
+<header class="hero" id="top">
+  <h1><span class="name">TLEIO</span>Tight Learned Event-Inertial Odometry</h1>
+  <p class="subtitle">A Transformer-Based Architecture for End-to-End Motion from Event Streams</p>
+  <ul class="authors">
+    <li>Matteo Cascone<sup>1⋆</sup></li>
+    <li>David Jensen<sup>1⋆</sup></li>
+    <li>Alessandro Pirini<sup>1⋆</sup></li>
+    <li>Angelo Stefanini<sup>1⋆</sup></li>
+    <li>Pietro Venè<sup>1⋆</sup></li>
+    <li>Marta Tintoré Gazulla<sup>2</sup></li>
+    <li>Javier Hidalgo Carriò<sup>2</sup></li>
+  </ul>
+  <p class="affiliations"><span><sup>1</sup>ETH Zürich</span><span><sup>2</sup>Google</span><span class="note"><sup>⋆</sup>Equal contribution</span></p>
+  <nav class="links" aria-label="Resources">
+    <a href="https://arxiv.org/html/2610.33356v1"><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>Paper</a>
+    <a href="https://arxiv.org/abs/2610.33356"><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 12 5l7 14M8 14h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>arXiv</a>
+    <a href="https://github.com/angelostefanini0/TLEIO"><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .8a11.4 11.4 0 0 0-3.6 22.2c.6.1.8-.3.8-.5v-2.2c-3.4.7-4.1-1.4-4.1-1.4-.5-1.3-1.2-1.6-1.2-1.6-1.1-.8.1-.8.1-.8 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2A11 11 0 0 1 12 6c1 0 2 .1 2.9.4 2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.8 5.5-5.5 5.8.5.4.8 1.1.8 2.2v3.1c0 .3.2.6.8.5A11.4 11.4 0 0 0 12 .8Z"/></svg>GitHub</a>
+    <a href="https://drive.google.com/drive/folders/1RnAKGuD_6BHSWama648qtUKyGo524Bw3"><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Checkpoints</a>
+    <a href="#bibtex"><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H5v16h3M16 4h3v16h-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>BibTeX</a>
+  </nav>
+</header>
+
+<main>
+  <figure class="teaser">
+    <video src="assets/tleio-demo.mp4" poster="assets/demo-poster.jpg" autoplay muted loop playsinline controls preload="metadata"></video>
+    <figcaption>TLEIO estimates 6-DoF motion from a raw event stream and an IMU, without frames, feature tracks or pose optimization.</figcaption>
+  </figure>
+
+  <section class="abstract">
+    <h2>Abstract</h2>
+    <p>Event cameras provide microsecond temporal resolution, high dynamic range, and sparse asynchronous measurements, making them compelling for odometry under fast motion and challenging illumination. Yet, accurate event-based state estimation remains difficult: existing systems often use events as a complement to frames or rely on feature tracking, correspondence search, and optimization-heavy backends, limiting the efficiency promised by event sensing. We introduce Tight Learned Event-Inertial Odometry (TLEIO), a compact filter-based pipeline that learns short-window relative motion directly from voxelized event streams and tightly fuses the resulting constraints with IMU propagation. Its learned front-end, EventsFormer, predicts local displacements and per-axis uncertainty from event voxels in a single forward pass, while a stochastic-cloning EKF fuses these overlapping predictions with IMU propagation, producing metric trajectories without explicit feature tracks and pose optimization at inference time. The network is trained directly from pose displacements, without requiring event-flow labels. We evaluate TLEIO on the TartanAir/TartanEvent benchmark and on real DAVIS240c sequences. On TartanAir, TLEIO reduces average ATE from 2.26&nbsp;m to 1.10&nbsp;m over the IMU-only TLIO baseline, while achieving up to 48.9% lower runtime than optimization-based event odometry methods.</p>
+  </section>
+
+  <section id="qualitative">
+    <h2>Qualitative results</h2>
+    <p class="lede">We ran the released checkpoint end to end on the fifteen sequences of the TartanEvent <i>office</i> environment. Pick a sequence to see the raw events next to the estimated 3D trajectory and orientation. The estimate is drawn exactly as the filter produces it: it starts at the true pose, and any gap to the dashed ground truth is accumulated drift.</p>
+    <div class="picker" role="group" aria-label="Sequence">
+      <div class="picker-row"><span>Easy</span><div id="pick-Easy"></div></div>
+      <div class="picker-row"><span>Hard</span><div id="pick-Hard"></div></div>
+    </div>
+    <video id="seq-video" class="seq-video" muted loop playsinline controls preload="metadata"></video>
+    <details class="protocol">
+      <summary>About these runs</summary>
+      <p>The office environment is part of the TartanEvent training data, so these sequences illustrate the pipeline rather than held-out accuracy (see Benchmark below). Event derotation and the 200&nbsp;Hz IMU are derived from ground truth, and the filter starts from the ground-truth pose. Two filter parameters, the network displacement scale and the measurement-covariance scale, were calibrated once for all fifteen sequences together (0.85 and 4.0), never per sequence. The videos show the unaligned estimate. For ATE, the estimate is rigidly SE(3)-aligned to ground truth over the whole sequence (scale fixed); across the fifteen runs the median ATE is 1.55&nbsp;m, or 1.7% of the path. Videos play at 2× speed.</p>
+      <p><a href="assets/figures/sequences.json">Per-sequence metrics</a> · <a href="assets/figures/filter-calibration.svg">Calibration grid</a> · <a href="results/manifest.json">Run manifest</a> · <a href="https://github.com/angelostefanini0/TLEIO/tree/main/scripts/project_page">Scripts</a></p>
+    </details>
+  </section>
+
+  <section id="method">
+    <h2>Method</h2>
+    <p class="lede">TLEIO splits odometry into a learned front-end that reads motion from events and a lightweight filter that integrates it with inertial data.</p>
+    <figure>
+      <img src="assets/model_architecture.png" alt="TLEIO overview: event camera, preprocessing with derotation, tokenizer, EventsFormer and prediction head, fused with IMU propagation in a stochastic-cloning EKF" width="1900" height="740" loading="lazy">
+    </figure>
+    <ol class="steps">
+      <li><h3>Event voxels</h3><p>Events are accumulated in 50&nbsp;ms windows of five temporal bins and derotated with the current orientation, so that what remains is mostly translational motion.</p></li>
+      <li><h3>EventsFormer</h3><p>A clip of consecutive voxels is split into patches and processed by a transformer with divided space–time attention. It regresses each short-window displacement together with a per-axis uncertainty, in a single forward pass.</p></li>
+      <li><h3>Stochastic-cloning EKF</h3><p>IMU measurements propagate the state at high rate. Each learned displacement becomes a relative-position update between cloned past poses, weighted by its predicted uncertainty. No feature tracks and no pose optimization.</p></li>
+    </ol>
+    <details class="arch">
+      <summary>EventsFormer architecture</summary>
+      <figure class="tokenizer">
+        <img src="assets/tokenizer.png" alt="Tokenizer: each event voxel is split into patches, projected to tokens, with a temporal embedding" loading="lazy">
+        <figcaption><b>Tokenizer.</b> Each event voxel is split into patches and projected into tokens, with a temporal embedding for the voxel index.</figcaption>
+      </figure>
+      <figure>
+        <img src="assets/eventsformer_encoder.png" alt="EventsFormer encoder: temporal then spatial attention with RoPE2D, repeated" loading="lazy">
+        <figcaption><b>Encoder.</b> Temporal and spatial attention are applied in sequence, with RoPE2D in spatial attention.</figcaption>
+      </figure>
+    </details>
+  </section>
+
+  <section id="results">
+    <h2>Benchmark</h2>
+    <p class="lede">Results reported in the paper, on the held-out TartanAir competition split, on real DAVIS240c recordings, and for end-to-end runtime on EDS.</p>
+    <div class="headline">
+      <div><strong>1.10<small> m</small></strong><span>average ATE on TartanAir,<br>vs. 2.26 m for IMU-only TLIO</span></div>
+      <div><strong>0.45<small> %</small></strong><span>average error on real<br>DAVIS240c sequences</span></div>
+      <div><strong>48.9<small> %</small></strong><span>up to this much lower runtime than<br>optimization-based event odometry</span></div>
+    </div>
+    <figure>
+      <img src="assets/benchmarks/tartanair.svg" alt="ATE per TartanAir competition sequence for TLIO and TLEIO" loading="lazy">
+      <figcaption><b>TartanAir competition split, ATE after SE(3) alignment.</b> Adding learned event constraints to the IMU-only filter lowers the error on 12 of 16 sequences and halves it on average.</figcaption>
+    </figure>
+    <figure>
+      <img src="assets/benchmarks/runtime.svg" alt="End-to-end runtime of TLEIO, RAMP-VO, DEVO and DEIO on EDS 00, 01 and 09" loading="lazy">
+      <figcaption><b>End-to-end runtime on EDS,</b> from raw events to trajectory, mean of five runs. TLEIO is fastest on two of three recordings and overall; the filter accounts for only 5.4% of its runtime.</figcaption>
+    </figure>
+    <details class="tables">
+      <summary>Full tables from the paper</summary>
+<div class="table-wrap"><table class="results"><caption><span>Table 1.</span> TartanAir competition split, ATE [m] ↓. Baselines from the RAMP-VO benchmark; bold: lowest per row.</caption><thead><tr><th scope="col">Seq.</th><th scope="col">EKLT-VIO</th><th scope="col">ORB-SLAM3</th><th scope="col">COLMAP</th><th scope="col">DROID-VO</th><th scope="col">DPVO</th><th scope="col">RAMP-VO</th><th scope="col">TLIO</th><th scope="col" class=ours>TLEIO</th></tr>
+<tr class="input-row"><th scope="row">Input</th><td>E+F+I</td><td>F</td><td>F</td><td>F</td><td>F</td><td>E+F</td><td>I</td><td class=ours>E+I</td></tr></thead><tbody>
+<tr><th scope="row">ME00</th><td>12.80</td><td>13.61</td><td>15.20</td><td>0.22</td><td><b>0.16</b></td><td>0.20</td><td>1.45</td><td class=ours>2.13</td></tr>
+<tr><th scope="row">ME01</th><td>9.10</td><td>16.86</td><td>5.58</td><td>0.15</td><td>0.11</td><td><b>0.04</b></td><td>2.30</td><td class=ours>1.20</td></tr>
+<tr><th scope="row">ME02</th><td>16.23</td><td>20.57</td><td>10.86</td><td>0.24</td><td>0.11</td><td><b>0.10</b></td><td>1.42</td><td class=ours>1.45</td></tr>
+<tr><th scope="row">ME03</th><td>18.08</td><td>16.00</td><td>3.93</td><td>1.27</td><td>0.66</td><td><b>0.46</b></td><td>7.31</td><td class=ours>1.37</td></tr>
+<tr><th scope="row">ME04</th><td>16.96</td><td>22.27</td><td>2.62</td><td>1.04</td><td>0.31</td><td><b>0.16</b></td><td>1.14</td><td class=ours>1.37</td></tr>
+<tr><th scope="row">ME05</th><td>6.84</td><td>9.28</td><td>14.78</td><td>0.14</td><td>0.14</td><td><b>0.13</b></td><td>1.85</td><td class=ours>1.19</td></tr>
+<tr><th scope="row">ME06</th><td>21.44</td><td>21.61</td><td>7.00</td><td>1.32</td><td>0.30</td><td><b>0.12</b></td><td>2.47</td><td class=ours>0.48</td></tr>
+<tr><th scope="row">ME07</th><td>9.06</td><td>7.74</td><td>18.47</td><td>0.77</td><td>0.13</td><td><b>0.12</b></td><td>1.37</td><td class=ours>0.72</td></tr>
+<tr><th scope="row">MH00</th><td>14.68</td><td>15.44</td><td>12.26</td><td>0.32</td><td><b>0.21</b></td><td>0.36</td><td>2.39</td><td class=ours>2.65</td></tr>
+<tr><th scope="row">MH01</th><td>4.35</td><td>2.92</td><td>13.45</td><td>0.13</td><td><b>0.04</b></td><td>0.06</td><td>0.94</td><td class=ours>0.14</td></tr>
+<tr><th scope="row">MH02</th><td>10.20</td><td>13.51</td><td>13.45</td><td>0.08</td><td><b>0.04</b></td><td><b>0.04</b></td><td>1.61</td><td class=ours>1.16</td></tr>
+<tr><th scope="row">MH03</th><td>2.13</td><td>8.18</td><td>20.95</td><td>0.09</td><td>0.08</td><td><b>0.04</b></td><td>3.72</td><td class=ours>0.22</td></tr>
+<tr><th scope="row">MH04</th><td>2.72</td><td>2.59</td><td>24.97</td><td>1.52</td><td>0.58</td><td><b>0.41</b></td><td>1.87</td><td class=ours>0.60</td></tr>
+<tr><th scope="row">MH05</th><td>4.48</td><td>21.91</td><td>16.79</td><td>0.69</td><td><b>0.17</b></td><td>0.25</td><td>1.35</td><td class=ours>0.48</td></tr>
+<tr><th scope="row">MH06</th><td>6.95</td><td>11.70</td><td>7.01</td><td>0.39</td><td><b>0.11</b></td><td><b>0.11</b></td><td>1.25</td><td class=ours>1.15</td></tr>
+<tr><th scope="row">MH07</th><td>19.72</td><td>25.88</td><td>7.97</td><td>0.97</td><td>0.15</td><td><b>0.07</b></td><td>1.66</td><td class=ours>1.44</td></tr>
+<tr class=avg><th scope="row">Average</th><td>10.98</td><td>14.38</td><td>12.50</td><td>0.58</td><td>0.21</td><td><b>0.17</b></td><td>2.26</td><td class=ours>1.10</td></tr>
+</tbody></table></div>
+<div class="table-wrap"><table class="results"><caption><span>Table 2.</span> DAVIS240c held-out sequences, MPE [%] ↓. Baselines from the DEIO benchmark; bold: lowest per column.</caption><thead><tr><th scope="col">Method</th><th scope="col">Input</th><th scope="col">boxes trans.</th><th scope="col">HDR boxes</th><th scope="col">boxes 6DoF</th><th scope="col">poster trans.</th><th scope="col">HDR poster</th><th scope="col">poster 6DoF</th><th scope="col">Avg.</th></tr></thead><tbody>
+<tr><th scope="row">EKLT-VIO</th><td class="input">E+F+I</td><td>0.48</td><td>0.46</td><td>0.84</td><td>0.35</td><td>0.65</td><td>0.35</td><td>0.52</td></tr>
+<tr><th scope="row">Lee et al.</th><td class="input">E+F+I</td><td>0.74</td><td>0.69</td><td>0.77</td><td>0.28</td><td>0.52</td><td>0.59</td><td>0.60</td></tr>
+<tr><th scope="row">Rebecq et al.</th><td class="input">E+I</td><td>0.57</td><td>0.92</td><td>0.69</td><td>0.89</td><td>0.59</td><td>0.82</td><td>0.75</td></tr>
+<tr><th scope="row">HASTE-VIO</th><td class="input">E+I</td><td>2.55</td><td>1.75</td><td>2.03</td><td>1.34</td><td>0.57</td><td>1.50</td><td>1.62</td></tr>
+<tr><th scope="row">Zhu et al.</th><td class="input">E+I</td><td>2.69</td><td>1.23</td><td>3.61</td><td>0.94</td><td>2.63</td><td>3.56</td><td>2.44</td></tr>
+<tr><th scope="row">Ultimate-SLAM</th><td class="input">E+I</td><td>0.76</td><td>0.67</td><td>0.44</td><td>0.15</td><td>0.49</td><td>0.30</td><td>0.47</td></tr>
+<tr><th scope="row">DEIO</th><td class="input">E+I</td><td>0.07</td><td>0.09</td><td><b>0.05</b></td><td><b>0.04</b></td><td><b>0.06</b></td><td><b>0.08</b></td><td><b>0.07</b></td></tr>
+<tr><th scope="row">DEVO</th><td class="input">E</td><td><b>0.06</b></td><td><b>0.06</b></td><td>0.71</td><td>0.06</td><td>0.14</td><td>0.44</td><td>0.25</td></tr>
+<tr class=ours><th scope="row">TLEIO</th><td class="input">E+I</td><td>0.31</td><td>0.55</td><td>0.49</td><td>0.43</td><td>0.50</td><td>0.43</td><td>0.45</td></tr>
+</tbody></table></div>
+    </details>
+  </section>
+
+  <section id="bibtex">
+    <h2>BibTeX</h2>
+    <div class="bib">
+      <button type="button" id="copy-bib">Copy</button>
+<pre id="bib-text">@misc{cascone2026tleio,
+  title         = {Tight Learned Event-Inertial Odometry ({TLEIO}): a Transformer-Based
+                   Architecture for End-to-End Motion from Event Streams},
+  author        = {Cascone, Matteo and Jensen, David and Pirini, Alessandro and
+                   Stefanini, Angelo and Ven{\`e}, Pietro and Tintor{\'e} Gazulla, Marta and
+                   Hidalgo Carri{\`o}, Javier},
+  year          = {2026},
+  eprint        = {2610.33356},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CV}
+}</pre>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p>TLEIO · <a href="https://arxiv.org/abs/2610.33356">arXiv:2610.33356</a> · Page inspired by the <a href="https://kwanwaipang.github.io/DEIO/">DEIO</a> project page.</p>
+</footer>
+<script src="app.js?v=9" defer></script>
+</body>
+</html>

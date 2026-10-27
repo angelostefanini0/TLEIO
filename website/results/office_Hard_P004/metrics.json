@@ -1,0 +1,10 @@
+{
+  "position_rmse_m": 3.2513751706193372,
+  "ate_se3_rmse_m": 1.5526785438585258,
+  "rotation_rmse_deg": 0.8327983603798168,
+  "duration_s": 22.599999999999998,
+  "path_length_m": 79.5631742380129,
+  "samples": 453,
+  "updates_attempted": 449,
+  "updates_rejected": 0
+}

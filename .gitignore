@@ -71,3 +71,11 @@ var/
 wheels/
 *.egg-info/
 tartanairpy/*
+
+# Local experiment logs and downloaded dataset index
+logs/
+download_training_zipfiles.txt
+
+# Published project-page experiment artifacts
+!website/results/
+!website/results/**
