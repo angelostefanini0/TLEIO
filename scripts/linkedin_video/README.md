@@ -14,7 +14,7 @@ Full-resolution renders and the render cache go to `~/tleio_linkedin_renders/`. 
 | Input | Source |
 | --- | --- |
 | Demo (events and trajectory) | `website/assets/tleio-demo.mp4` |
-| Method diagram | `website/assets/model_arch.pdf`, rasterized with `pdftocairo` (Poppler) |
+| Method diagram | `assets/model_arch.pdf` (the paper figure), rasterized with `pdftocairo` (Poppler) |
 | ETH Zürich and Google logos | `assets/`, from Wikimedia Commons |
 | RGB frames of the demo sequence | TartanAir competition `MH001`, not in git (see below) |
 

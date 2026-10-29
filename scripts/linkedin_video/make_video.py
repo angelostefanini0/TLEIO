@@ -171,7 +171,7 @@ class LivePipeline:
         d.text((x + arrow + gap, y), b, font=f34, fill=INK)
         # method card: the diagram, then an arrow from its output bracket to the live trajectory panel
         png = BUILD/'model_arch'
-        subprocess.run(['pdftocairo', '-png', '-singlefile', '-scale-to-x', '3400', '-scale-to-y', '-1', ASSETS/'model_arch.pdf', png], check=True)
+        subprocess.run(['pdftocairo', '-png', '-singlefile', '-scale-to-x', '3400', '-scale-to-y', '-1', HERE/'assets/model_arch.pdf', png], check=True)
         arch = Image.open(f'{png}.png').convert('RGBA'); arch = arch.crop((self.EV_CUT, 0, arch.width, arch.height))
         ds = self.DS; arch = arch.resize((round(arch.width*ds), round(arch.height*ds)), Image.LANCZOS)
         inset, card_w = 40, 1800; x0, y0 = (W - card_w)//2 + inset, 240 + inset; strip_w = card_w - 2*inset
