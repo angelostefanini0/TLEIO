@@ -108,6 +108,11 @@ def logos_layer(y, eth_h, goo_h, gap, tags=True):
     x += tw; im.alpha_composite(goo, (x, y)); return im
 
 
+def eth_layer(y, h):
+    """The ETH Zurich logo alone, centred."""
+    im = layer(); eth = fit(Image.open(HERE/'assets/eth.png').convert('RGBA'), 600, h); im.alpha_composite(eth, ((W - eth.width)//2, y)); return im
+
+
 # ---------- sections: each returns its content layer at local time t ----------
 class Title:
     def __init__(self):
@@ -136,7 +141,7 @@ class Title:
 class LivePipeline:
     """The demo on a card; then its two panels shrink into the method diagram (events into the Event Camera slot,
     trajectory after the filter output) and keep playing while the diagram builds around them."""
-    MORPH_AT, MORPH = 13.5, 2.1
+    MORPH_AT, MORPH = 10.5, 2.1
     RGB = ROOT/'data/tartanair/competition/rgb/mono/MH001'     # the demo's sequence (TartanAir competition MH001), 30 Hz
     RGB_LAG = -1                                                # frame offset that best aligns RGB edges with the events
     SWAP_AT, SWAP_DUR = 5.0, 1.4                                # events | RGB side by side; then the RGB leaves, the events grow
@@ -291,7 +296,7 @@ class End:
         self.items = [(text_layer('TLEIO', font(120, True), INK, 250), .1),
                       (text_layer('Tight Learned Event-Inertial Odometry', font(44), INK, 420), .3),
                       (text_layer('Advances in Event-Based Computer Vision @ ACCV 2026', font(40, True), ACCENT, 560), .6),
-                      (logos_layer(800, 50, 66, 110, tags=False), 1.0)]
+                      (eth_layer(800, 58), 1.0)]
 
     def __call__(self, t):
         out = layer(); compose(out, self.items, t/PACE); return out
