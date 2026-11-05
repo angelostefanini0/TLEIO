@@ -65,7 +65,7 @@
     </div>
     <video id="seq-video" class="seq-video" muted loop playsinline controls preload="metadata"></video>
     <div class="protocol">
-      <p>The office environment is part of the TartanEvent training data, so these sequences illustrate the pipeline rather than held-out accuracy (see Benchmark below). Event derotation and the 200&nbsp;Hz IMU are derived from ground truth, and the filter starts from the ground-truth pose. Two filter parameters, the network displacement scale and the measurement-covariance scale, were calibrated once for all fifteen sequences together (0.85 and 4.0), never per sequence; the four IMU noise densities were searched as well but changed the result by less than 0.01%. The videos show the unaligned estimate. For ATE, the estimate is rigidly SE(3)-aligned to ground truth over the whole sequence (scale fixed); across the fifteen runs the median ATE is 1.55&nbsp;m, or 1.7% of the path. Videos play in real time.</p>
+      <p>The office environment is part of the TartanEvent training data, so these sequences illustrate the pipeline rather than held-out accuracy (see Benchmark below). The 200&nbsp;Hz IMU is derived from ground truth, and the filter starts from the ground-truth pose. Two filter parameters, the network displacement scale and the measurement-covariance scale, were calibrated once for all fifteen sequences together (0.85 and 4.0), never per sequence; the four IMU noise densities were searched as well but changed the result by less than 0.01%. The videos show the unaligned estimate. For ATE, the estimate is rigidly SE(3)-aligned to ground truth over the whole sequence (scale fixed); across the fifteen runs the median ATE is 1.55&nbsp;m, or 1.7% of the path. Videos play in real time.</p>
     </div>
   </section>
 
@@ -73,10 +73,10 @@
     <h2>Method</h2>
     <p class="lede">TLEIO splits odometry into a learned front-end that reads motion from events and a lightweight filter that integrates it with inertial data.</p>
     <figure>
-      <img src="assets/model_arch.svg" alt="TLEIO overview: event camera, preprocessing with derotation, tokenizer, EventsFormer and prediction head, fused with IMU propagation in a stochastic-cloning EKF" width="1652" height="741" loading="lazy">
+      <img src="assets/model_arch.svg" alt="TLEIO overview: event camera, preprocessing, tokenizer, EventsFormer and prediction head, fused with IMU propagation in a stochastic-cloning EKF" width="1652" height="741" loading="lazy">
     </figure>
     <ol class="steps">
-      <li><h3>Event voxels</h3><p>Events are accumulated in 50&nbsp;ms windows of five temporal bins and derotated with the current orientation, so that what remains is mostly translational motion.</p></li>
+      <li><h3>Event voxels</h3><p>Events are accumulated in 50&nbsp;ms windows of five temporal bins.</p></li>
       <li><h3>EventsFormer</h3><p>A clip of consecutive voxels is split into patches and processed by a transformer with divided space–time attention. It regresses each short-window displacement together with a per-axis uncertainty, in a single forward pass.</p></li>
       <li><h3>Stochastic-cloning EKF</h3><p>IMU measurements propagate the state at high rate. Each learned displacement becomes a relative-position update between cloned past poses, weighted by its predicted uncertainty. No feature tracks and no pose optimization.</p></li>
     </ol>
